@@ -8,6 +8,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.constants import ParseMode
 
+
+
 # -------------------- LOGGING --------------------
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -17,11 +19,17 @@ logger = logging.getLogger(__name__)
 
 # -------------------- SETTINGS --------------------
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8383113616:AAE4CfMMLjkBRxDZYrrWffVY20B-vWvfPKQ")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "8027188846"))
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 PHONE_RE = re.compile(r"^\+\d{10,15}$")
 
+
+
+DB_PATH = os.getenv("DATABASE_PATH", "shop.db")
+
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 
 class OnlineShopBot:
     def __init__(self):
