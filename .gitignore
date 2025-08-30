@@ -1,16 +1,11 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environment
 venv/
 .venv/
 
-# IDE
 .idea/
-
-# OS
 .DS_Store
 
 shop.db/
