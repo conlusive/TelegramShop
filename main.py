@@ -20,16 +20,9 @@ logger = logging.getLogger(__name__)
 # -------------------- SETTINGS --------------------
 
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+BOT_TOKEN = "8383113616:AAE4CfMMLjkBRxDZYrrWffVY20B-vWvfPKQ"
+ADMIN_ID = 8027188846
 
-PHONE_RE = re.compile(r"^\+\d{10,15}$")
-
-
-
-DB_PATH = os.getenv("DATABASE_PATH", "shop.db")
-
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 
 class OnlineShopBot:
     def __init__(self):
@@ -145,7 +138,7 @@ class OnlineShopBot:
         )
 
     async def show_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        import sqlite3
+
         category = update.callback_query.data.replace("category_", "")
         # Use sqlite3.Row for named columns
         self.conn.row_factory = sqlite3.Row
@@ -555,7 +548,7 @@ We will contact you shortly!
 
     # -------------------- ORDER (USER/ADMIN) --------------------
     async def show_my_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        import json
+
         user_id = update.effective_user.id
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -712,8 +705,7 @@ We will contact you shortly!
         if update.effective_user.id != ADMIN_ID:
             return
 
-        import json
-        import sqlite3
+
 
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
