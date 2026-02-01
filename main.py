@@ -90,6 +90,43 @@ class OnlineShopBot:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                phone TEXT,
+                address TEXT,
+                email TEXT,
+                blocked INTEGER DEFAULT 0
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS blocked_users (
+                user_id INTEGER PRIMARY KEY,
+                blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # --- DB migration: add email column if it does not exist ---
+        try:
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "email" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+                self.conn.commit()
+        except Exception:
+            pass
+
+        # --- DB migration: add blocked column if it does not exist ---
+        try:
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "blocked" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN blocked INTEGER DEFAULT 0")
+                self.conn.commit()
+        except Exception:
+            pass
+
         cursor.execute("SELECT COUNT(*) FROM products")
         if cursor.fetchone()[0] == 0:
             demo_products = [
@@ -106,6 +143,21 @@ class OnlineShopBot:
 
         self.conn.commit()
 
+    def is_user_blocked(self, user_id):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT blocked FROM users WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+        return result and result[0] == 1
+
+    async def check_user_blocked(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        if self.is_user_blocked(update.effective_user.id):
+            if update.callback_query:
+                await update.callback_query.answer("You are blocked from using this bot.", show_alert=True)
+            elif update.message:
+                await update.message.reply_text("You are blocked from using this bot.")
+            return True
+        return False
+
     # -------------------- KEYBOARD BUILDER --------------------
     def build_main_keyboard(self, user_id):
         """
@@ -114,7 +166,8 @@ class OnlineShopBot:
         keyboard = [
             [InlineKeyboardButton("🛍️ Product catalog", callback_data="catalog")],
             [InlineKeyboardButton("🛒 My cart", callback_data="cart")],
-            [InlineKeyboardButton("📋 My orders", callback_data="my_orders")]
+            [InlineKeyboardButton("📋 My orders", callback_data="my_orders")],
+            [InlineKeyboardButton("👤 My profile", callback_data="my_profile")]
         ]
         # Always check admin strictly as int
         if int(user_id) == int(ADMIN_ID):
@@ -124,9 +177,20 @@ class OnlineShopBot:
 
     # -------------------- USER-FACING SCREENS --------------------
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        self.conn.commit()
+        cursor.execute("SELECT blocked FROM users WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+        if result and result[0] == 1:
+            await update.message.reply_text("You are blocked from using this bot.")
+            return
         await self.show_main_menu(update, context)
 
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         """
         Display the main menu. Admin panel button is always visible for the admin.
         """
@@ -151,6 +215,8 @@ class OnlineShopBot:
             await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
 
     async def show_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         text = """
 ℹ️ **HELP**
 
@@ -182,6 +248,8 @@ Please contact us using the details above!
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     async def show_catalog(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         cursor = self.conn.cursor()
         cursor.execute("SELECT DISTINCT category FROM products WHERE stock > 0")
         categories = cursor.fetchall()
@@ -194,6 +262,8 @@ Please contact us using the details above!
         )
 
     async def show_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         category = update.callback_query.data.replace("category_", "")
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
@@ -219,6 +289,8 @@ Please contact us using the details above!
         )
 
     async def show_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         product_id = int(update.callback_query.data.replace("product_", ""))
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
@@ -250,8 +322,79 @@ Please contact us using the details above!
         ])
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
+    async def show_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
+        user_id = update.effective_user.id
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
+        phone = user_data[0] if user_data and user_data[0] else "Not set"
+        address = user_data[1] if user_data and user_data[1] else "Not set"
+        email = user_data[2] if user_data and user_data[2] else "Not set"
+
+        text = f"""
+👤 **My Profile**
+
+📞 **Phone:** {phone}
+📍 **Address:** {address}
+📧 **Email:** {email}
+        """
+        keyboard = [
+            [InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_phone")],
+            [InlineKeyboardButton("✏️ Edit Address", callback_data="edit_address")],
+            [InlineKeyboardButton("✏️ Edit Email", callback_data="edit_email")],
+            [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        elif update.message:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+
+    async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
+        user_id = update.effective_user.id
+        self.user_states[user_id] = {'step': 'waiting_phone_profile'}
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]]
+        await update.callback_query.edit_message_text(
+            "📞 **Enter your phone number:**\n"
+            "Example: +380501234567",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+    async def edit_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
+        user_id = update.effective_user.id
+        self.user_states[user_id] = {'step': 'waiting_email_profile'}
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]]
+        await update.callback_query.edit_message_text(
+            "📧 **Enter your email address:**\n"
+            "Example: example@gmail.com",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+    async def edit_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
+        user_id = update.effective_user.id
+        self.user_states[user_id] = {'step': 'waiting_address_profile'}
+        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]]
+        await update.callback_query.edit_message_text(
+            "📍 **Enter your address:**\n"
+            "Example: Kyiv, 1 Khreshchatyk St., apt. 10",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
     # -------------------- CART LOGIC --------------------
     async def show_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         cursor = self.conn.cursor()
         cursor.execute('''
@@ -304,6 +447,8 @@ Please contact us using the details above!
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     async def add_to_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         product_id = int(query.data.replace("add_to_cart_", ""))
         user_id = query.from_user.id
@@ -329,6 +474,8 @@ Please contact us using the details above!
         await query.answer("✅ Item added to cart")
 
     async def remove_from_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         await query.answer("➖ Removed from cart")
         product_id = int(query.data.replace("remove_from_cart_", ""))
@@ -340,6 +487,8 @@ Please contact us using the details above!
         await self.update_product_view(query, product_id, context)
 
     async def cart_operations(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         data = query.data
         if data.startswith("cart_add_"):
@@ -350,6 +499,8 @@ Please contact us using the details above!
             await self.remove_from_cart_from_cart(update, context, product_id)
 
     async def add_to_cart_from_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: int):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         cursor = self.conn.cursor()
         cursor.execute("SELECT stock, name FROM products WHERE id = ?", (product_id,))
@@ -365,6 +516,8 @@ Please contact us using the details above!
         await self.show_cart(update, context)
 
     async def remove_from_cart_from_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: int):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         cursor = self.conn.cursor()
         cursor.execute("SELECT quantity FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
@@ -382,6 +535,8 @@ Please contact us using the details above!
         await self.show_cart(update, context)
 
     async def clear_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM cart WHERE user_id = ?", (user_id,))
@@ -422,22 +577,85 @@ Please contact us using the details above!
 
     # -------------------- CHECKOUT LOGIC --------------------
     async def checkout(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         self.user_states[user_id] = {'step': 'waiting_email'}
-        keyboard = [
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT phone, address FROM users WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
+
+        keyboard = []
+        if user_data and user_data[0] and user_data[1]:
+            keyboard.append([InlineKeyboardButton("👤 Use my profile data", callback_data="use_profile_data")])
+
+        keyboard.extend([
             [InlineKeyboardButton("🔙 Back", callback_data="back_to_cart")],
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-        ]
+        ])
         reply_markup = InlineKeyboardMarkup(keyboard)
+
         await update.callback_query.message.reply_text(
-            "📋 **Placing an order**\n\n" \
-            "📧 **Step 1/3:** Enter your email address.\n" \
+            "📋 **Placing an order**\n\n"
+            "If you have saved data in your profile, you can use it to checkout faster!\n\n"
+            "Or you can proceed with entering your data manually.\n\n"
+            "📧 **Step 1/4:** Enter your email address.\n"
             "Example: example@gmail.com",
             reply_markup=reply_markup,
             parse_mode="Markdown"
         )
 
+    async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
+        user_id = update.effective_user.id
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
+
+        if user_data and user_data[0] and user_data[1]:
+            self.user_states[user_id] = {
+                'step': 'waiting_payment', # Assuming email is also present
+                'phone': user_data[0],
+                'address': user_data[1],
+                'email': user_data[2]
+            }
+
+            if user_data[2]: # email exists
+                # go to payment
+                keyboard = [
+                    [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
+                    [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
+                    [InlineKeyboardButton("🏦 Bank transfer", callback_data="pay_bank")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="checkout")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                ]
+                await update.callback_query.edit_message_text(
+                    "📋 **Placing an order**\n\n"
+                    "✅ Your data has been pre-filled from your profile.\n\n"
+                    "💳 **Step 4/4:** Choose a payment method:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+            else: # email does not exist
+                self.user_states[user_id]['step'] = 'waiting_email_after_profile'
+                keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
+                await update.callback_query.edit_message_text(
+                    "📋 **Placing an order**\n\n"
+                    "Your phone and address are filled from your profile.\n\n"
+                    "📧 **Step 2/4:** Enter your email address.\n"
+                    "Example: example@gmail.com",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+        else:
+            # Fallback
+            await self.checkout(update, context)
+
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         if user_id not in self.user_states:
             return
@@ -446,50 +664,42 @@ Please contact us using the details above!
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        if state['step'] == 'waiting_email':
+        if state['step'] == 'waiting_email' or state['step'] == 'waiting_email_after_profile':
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 await msg.reply_text("❌ Please enter a valid email address.")
                 return
             state['email'] = email
-            state['step'] = 'waiting_address'
-            await msg.reply_text(
-                "📋 **Placing an order**\n\n" \
-                "📍 **Step 2/3:** Enter your shipping address.\n" \
-                "Example: Kyiv, 1 Khreshchatyk St., apt. 10",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="back_to_email")],
-                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-                ]),
-                parse_mode="Markdown"
-            )
-            return
 
-        elif state['step'] == 'waiting_address':
-            text = msg.text.strip()
-            if text.lower() in ["❌ cancel", "cancel"]:
-                self.user_states.pop(user_id, None)
-                await msg.reply_text("❌ Order cancelled.", reply_markup=None)
-                await self.show_cart(update, context)
-                return
-            if len(text) < 10:
-                await msg.reply_text("❌ The address is too short. Please enter the full address.", reply_markup=reply_markup)
-                return
-            state['address'] = text
-            state['step'] = 'waiting_payment'
-            keyboard = [
-                [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
-                [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
-                [InlineKeyboardButton("🏦 Bank transfer", callback_data="pay_bank")],
-                [InlineKeyboardButton("🔙 Back", callback_data="back_to_address")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-            ]
-            await msg.reply_text(
-                "📋 **Placing an order**\n\n" \
-                "💳 **Step 3/3:** Choose a payment method:",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
-            )
+            if state['step'] == 'waiting_email_after_profile':
+                state['step'] = 'waiting_payment'
+                keyboard = [
+                    [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
+                    [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
+                    [InlineKeyboardButton("🏦 Bank transfer", callback_data="pay_bank")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="checkout")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                ]
+                await msg.reply_text(
+                    "📋 **Placing an order**\n\n"
+                    "✅ Your data has been pre-filled from your profile.\n\n"
+                    "💳 **Step 4/4:** Choose a payment method:",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+            else:
+                state['step'] = 'waiting_phone'
+                await msg.reply_text(
+                    "📋 **Placing an order**\n\n"
+                    "📞 **Step 2/4:** Enter your phone number.\n"
+                    "Example: +380501234567",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔙 Back", callback_data="back_to_email")],
+                        [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                    ]),
+                    parse_mode="Markdown"
+                )
+            return
 
         elif state['step'] == 'waiting_phone':
             if msg.text and (msg.text.strip().lower() in ["❌ cancel", "cancel"]):
@@ -519,10 +729,48 @@ Please contact us using the details above!
                 )
                 return
             state['phone'] = phone
-            await msg.reply_text("✅ **Order data confirmed!**", parse_mode="Markdown")
-            await self.create_order(update, context)
+            state['step'] = 'waiting_address'
+            await msg.reply_text(
+                "📋 **Placing an order**\n\n"
+                "📍 **Step 3/4:** Enter your shipping address.\n"
+                "Example: Kyiv, 1 Khreshchatyk St., apt. 10",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="back_to_phone")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                ]),
+                parse_mode="Markdown"
+            )
+            return
+
+        elif state['step'] == 'waiting_address':
+            text = msg.text.strip()
+            if text.lower() in ["❌ cancel", "cancel"]:
+                self.user_states.pop(user_id, None)
+                await msg.reply_text("❌ Order cancelled.", reply_markup=None)
+                await self.show_cart(update, context)
+                return
+            if len(text) < 10:
+                await msg.reply_text("❌ The address is too short. Please enter the full address.", reply_markup=reply_markup)
+                return
+            state['address'] = text
+            state['step'] = 'waiting_payment'
+            keyboard = [
+                [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
+                [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
+                [InlineKeyboardButton("🏦 Bank transfer", callback_data="pay_bank")],
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_address")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+            ]
+            await msg.reply_text(
+                "📋 **Placing an order**\n\n" \
+                "💳 **Step 4/4:** Choose a payment method:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
     async def choose_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         await query.answer()
         data = query.data
@@ -590,32 +838,38 @@ Please contact us using the details above!
             return
 
         # Card to courier or Cash on delivery (with phone already present): create order and send confirmation
-        order_id = await self.create_order(update, context, send_message=False)
-        products_text = "".join(f"{emoji} {name} × {quantity} = {price*quantity}$\n" for name, price, quantity, emoji in cart_items)
+        order_details = await self.create_order(update, context, send_message=False)
+        if not order_details:
+            # create_order already sent a message about the failure (out of stock, or db error)
+            return
+
+        order_id, products_list, total_amount = order_details
+
+        products_text = "".join(f"{item['emoji']} {item['name']} × {item['quantity']} = {item['total']}$\n" for item in products_list)
         order_text = (
-            f"💳 {payment} selected\n\n" \
-            f"You will be able to pay by {payment.lower()} upon delivery.\n\n" \
-            f"✅ **Order #{order_id} has been successfully placed!**\n\n" \
-            f"👤 **Customer:** {update.effective_user.full_name}\n" \
-            f"📧 **Email:** {state['email']}\n" \
-            f"📞 **Phone:** {state.get('phone', '—')}\n" \
-            f"📍 **Address:** {state['address']}\n" \
-            f"💳 **Payment:** {payment}\n\n" \
-            f"📦 **Products:**\n" \
-            f"{products_text}" \
-            f"💳 **Total amount: {total_amount}$**\n\n" \
-            f"📋 **Status:** In progress\n" \
-            f"🕐 **Date:** {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n" \
+            f"💳 {payment} selected\n\n"
+            f"You will be able to pay by {payment.lower()} upon delivery.\n\n"
+            f"✅ **Order #{order_id} has been successfully placed!**\n\n"
+            f"👤 **Customer:** {update.effective_user.full_name}\n"
+            f"📧 **Email:** {state['email']}\n"
+            f"📞 **Phone:** {state.get('phone', '—')}\n"
+            f"📍 **Address:** {state['address']}\n"
+            f"💳 **Payment:** {payment}\n\n"
+            f"📦 **Products:**\n"
+            f"{products_text}"
+            f"💳 **Total amount: {total_amount}$**\n\n"
+            f"📋 **Status:** In progress\n"
+            f"🕐 **Date:** {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
             f"We will contact you shortly!"
         )
         await query.edit_message_text(order_text, parse_mode="Markdown")
         keyboard = [[InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]]
         await query.message.reply_text("You can return to the main menu:", reply_markup=InlineKeyboardMarkup(keyboard))
-        cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-        self.conn.commit()
-        self.user_states.pop(user_id, None)
+
 
     async def handle_checkout_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         """Handles the back buttons during the checkout process."""
         query = update.callback_query
         await query.answer()
@@ -637,6 +891,21 @@ Please contact us using the details above!
 
         elif data == "back_to_cart":
             await self.show_cart(update, context)
+
+        elif data == "back_to_phone":
+            if user_id in self.user_states:
+                self.user_states[user_id]['step'] = 'waiting_phone'
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to email", callback_data="back_to_email")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+            ]
+            await query.edit_message_text(
+                "📋 **Placing an order**\n\n"
+                "📞 **Step 2/4:** Enter your phone number.\n"
+                "Example: +380501234567",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
         elif data == "back_to_address":
             if user_id in self.user_states:
@@ -668,68 +937,84 @@ Please contact us using the details above!
             )
 
     async def handle_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         self.user_states.pop(user_id, None)
         await update.callback_query.edit_message_text("❌ Order cancelled.")
         await self.show_cart(update, context)
 
     async def create_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, send_message=True):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         user_name = update.effective_user.full_name
+        target_message = update.message or (update.callback_query.message if update.callback_query else None)
         if user_id not in self.user_states:
             return None
         state = self.user_states[user_id]
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT p.name, p.price, c.quantity, p.emoji FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?', (user_id,))
-        cart_items = cursor.fetchall()
-        target_message = update.message or (update.callback_query.message if update.callback_query else None)
-        if not cart_items:
+        
+        try:
+            with self.conn:
+                cursor = self.conn.cursor()
+
+                cursor.execute(
+                    'SELECT p.id, p.name, p.price, c.quantity, p.emoji, p.stock '
+                    'FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
+                    (user_id,)
+                )
+                cart_items = cursor.fetchall()
+
+                if not cart_items:
+                    if target_message:
+                        await target_message.reply_text("❌ The cart is empty!")
+                    self.user_states.pop(user_id, None)
+                    return None
+
+                products_list = []
+                total_amount = 0
+                
+                for product_id, name, price, quantity, emoji, stock in cart_items:
+                    if stock < quantity:
+                        if target_message:
+                            await target_message.reply_text(f"Sorry, product '{name}' is out of stock in the desired quantity. Please adjust your cart.")
+                        return None 
+                    
+                    item_total = price * quantity
+                    total_amount += item_total
+                    products_list.append({
+                        'name': name, 'price': price, 'quantity': quantity, 
+                        'emoji': emoji if emoji else "", 'total': item_total,
+                        'product_id': product_id
+                    })
+
+                for item in products_list:
+                    cursor.execute(
+                        "UPDATE products SET stock = stock - ? WHERE id = ?",
+                        (item['quantity'], item['product_id'])
+                    )
+
+                products_json_list = [{k: v for k, v in p.items() if k != 'product_id'} for p in products_list]
+                products_json = json.dumps(products_json_list, ensure_ascii=False)
+
+                cursor.execute(
+                    'INSERT INTO orders (user_id, user_name, products, total_amount, email, phone, address, payment_method, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                    (user_id, user_name, products_json, total_amount, state.get('email'), state.get('phone'), state.get('address'), state.get('payment'), 'pending')
+                )
+                order_id = cursor.lastrowid
+
+                cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
+        
+        except sqlite3.Error as e:
+            logger.error(f"Database transaction failed: {e}")
             if target_message:
-                await target_message.reply_text("❌ The cart is empty!")
-            self.user_states.pop(user_id, None)
+                await target_message.reply_text("An error occurred while placing the order. Please try again.")
             return None
 
-        products_list = []
-        total_amount = 0
-        for name, price, quantity, emoji in cart_items:
-            item_total = price * quantity
-            total_amount += item_total
-            products_list.append({'name': name, 'price': price, 'quantity': quantity, 'emoji': emoji if emoji else "", 'total': item_total})
-        products_json = json.dumps(products_list, ensure_ascii=False)
-
-        cursor.execute(
-            'INSERT INTO orders (user_id, user_name, products, total_amount, email, phone, address, payment_method, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            (user_id, user_name, products_json, total_amount, state.get('email'), state.get('phone'), state.get('address'), state.get('payment'), 'pending')
-        )
-        order_id = cursor.lastrowid
-        cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-        self.conn.commit()
+        # This part runs only on successful transaction
         self.user_states.pop(user_id, None)
 
-        if send_message:
-            products_text = "".join(f"{item['emoji']} {item['name']} × {item['quantity']} = {item['total']}$\n" for item in products_list)
-            order_text = f"""
-✅ **Order #{order_id} has been successfully placed!**
-
-👤 **Customer:** {user_name}
-📧 **Email:** {state['email']}
-📞 **Phone:** {state.get('phone', '—')}
-📍 **Address:** {state['address']}
-💳 **Payment:** {state.get('payment')}
-
-📦 **Products:**
-{products_text}
-💳 **Total amount: {total_amount}$**
-
-📋 **Status:** In progress
-🕐 **Date:** {datetime.now().strftime('%d.%m.%Y %H:%M')}
-
-We will contact you shortly!
-            """
-            keyboard = [[InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]]
-            if target_message:
-                await target_message.reply_text(order_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-
+        # Send notification to admin
         if ADMIN_ID != user_id:
             admin_products_text = "".join(f"{item['emoji']} {item['name']} × {item['quantity']} = {item['total']}$\n" for item in products_list)
             admin_text = f"""
@@ -748,10 +1033,13 @@ We will contact you shortly!
                 await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode=ParseMode.MARKDOWN)
             except Exception as e:
                 logger.warning(f"Error sending to admin: {e}")
-        return order_id
+        
+        return order_id, products_list, total_amount
 
     # -------------------- USER ORDERS --------------------
     async def show_my_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         user_id = update.effective_user.id
         self.conn.row_factory = sqlite3.Row
@@ -792,6 +1080,8 @@ We will contact you shortly!
         await query.answer()
 
     async def handle_my_orders_pagination(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         await query.answer()
         match = re.match(r'^my_orders_page_(\d+)$', query.data)
@@ -800,6 +1090,8 @@ We will contact you shortly!
             await self.show_my_orders(update, context, page)
 
     async def show_order_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         """Fetch and display order details for both admin and regular users."""
         query = getattr(update, "callback_query", None)
         message = getattr(update, "message", None)
@@ -836,12 +1128,10 @@ We will contact you shortly!
         status_emoji = {'pending': '🟡 In processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent', 'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
 
         order_text = f"📋 **Order #{order_id_val}**\n\n👤 **Customer:** {user_name}\n"
+        order_text += f"📧 **Email:** {order['email'] or '—'}\n"
+        order_text += f"📞 **Phone:** {phone}\n"
         if uid == ADMIN_ID:
-            order_text += f"📧 **Email:** {order['email'] or '—'}\n"
-            order_text += f"📞 **Phone:** {phone}\n"
             order_text += f"💳 **Payment method:** {order['payment_method'] or '—'}\n"
-        else:
-             order_text += f"📞 **Phone:** {phone}\n"
         order_text += f"📍 **Address:** {address}\n\n📦 **Products:**\n"
 
         for product in products:
@@ -874,6 +1164,8 @@ We will contact you shortly!
             await message.reply_text(order_text, reply_markup=reply_markup, parse_mode="Markdown")
 
     async def user_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         query = update.callback_query
         match = re.match(r"user_cancel_(\d+)", query.data)
         if not match:
@@ -908,6 +1200,29 @@ We will contact you shortly!
         if update.effective_user.id != ADMIN_ID:
             await update.callback_query.answer("❌ Access denied")
             return
+        
+        text = "👑 **ADMIN PANEL**\n\n👇 **Select an action:**"
+        keyboard = [
+            [InlineKeyboardButton("📊 Statistics", callback_data="admin_statistics")],
+            [InlineKeyboardButton("👥 User Management", callback_data="admin_user_management")],
+            [InlineKeyboardButton("📈 Revenue Chart", callback_data="admin_revenue_chart")],
+            [InlineKeyboardButton("📦 Commodity management", callback_data="admin_products")],
+            [InlineKeyboardButton("📋 All orders", callback_data="admin_all_orders")],
+            [InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]
+        ]
+        
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+    # -------------------- ADMIN: STATISTICS --------------------
+    async def admin_statistics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID:
+            await update.callback_query.answer("❌ Access denied")
+            return
+
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM orders")
         total_orders = cursor.fetchone()[0]
@@ -917,51 +1232,130 @@ We will contact you shortly!
         total_revenue = cursor.fetchone()[0] or 0
         cursor.execute("SELECT COUNT(*) FROM products")
         total_products = cursor.fetchone()[0]
-        text = f"""
-👑 **ADMIN PANEL**
+        
+        # Most popular products
+        cursor.execute("SELECT products FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered')")
+        product_counts = {}
+        for row in cursor.fetchall():
+            products = json.loads(row[0])
+            for product in products:
+                product_name = product.get("name", "Unknown")
+                quantity = product.get("quantity", 0)
+                if product_name in product_counts:
+                    product_counts[product_name] += quantity
+                else:
+                    product_counts[product_name] = quantity
+        
+        popular_products = sorted(product_counts.items(), key=lambda item: item[1], reverse=True)
+        popular_products_text = "\n".join([f"• {name}: {count}" for name, count in popular_products[:5]])
 
-📊 **Statistics:**
+        text = f"""
+👑 **ADMIN PANEL - STATISTICS**
+
+📊 **General:**
 • 📋 Total orders: {total_orders}
 • 🟡 New orders: {pending_orders}
 • 💰 Revenue: {total_revenue}$
 • 📦 Products in catalog: {total_products}
 
-👇 **Select an action:**
+🏆 **Most Popular Products:**
+{popular_products_text}
         """
+        
         keyboard = [
-            [InlineKeyboardButton("📋 New orders", callback_data="admin_orders")],
-            [InlineKeyboardButton("📦 Commodity management", callback_data="admin_products")],
-            [InlineKeyboardButton("📊 All orders", callback_data="admin_all_orders")],
-            [InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]
+            [InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")]
         ]
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
-    async def admin_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # -------------------- ADMIN: USER MANAGEMENT --------------------
+    async def admin_user_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID:
+            await update.callback_query.answer("❌ Access denied")
             return
-        self.conn.row_factory = sqlite3.Row
+        
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, user_name, total_amount, created_at, products FROM orders WHERE status = 'pending' ORDER BY created_at DESC")
-        orders = cursor.fetchall()
-        if not orders:
-            keyboard = [[InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")]]
-            await update.callback_query.edit_message_text("📋 **No new orders**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        cursor.execute("SELECT user_id, blocked FROM users")
+        users = cursor.fetchall()
+        
+        keyboard = []
+        for user_id, blocked in users:
+            action = "Unblock" if blocked else "Block"
+            try:
+                user = await context.bot.get_chat(user_id)
+                user_name = user.first_name
+            except Exception:
+                user_name = f"User {user_id}"
+
+            keyboard.append([
+                InlineKeyboardButton(user_name, callback_data=f"admin_user_details_{user_id}"),
+                InlineKeyboardButton(action, callback_data=f"admin_user_block_{user_id}_{1-blocked}")
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")])
+        
+        await update.callback_query.edit_message_text(
+            "👥 **User Management**",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+    async def admin_user_block(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID:
+            await update.callback_query.answer("❌ Access denied")
+            return
+        
+        _, _, _, user_id, block_status = update.callback_query.data.split("_")
+        user_id = int(user_id)
+        block_status = int(block_status)
+        
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE users SET blocked = ? WHERE user_id = ?", (block_status, user_id))
+        self.conn.commit()
+        
+        if block_status:
+            cursor.execute("INSERT OR IGNORE INTO blocked_users (user_id) VALUES (?)", (user_id,))
+        else:
+            cursor.execute("DELETE FROM blocked_users WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+        
+        await self.admin_user_management(update, context)
+
+    # -------------------- ADMIN: REVENUE CHART --------------------
+    async def admin_revenue_chart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID:
+            await update.callback_query.answer("❌ Access denied")
             return
 
-        text = "📋 **New orders:**\n\n"
-        keyboard = []
-        for order in orders:
-            products = json.loads(order["products"] or "[]")
-            product_line = ""
-            if products:
-                first_product = products[0]
-                name = first_product.get('name', 'Unknown')
-                product_line = f"| {name}"
-            text += f"🧾 **#{order['id']}** {product_line}\n💰 {order['total_amount']}$ | {order['created_at'][:16]}\n\n"
-            keyboard.append([InlineKeyboardButton(f"📋 Review #{order['id']}", callback_data=f"order_details_{order['id']}")])
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT strftime('%Y-%m', created_at) as month, SUM(total_amount) FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered') GROUP BY month ORDER BY month")
+        
+        revenue_by_month = cursor.fetchall()
+        
+        chart_text = "📈 **Revenue Chart (Monthly)**\n\n"
+        if not revenue_by_month:
+            chart_text += "No data available."
+        else:
+            max_revenue = max([r[1] for r in revenue_by_month])
+            for month, revenue in revenue_by_month:
+                bar = "█" * int((revenue / max_revenue) * 20)
+                chart_text += f"`{month}` | {bar} {revenue:.2f}$\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")]
+        ]
+        
+        await update.callback_query.edit_message_text(
+            chart_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
-        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_panel")])
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+
 
     async def admin_all_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
         query = update.callback_query
@@ -1195,14 +1589,69 @@ We will contact you shortly!
 
     # -------------------- TEXT HANDLERS --------------------
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
         user_id = update.effective_user.id
         if user_id in self.user_states:
             # Delegate to specific handlers based on state
             await self.handle_admin_product_input(update, context)
             await self.handle_checkout_input(update, context)
+            await self.handle_profile_input(update, context)
         else:
             # Fallback for messages outside of a specific flow
             await update.message.reply_text("Use /start for navigating the store! 🛍️")
+
+    async def handle_profile_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context):
+            return
+        user_id = update.effective_user.id
+        if user_id not in self.user_states:
+            return
+
+        state = self.user_states[user_id]
+        text = update.message.text.strip()
+        
+        # Ensure user exists in the database
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        self.conn.commit()
+
+
+        if state['step'] == 'waiting_phone_profile':
+            phone = text.replace(" ", "").replace("-", "")
+            if not re.fullmatch(r"\+380\d{9}", phone):
+                await update.message.reply_text(
+                    "❌ Incorrect phone format. Only Ukrainian numbers (+380XXXXXXXXX) are accepted.\n"
+                    "Please type your phone as +380XXXXXXXXX.\n"
+                    "Example: +380501234567"
+                )
+                return
+            cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (phone, user_id))
+            self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await update.message.reply_text("✅ Phone number updated!")
+            await self.show_profile(update, context)
+
+        elif state['step'] == 'waiting_address_profile':
+            if len(text) < 10:
+                await update.message.reply_text("❌ The address is too short. Please enter the full address.")
+                return
+            cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
+            self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await update.message.reply_text("✅ Address updated!")
+            await self.show_profile(update, context)
+
+        elif state['step'] == 'waiting_email_profile':
+            email = text
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                await update.message.reply_text("❌ Please enter a valid email address.")
+                return
+            cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (email, user_id))
+            self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await update.message.reply_text("✅ Email updated!")
+            await self.show_profile(update, context)
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -1304,6 +1753,10 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog$'))
     application.add_handler(CallbackQueryHandler(bot.show_category, pattern=r'^category_'))
     application.add_handler(CallbackQueryHandler(bot.show_product, pattern=r'^product_'))
+    application.add_handler(CallbackQueryHandler(bot.show_profile, pattern=r'^my_profile$'))
+    application.add_handler(CallbackQueryHandler(bot.edit_phone, pattern=r'^edit_phone$'))
+    application.add_handler(CallbackQueryHandler(bot.edit_email, pattern=r'^edit_email$'))
+    application.add_handler(CallbackQueryHandler(bot.edit_address, pattern=r'^edit_address$'))
     application.add_handler(CallbackQueryHandler(bot.show_help, pattern=r'^help$'))
     application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^cart$'))
     application.add_handler(CallbackQueryHandler(bot.add_to_cart, pattern=r'^add_to_cart_'))
@@ -1311,6 +1764,7 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.cart_operations, pattern=r'^cart_(add|remove)_'))
     application.add_handler(CallbackQueryHandler(bot.clear_cart, pattern=r'^clear_cart$'))
     application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
+    application.add_handler(CallbackQueryHandler(bot.use_profile_data, pattern=r'^use_profile_data$'))
     application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank)$'))
     application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^back_to_'))
     application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
@@ -1319,7 +1773,10 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.show_order_details, pattern=r'^order_details_'))
     application.add_handler(CallbackQueryHandler(bot.user_cancel_order, pattern=r'^user_cancel_'))
     application.add_handler(CallbackQueryHandler(bot.admin_panel, pattern=r'^admin_panel$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_orders, pattern=r'^admin_orders$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_statistics, pattern=r'^admin_statistics$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
+    application.add_handler(CallbackQueryHandler(bot.admin_revenue_chart, pattern=r'^admin_revenue_chart$'))
     application.add_handler(CallbackQueryHandler(bot.admin_all_orders, pattern=r'^admin_all_orders$'))
     application.add_handler(CallbackQueryHandler(bot.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
