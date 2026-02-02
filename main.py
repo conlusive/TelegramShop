@@ -2487,31 +2487,30 @@ Please contact us using the details above!
         query = update.callback_query
 
         cursor = self.conn.cursor()
-        # Шукаємо всі унікальні категорії
         cursor.execute("SELECT DISTINCT category FROM products")
         categories = [row[0] for row in cursor.fetchall() if row[0]]
 
         if not categories:
             text = "📂 **Product Management**\n\nNo products found. Start by creating one!"
             keyboard = [
-                [InlineKeyboardButton("➕ Create Product", callback_data="admin_create_product")],
-                [InlineKeyboardButton("🔙 Back to Menu", callback_data="admin_menu")]
+                # 👇 БУЛО: admin_create_product -> СТАЛО: admin_add_product (бо такий хендлер у вас в main)
+                [InlineKeyboardButton("➕ Create Product", callback_data="admin_add_product")],
+                # 👇 БУЛО: admin_menu -> СТАЛО: admin_panel
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="admin_panel")]
             ]
         else:
             text = "📂 **Select a Category to manage:**"
             keyboard = []
             for cat in categories:
-                # Кнопка веде на першу сторінку товарів цієї категорії
-                # Формат: admin_list_cat_{CATEGORY}_1
                 keyboard.append([InlineKeyboardButton(f"📂 {cat}", callback_data=f"admin_list_cat_{cat}_1")])
 
-            keyboard.append([InlineKeyboardButton("➕ Create Product", callback_data="admin_create_product")])
-            keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="admin_menu")])
+            # 👇 Тут теж виправляємо
+            keyboard.append([InlineKeyboardButton("➕ Create Product", callback_data="admin_add_product")])
+            keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="admin_panel")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         if query:
-            # Видаляємо старе (щоб не було нагромадження) або редагуємо
             try:
                 await query.message.delete()
             except:
@@ -4043,78 +4042,137 @@ def main():
 
     bot = OnlineShopBot()
     application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CallbackQueryHandler(bot.show_category_products, pattern=r'^category_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_type_selection, pattern=r'^admin_add_variant_type_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
-    # --- COMMAND HANDLERS ---
+
+    # =========================================================================
+    # 1. БАЗОВІ КОМАНДИ ТА ПОВІДОМЛЕННЯ
+    # =========================================================================
     application.add_handler(CommandHandler("start", bot.start))
 
-
-
-    # --- MESSAGE HANDLERS ---
     application.add_handler(MessageHandler(filters.PHOTO, bot.handle_admin_product_input))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text))
     application.add_handler(MessageHandler(filters.CONTACT, bot.handle_checkout_input))
+    # Текстові повідомлення (має бути нижче команд, щоб не перехоплювати /start)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text))
 
-    # --- CALLBACK QUERY HANDLERS ---
+    # =========================================================================
+    # 2. КЛІЄНТСЬКА ЧАСТИНА (Меню, Каталог, Профіль)
+    # =========================================================================
     application.add_handler(CallbackQueryHandler(bot.show_main_menu, pattern=r'^main_menu$'))
+    application.add_handler(CallbackQueryHandler(bot.show_help, pattern=r'^help$'))
+
+    # Каталог і категорії
     application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog$'))
-    application.add_handler(CallbackQueryHandler(bot.show_category, pattern=r'^category_'))
+    # 👇 Важливо: show_category_products (з пагінацією) має бути вище за звичайну категорію, якщо патерни схожі
+    application.add_handler(CallbackQueryHandler(bot.show_category_products, pattern=r'^category_'))
     application.add_handler(CallbackQueryHandler(bot.show_product, pattern=r'^product_'))
+
+    # Профіль
     application.add_handler(CallbackQueryHandler(bot.show_profile, pattern=r'^my_profile$'))
     application.add_handler(CallbackQueryHandler(bot.edit_phone, pattern=r'^edit_phone$'))
     application.add_handler(CallbackQueryHandler(bot.edit_email, pattern=r'^edit_email$'))
     application.add_handler(CallbackQueryHandler(bot.edit_address, pattern=r'^edit_address$'))
-    application.add_handler(CallbackQueryHandler(bot.show_help, pattern=r'^help$'))
+    application.add_handler(CallbackQueryHandler(bot.profile_delete_menu, pattern=r'^profile_delete_menu$'))
+    application.add_handler(CallbackQueryHandler(bot.handle_delete_profile_data, pattern=r'^delete_profile_'))
+
+    # =========================================================================
+    # 3. КОШИК ТА ОФОРМЛЕННЯ (Checkout)
+    # =========================================================================
     application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^cart$'))
-    application.add_handler(CallbackQueryHandler(bot.add_to_cart, pattern=r'^add_to_cart_'))
-    application.add_handler(CallbackQueryHandler(bot.remove_from_cart, pattern=r'^remove_from_cart_'))
-    application.add_handler(CallbackQueryHandler(bot.cart_operations, pattern=r'^cart_(add|remove)_'))
     application.add_handler(CallbackQueryHandler(bot.clear_cart, pattern=r'^clear_cart$'))
+
+    # Логіка додавання/видалення
+    application.add_handler(CallbackQueryHandler(bot.handle_add_to_cart_click, pattern=r'^add_to_cart_'))
+    application.add_handler(CallbackQueryHandler(bot.remove_from_cart, pattern=r'^remove_from_cart_'))
+    application.add_handler(CallbackQueryHandler(bot.handle_cart_actions, pattern=r'^cart_item_'))  # Нові кнопки +/-
+    application.add_handler(
+        CallbackQueryHandler(bot.cart_operations, pattern=r'^cart_(add|remove)_'))  # Старі (якщо лишились)
+
+    # Оформлення замовлення
     application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
     application.add_handler(CallbackQueryHandler(bot.use_profile_data, pattern=r'^use_profile_data$'))
     application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank)$'))
     application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^back_to_'))
     application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
+
+    # Клієнтські замовлення
     application.add_handler(CallbackQueryHandler(bot.show_my_orders, pattern=r'^my_orders$'))
     application.add_handler(CallbackQueryHandler(bot.handle_my_orders_pagination, pattern=r'^my_orders_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.show_order_details, pattern=r'^order_details_'))
     application.add_handler(CallbackQueryHandler(bot.user_cancel_order, pattern=r'^user_cancel_'))
+
+    # =========================================================================
+    # 4. АДМІН-ПАНЕЛЬ (Загальне)
+    # =========================================================================
     application.add_handler(CallbackQueryHandler(bot.admin_panel, pattern=r'^admin_panel$'))
     application.add_handler(CallbackQueryHandler(bot.admin_statistics, pattern=r'^admin_statistics$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
     application.add_handler(CallbackQueryHandler(bot.admin_revenue_chart, pattern=r'^admin_revenue_chart$'))
+
+    # Управління користувачами
+    application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
+    application.add_handler(CallbackQueryHandler(bot.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
+
+    # Управління всіма замовленнями
     application.add_handler(CallbackQueryHandler(bot.admin_all_orders, pattern=r'^admin_all_orders$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
-    application.add_handler(CallbackQueryHandler(bot.admin_products, pattern=r'^admin_products$'))
+    application.add_handler(
+        CallbackQueryHandler(bot.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
+    application.add_handler(
+        CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
+    application.add_handler(
+        CallbackQueryHandler(bot.admin_handle_order_callback, pattern=r'^admin_order_'))  # Accept/Reject
+
+    # =========================================================================
+    # 5. АДМІН: УПРАВЛІННЯ ТОВАРАМИ (Нова структура)
+    # =========================================================================
+
+    # 👇 ГОЛОВНЕ: Кнопка "Products" тепер відкриває КАТЕГОРІЇ
+    application.add_handler(CallbackQueryHandler(bot.admin_categories_menu, pattern='^admin_products$'))
+
+    # Список товарів у категорії (пагінація)
+    application.add_handler(CallbackQueryHandler(bot.admin_products_list, pattern=r'^admin_list_cat_'))
+
+    # Меню конкретного товару
+    application.add_handler(CallbackQueryHandler(bot.admin_product_menu, pattern=r'^admin_prod_'))
+    application.add_handler(CallbackQueryHandler(bot.admin_view_product,
+                                                 pattern=r'^admin_view_product_'))  # Старий вьювер, про всяк випадок
+
+    # Створення та Редагування
     application.add_handler(CallbackQueryHandler(bot.admin_add_product, pattern=r'^admin_add_product$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_view_product, pattern=r'^admin_view_product_'))
     application.add_handler(CallbackQueryHandler(bot.admin_edit_product, pattern=r'^admin_edit_product_'))
     application.add_handler(CallbackQueryHandler(bot.admin_edit_field, pattern=r'^admin_edit_field_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
+
+    # Видалення
     application.add_handler(CallbackQueryHandler(bot.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
-    application.add_handler(CallbackQueryHandler(bot.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
+    application.add_handler(
+        CallbackQueryHandler(bot.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
+
+    # Фото
     application.add_handler(CallbackQueryHandler(bot.admin_image_menu, pattern=r'^admin_image_menu_'))
     application.add_handler(CallbackQueryHandler(bot.admin_image_set_prompt, pattern=r'^admin_image_set_'))
     application.add_handler(CallbackQueryHandler(bot.admin_image_delete, pattern=r'^admin_image_delete_'))
-    application.add_handler(CallbackQueryHandler(bot.profile_delete_menu, pattern=r'^profile_delete_menu$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_delete_profile_data, pattern=r'^delete_profile_(phone|address|email)$'))
+
+    # Розвилка (Простий / Варіанти) та Візард
+    application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
+    application.add_handler(CallbackQueryHandler(bot.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
+
+    # =========================================================================
+    # 6. ЛОГІКА ВАРІАНТІВ (Вибір кольору/розміру)
+    # =========================================================================
+    # Адмін вибирає тип варіанту (Size, Color...)
+    application.add_handler(
+        CallbackQueryHandler(bot.admin_handle_variant_type_selection, pattern=r'^admin_add_variant_type_'))
+    # Адмін тисне "Назад" у виборі типів
+    application.add_handler(
+        CallbackQueryHandler(bot.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
+    # Загальний хендлер для кнопок варіантів (клієнт і адмін, якщо є спільні)
     application.add_handler(CallbackQueryHandler(bot.handle_variant_type_selection, pattern=r'^vartype_'))
+
+    # Клієнт вибирає конкретну опцію (128GB)
     application.add_handler(CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^var_sel_'))
     application.add_handler(CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^cancel_selection$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_add_to_cart_click, pattern=r'^add_to_cart_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_handle_order_callback, pattern=r'^admin_order_'))
-    application.add_handler(CallbackQueryHandler(bot.handle_cart_actions, pattern=r'^cart_item_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_categories_menu, pattern='^admin_products$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_products_list, pattern=r'^admin_list_cat_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_product_menu, pattern=r'^admin_prod_'))
 
-
-    # --- ERROR HANDLER ---
+    # =========================================================================
+    # ЗАПУСК
+    # =========================================================================
     application.add_error_handler(bot.error_handler)
 
     print("🛍️ Online store bot launched!")
