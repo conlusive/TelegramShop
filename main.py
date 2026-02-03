@@ -2790,62 +2790,82 @@ Please contact us using the details above!
             (user_id, per_page, offset))
         orders = cursor.fetchall()
 
-        text = f"📋 <b>Your orders</b> (Page {page + 1}/{total_pages}):\n\n"
+        # Шапка
+        text = f"📋 <b>Your orders</b> (Page {page + 1}/{total_pages}):\n"
+        text += "➖➖➖➖➖➖➖➖➖➖➖➖➖➖\n\n"
+
         keyboard = []
-        status_emoji = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent',
-                        'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
 
-        for order in orders:
-            raw_products = order["products"]
-            products = []
-            try:
-                products = json.loads(raw_products) if raw_products else []
-            except:
-                if raw_products:
-                    for line in str(raw_products).split('\n'):
-                        if line.strip():
-                            products.append({'name': line, 'emoji': '📦', 'quantity': 1})
+        # --- ФІКСОВАНИЙ ЦИКЛ (5 слотів) ---
+        for i in range(per_page):
+            if i < len(orders):
+                order = orders[i]
+                raw_products = order["products"]
+                products = []
+                try:
+                    products = json.loads(raw_products) if raw_products else []
+                except:
+                    if raw_products:
+                        for line in str(raw_products).split('\n'):
+                            if line.strip(): products.append({'name': line, 'emoji': '📦', 'quantity': 1})
 
-            fmt_date = self.format_date(order['created_at'])
-            text += f"🧾 <b>Order #{order['id']}</b>\n"
+                fmt_date = self.format_date(order['created_at'])
 
-            for i, p in enumerate(products):
-                if i >= 3:
-                    text += f"   ... and {len(products) - 3} more\n"
-                    break
+                # Формуємо список товарів з ЇХНІМИ емодзі
+                product_display_list = []
+                for p in products:
+                    p_name = p.get('name', 'Product')
+                    # Чистимо назву
+                    p_name = re.sub(r'\([A-Za-z]+:\s*', '(', p_name)
+                    p_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', p_name)
 
-                name = p.get('name', 'Product')
-                name = re.sub(r'\([A-Za-z]+:\s*', '(', name)
-                name = re.sub(r'\s*\(?x\d+\)?\)*$', '', name)
+                    # 🔥 БЕРЕМО ЕМОДЗІ ТОВАРУ
+                    p_emoji = p.get('emoji', '📦')
 
-                qty = p.get('quantity', 1)
-                emoji = p.get('emoji', '📦')
+                    product_display_list.append(f"{p_emoji} {p_name}")
 
-                opts = p.get('selected_options', {})
-                opts_str = ""
-                if opts and isinstance(opts, dict):
-                    opts_vals = [str(v) for k, v in opts.items()]
-                    opts_str = f" ({', '.join(opts_vals)})"
+                # Об'єднуємо в один рядок: "📱 iPhone 15, 🔋 Powerbank"
+                products_str = ", ".join(product_display_list)
 
-                text += f"   {emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty}\n"
+                # Обрізаємо, якщо занадто довго (щоб не ламало ширину)
+                if len(products_str) > 35:
+                    products_str = products_str[:35] + "..."
 
-            text += f"💰 <b>{order['total_amount']}$</b> | {status_emoji.get(order['status'], order['status'])}\n"
-            text += f"📅 {fmt_date}\n\n"
+                # === ВИВІД БЛОКУ ===
+                # 1. Номер
+                text += f"🆔 <b>Order #{order['id']}</b>\n"
 
-            # 🔥 ВАЖЛИВО: Передаємо поточну сторінку (page) в callback_data
-            keyboard.append(
-                [InlineKeyboardButton(f"Details #{order['id']}", callback_data=f"order_details_{order['id']}_{page}")])
+                # 2. Товари (Вже з різними емодзі)
+                text += f"{self.escape_html(products_str)}\n"
+
+                # 3. Ціна | Статус
+                text += f"💰 <b>{order['total_amount']}$</b> | {order['status'].title()}\n"
+
+                # 4. Дата
+                text += f"📅 {fmt_date}\n"
+
+                text += "〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️〰️\n"
+
+                keyboard.append([InlineKeyboardButton(f"📄 Details #{order['id']}",
+                                                      callback_data=f"order_details_{order['id']}_{page}")])
+
+            else:
+                # ПУСТИЙ СЛОТ
+                text += "\n\n\n\n\n"
+                keyboard.append([InlineKeyboardButton(" ", callback_data="ignore")])
 
         nav = []
         if page > 0: nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"my_orders_page_{page - 1}"))
         if page + 1 < total_pages: nav.append(
             InlineKeyboardButton("Next ➡️", callback_data=f"my_orders_page_{page + 1}"))
         if nav: keyboard.append(nav)
+
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="main_menu")])
 
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-        except:
+        except Exception as e:
+            if "Message is not modified" in str(e): return
             try:
                 await query.message.delete()
             except:
