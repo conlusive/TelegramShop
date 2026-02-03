@@ -46,7 +46,6 @@ class OnlineShopBot:
         self.conn = sqlite3.connect('shop.db', check_same_thread=False)
         cursor = self.conn.cursor()
 
-        # 1. Створюємо таблицю products, якщо її немає
         cursor.execute('''
                        CREATE TABLE IF NOT EXISTS products
                        (
@@ -84,16 +83,13 @@ class OnlineShopBot:
                        )
                        ''')
 
-        # 2. Add missing columns to products
         self._add_column_if_not_exists(cursor, "products", "emoji", "TEXT")
         self._add_column_if_not_exists(cursor, "products", "image_url", "TEXT")
         self._add_column_if_not_exists(cursor, "products", "variants", "TEXT")
 
-        # 3. Оновлюємо таблицю кошика (Cart)
         try:
             cursor.execute("SELECT selected_options FROM cart LIMIT 1")
         except Exception:
-            # Якщо колонки немає - перестворюємо таблицю
             cursor.execute("DROP TABLE IF EXISTS cart")
             cursor.execute('''
                            CREATE TABLE cart
@@ -107,7 +103,6 @@ class OnlineShopBot:
                            ''')
             print("✅ Cart table updated!")
 
-        # 4. Створюємо інші таблиці (Orders, Users)
         cursor.execute('''
                        CREATE TABLE IF NOT EXISTS orders
                        (
@@ -149,7 +144,7 @@ class OnlineShopBot:
                        )
                        ''')
 
-        # Migrations for orders
+
         self._add_column_if_not_exists(cursor, "orders", "payment_method", "TEXT")
         self._add_column_if_not_exists(cursor, "orders", "email", "TEXT")
 
@@ -173,7 +168,6 @@ class OnlineShopBot:
                        )
                        ''')
 
-        # Migrations for users
         self._add_column_if_not_exists(cursor, "users", "email", "TEXT")
         self._add_column_if_not_exists(cursor, "users", "blocked", "INTEGER DEFAULT 0")
 
@@ -202,7 +196,7 @@ class OnlineShopBot:
             bold_start, bold_end = "<b>", "</b>"
             escaper = self.escape_html
             product_line_format = "▫️ {emoji} {name}{opts}\n   {quantity} x {price}$ = <b>{total}$</b>\n"
-        else:  # markdown
+        else:
             bold_start, bold_end = "**", "**"
             escaper = self.escape_md
             product_line_format = "{emoji} {name}{opts}\n   {quantity} x {price}$ = {total}$\n"
@@ -237,14 +231,12 @@ class OnlineShopBot:
             f"Thank you for shopping with us! 🛍️"
         )
 
-        # 👇 ДОДАЙТЕ ЦЮ ФУНКЦІЮ В КЛАС OnlineShopBot 👇
+
     def escape_md(self, text):
             """Екранує спецсимволи Markdown (щоб імена типу Nazar_K не ламали бота)"""
             if not text: return ""
-            # Замінюємо символи, які Телеграм сприймає як форматування
-            return str(text).replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
 
-            # 👇 НОВА ФУНКЦІЯ: Розумний підрахунок ціни 👇
+            return str(text).replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
 
     def calculate_item_price(self, base_price, variants_json, selected_options_json):
         """
@@ -264,11 +256,11 @@ class OnlineShopBot:
             for key, val in selected_opts.items():
                 if key in variants_data:
                     group = variants_data[key]
-                    # Перевіряємо, чи є ціна у цьому варіанті
+
                     if isinstance(group, dict) and val in group:
                         option_data = group[val]
                         if isinstance(option_data, dict) and 'price' in option_data:
-                            # Знайшли спец-ціну!
+
                             final_price = float(option_data['price'])
         except Exception as e:
             print(f"Error calculating price: {e}")
@@ -294,20 +286,19 @@ class OnlineShopBot:
         Працює і для нових замовлень, і для старих з бази.
         """
         try:
-            # Якщо час прийшов рядком з бази (наприклад "2026-02-01 14:00:00")
+
             if isinstance(date_input, str):
-                # Відкидаємо мілісекунди, якщо є
+
                 if "." in date_input:
                     date_input = date_input.split(".")[0]
                 dt = datetime.strptime(date_input, "%Y-%m-%d %H:%M:%S")
             else:
-                dt = date_input  # Якщо це вже об'єкт часу
+                dt = date_input
 
-            # 1. Якщо у дати немає часового поясу, вважаємо що це UTC (база даних)
+
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=ZoneInfo("UTC"))
 
-            # 2. Конвертуємо у ТВІЙ налаштований пояс (BOT_TIMEZONE)
             local_dt = dt.astimezone(ZoneInfo(BOT_TIMEZONE))
 
             return local_dt.strftime("%d.%m.%Y %H:%M")
@@ -329,7 +320,6 @@ class OnlineShopBot:
             return True
         return False
 
-        # === НОВА ФУНКЦІЯ (Додаємо її, щоб бот вмів повертати товар) ===
 
     def restore_stock(self, order_id):
         """Повертає товари на склад при скасуванні замовлення."""
@@ -339,31 +329,27 @@ class OnlineShopBot:
 
         if result and result[0]:
             try:
-                # Пробуємо розпарсити як JSON (новий формат)
                 products = json.loads(result[0])
             except:
-                # Якщо це старий текстовий формат - пропустити
                 return
 
             for item in products:
-                # Якщо це просто рядок (старий формат) - пропускаємо
+
                 if isinstance(item, str): continue
 
-                product_id = item.get('product_id')  # Тепер create_order зберігає ID!
+                product_id = item.get('product_id')
                 quantity = item.get('quantity')
                 sel_opts = item.get('selected_options', {})
 
-                # Якщо у нас немає ID товару в історії (старі замовлення), пробуємо знайти за назвою
                 if not product_id and 'name' in item:
                     cursor.execute("SELECT id FROM products WHERE name = ?", (item['name'],))
                     res = cursor.fetchone()
                     if res: product_id = res[0]
 
                 if product_id and quantity:
-                    # 1. Повертаємо загальний сток
+
                     cursor.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (quantity, product_id))
 
-                    # 2. Повертаємо сток варіантів
                     if sel_opts:
                         cursor.execute("SELECT variants FROM products WHERE id = ?", (product_id,))
                         row = cursor.fetchone()
@@ -395,7 +381,6 @@ class OnlineShopBot:
             self.conn.commit()
             logger.info(f"Stock restored for order #{order_id}")
 
-        # === ОНОВЛЕНА ФУНКЦІЯ (Замінює твою стару user_cancel_order) ===
 
     async def user_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
@@ -421,10 +406,9 @@ class OnlineShopBot:
             await query.answer("❌ Order has already been delivered or canceled")
             return
 
-        # Повертаємо сток
+
         self.restore_stock(order_id)
 
-        # Оновлюємо статус
         cursor.execute("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
         self.conn.commit()
 
@@ -436,7 +420,7 @@ class OnlineShopBot:
 
         await query.answer("✅ Order canceled")
 
-        # 👇 ГОЛОВНА ЗМІНА: Повертаємо юзера назад в "Мої замовлення"
+
         await self.show_my_orders(update, context)
 
     # -------------------- KEYBOARD BUILDER --------------------
@@ -447,34 +431,29 @@ class OnlineShopBot:
         If User: Shows the standard customer layout with cart count.
         """
 
-        # --- 1. ОТРИМУЄМО КІЛЬКІСТЬ ТОВАРІВ У КОШИКУ ---
         try:
-            # Створюємо курсор, якщо self.conn доступний
+
             cursor = self.conn.cursor()
             cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ?", (user_id,))
             result = cursor.fetchone()
-            # Якщо результат None (кошик порожній), ставимо 0
             cart_count = result[0] if result and result[0] else 0
         except Exception as e:
             print(f"Error counting cart: {e}")
             cart_count = 0
 
-        # Формуємо текст кнопки
         cart_text = f"🛒 My cart ({cart_count})" if cart_count > 0 else "🛒 My cart"
 
-        # --- ВАРІАНТ ДЛЯ АДМІНА ---
         if int(user_id) == int(ADMIN_ID):
             keyboard = [
                 [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")],
                 [InlineKeyboardButton("🛍️ Product catalog", callback_data="catalog")],
                 [
-                    InlineKeyboardButton(cart_text, callback_data="cart"),  # <-- Тут теж показуємо кількість
+                    InlineKeyboardButton(cart_text, callback_data="cart"),
                     InlineKeyboardButton("👤 My profile", callback_data="my_profile")
                 ]
             ]
             return InlineKeyboardMarkup(keyboard)
 
-        # --- ВАРІАНТ ДЛЯ ЗВИЧАЙНОГО КЛІЄНТА ---
         keyboard = [
             [InlineKeyboardButton("🛍️ Product catalog", callback_data="catalog")],
             [InlineKeyboardButton(cart_text, callback_data="cart")],  # <-- ОНОВЛЕНА КНОПКА
@@ -503,11 +482,8 @@ class OnlineShopBot:
 
         user = update.effective_user
         user_id = user.id
-
-        # 👇 ЕКРАНУВАННЯ ІМЕНІ 👇
         safe_name = self.escape_md(user.first_name)
 
-        # --- ТЕКСТ ДЛЯ АДМІНА ---
         if int(user_id) == int(ADMIN_ID):
             welcome_text = (
                 f"👑 **Admin Panel**\n\n"
@@ -516,7 +492,6 @@ class OnlineShopBot:
                 f"👇 **Select an option from the dashboard:**"
             )
 
-        # --- ТЕКСТ ДЛЯ ПОКУПЦЯ ---
         else:
             welcome_text = (
                 f"🛍️ **Welcome to our store, {safe_name}!**\n\n"
@@ -531,13 +506,12 @@ class OnlineShopBot:
 
         reply_markup = self.build_main_keyboard(user.id)
 
-        # Відправка або редагування повідомлення
         if update.callback_query:
             try:
                 await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup,
                                                               parse_mode=ParseMode.MARKDOWN)
             except Exception:
-                pass  # Ігноруємо помилку, якщо текст не змінився
+                pass
         elif update.message:
             await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
 
@@ -578,8 +552,7 @@ Please contact us using the details above!
     async def show_catalog(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
 
-        # 1. Парсимо номер сторінки каталогу
-        # Формат: catalog_page_2
+
         page = 1
         if query.data.startswith("catalog_page_"):
             try:
@@ -620,8 +593,6 @@ Please contact us using the details above!
             res = cursor.fetchone()
             emo = res[0] if res and res[0] else "📂"
 
-            # 🔥 ВАЖЛИВО: Передаємо номер сторінки (page) в кнопку категорії
-            # Формат: category_Name_ProdPage_CatPage (1 = перша сторінка товарів, page = сторінка каталогу)
             keyboard.append([InlineKeyboardButton(f"{emo} {cat_name}", callback_data=f"category_{cat_name}_1_{page}")])
 
         nav = []
@@ -631,11 +602,11 @@ Please contact us using the details above!
 
         keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
 
-        # Використовуємо EDIT для стабільності (щоб не скакало)
+
         try:
             await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
         except:
-            # Тільки якщо не можна редагувати (наприклад, видалили фото) - шлемо нове
+
             try:
                 await query.message.delete()
             except:
@@ -647,7 +618,6 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # 1. Отримуємо ID та сторінки
         if product_id_override:
             product_id = product_id_override
             state = self.user_states.get(user_id, {})
@@ -671,31 +641,27 @@ Please contact us using the details above!
         product = cursor.fetchone()
         if not product: return
 
-        # --- СТАТУС СКЛАДУ ---
         stock = product['stock']
         stock_status = "✅ <b>In Stock</b>" if stock > 5 else (
             f"⚠️ <b>Low Stock</b> ({stock})" if stock > 0 else "❌ <b>Out of Stock</b>")
 
-        # --- ВАРІАНТИ ТА ЦІНА ---
         variants_display = ""
         base_price = product['price']
-        display_price = f"{base_price}$"  # За замовчуванням
+        display_price = f"{base_price}$"
 
         if product['variants']:
             try:
                 v_data = json.loads(product['variants'])
 
-                # 1. Формуємо список варіантів для відображення
                 for v_type, options in v_data.items():
                     opt_list = list(options.keys()) if isinstance(options, dict) else options
                     variants_display += f"\n🔹 <b>{v_type}:</b> {', '.join(map(str, opt_list))}"
 
-                # 2. Розраховуємо діапазон цін (from ... $)
                 all_prices = []
                 for v_type, options in v_data.items():
                     if isinstance(options, dict):
                         for opt, info in options.items():
-                            # Якщо у варіанта є своя ціна - беремо її, інакше - базову
+
                             if isinstance(info, dict) and 'price' in info:
                                 all_prices.append(float(info['price']))
                             else:
@@ -712,11 +678,9 @@ Please contact us using the details above!
             except Exception as e:
                 print(f"Price calc error: {e}")
 
-        # --- КОШИК ---
         cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
         in_cart = cursor.fetchone()[0] or 0
 
-        # Формування тексту
         text = (
             f"{product['emoji'] or '📦'} <b>{self.escape_html(product['name'])}</b>\n\n"
             f"{self.escape_html(product['description'] or 'No description.')}\n"
@@ -726,23 +690,18 @@ Please contact us using the details above!
             f"🛒 In Cart: <b>{in_cart}</b>"
         )
 
-        # --- КНОПКИ (2 РЯДКИ) ---
         keyboard = []
-
-        # Ряд 1: Мінус та Плюс
         keyboard.append([
             InlineKeyboardButton("➖", callback_data=f"prod_minus_{product_id}_{prod_page}_{cat_page}"),
             InlineKeyboardButton("➕", callback_data=f"prod_plus_{product_id}_{prod_page}_{cat_page}")
         ])
 
-        # Ряд 2: Кошик та Назад (Разом)
         cart_btn_text = f"🛒 Cart ({in_cart})" if in_cart > 0 else "🛒 Cart"
         keyboard.append([
             InlineKeyboardButton(cart_btn_text, callback_data="cart"),
             InlineKeyboardButton("🔙 Back", callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")
         ])
 
-        # Відправка повідомлення
         try:
             if product['image_url']:
                 await query.message.delete()
@@ -757,14 +716,12 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # 1. Витягуємо ID товару з кнопки "add_to_cart_123"
         try:
             product_id = int(query.data.replace("add_to_cart_", ""))
         except:
             await query.answer("❌ Error")
             return
 
-        # 2. Отримуємо дані про варіанти з бази
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
         cursor.execute("SELECT variants FROM products WHERE id = ?", (product_id,))
@@ -777,35 +734,30 @@ Please contact us using the details above!
             except:
                 pass
 
-        # 3. Якщо варіантів немає — одразу додаємо в кошик
         if not variants_data:
             await self.add_item_to_cart_db(update, context, product_id, None)
             return
 
-        # 4. СОРТУВАННЯ: Колір -> Розмір -> Інше
         priority_keys = ["color", "colour", "колір", "цвєт", "size", "розмір", "размер"]
 
         def sort_key(k):
             k_lower = k.lower()
-            # Шукаємо часткове співпадіння (щоб "Color of Item" теж було першим)
             for i, pk in enumerate(priority_keys):
                 if pk in k_lower:
                     return i
-            return 999  # Все інше в кінці
+            return 999
 
         sorted_keys = sorted(variants_data.keys(), key=sort_key)
 
-        # 5. Зберігаємо стан і починаємо опитування
         self.user_states[user_id] = {
             'step': 'selecting_variant',
             'product_id': product_id,
-            'variant_keys': sorted_keys,  # Вже відсортовані!
+            'variant_keys': sorted_keys,
             'current_key_index': 0,
             'variants_data': variants_data,
             'selected_options': {}
         }
 
-        # Запускаємо перше питання (вже з правильною чергою)
         await self.ask_next_variant(update, context)
 
     async def show_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -831,7 +783,6 @@ Please contact us using the details above!
             [InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_phone")],
             [InlineKeyboardButton("✏️ Edit Address", callback_data="edit_address")],
             [InlineKeyboardButton("✏️ Edit Email", callback_data="edit_email")],
-            # 👇 НОВА КНОПКА 👇
             [InlineKeyboardButton("🗑️ Delete Data", callback_data="profile_delete_menu")],
             [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
         ]
@@ -851,8 +802,6 @@ Please contact us using the details above!
         cursor = self.conn.cursor()
         cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
-
-        # Перевіряємо, що саме заповнено
         phone, address, email = user_data if user_data else (None, None, None)
 
         keyboard = []
@@ -877,8 +826,6 @@ Please contact us using the details above!
         query = update.callback_query
         data = query.data
         user_id = query.from_user.id
-
-        # Карта відповідності кнопки до поля в БД
         field_map = {
             "delete_profile_phone": ("phone", "Phone number"),
             "delete_profile_address": ("address", "Address"),
@@ -889,14 +836,12 @@ Please contact us using the details above!
 
         db_field, display_name = field_map[data]
 
-        # Видаляємо (ставимо NULL)
         cursor = self.conn.cursor()
         cursor.execute(f"UPDATE users SET {db_field} = NULL WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
         await query.answer(f"✅ {display_name} deleted!")
 
-        # Оновлюємо меню (видалена кнопка зникне)
         await self.profile_delete_menu(update, context)
 
     async def _edit_user_profile_attribute(self, update: Update, context: ContextTypes.DEFAULT_TYPE, field: str, prompt: str):
@@ -946,7 +891,6 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # Отримуємо товари
         cursor.execute(
             'SELECT c.id, p.name, p.price, c.quantity, p.emoji, c.selected_options, p.variants, p.id '
             'FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
@@ -954,7 +898,6 @@ Please contact us using the details above!
         )
         cart_items = cursor.fetchall()
 
-        # --- ЯКЩО КОШИК ПОРОЖНІЙ ---
         if not cart_items:
             text = (
                 "🛒 **Your cart is empty!**\n\n"
@@ -977,7 +920,6 @@ Please contact us using the details above!
                                               parse_mode=ParseMode.MARKDOWN)
             return
 
-        # --- ЯКЩО ТОВАРИ Є ---
         total_amount = 0
         text = "🛒 **Your Cart:**\n\n"
         keyboard = []
@@ -985,7 +927,6 @@ Please contact us using the details above!
         for row in cart_items:
             cart_id, name, base_price, quantity, emoji, opts_json, variants_json, product_id = row
 
-            # Розрахунок ціни
             real_price = base_price
             try:
                 if variants_json and opts_json:
@@ -1002,7 +943,6 @@ Please contact us using the details above!
             item_total = real_price * quantity
             total_amount += item_total
 
-            # Текст опису
             opts_str = ""
             if opts_json:
                 try:
@@ -1016,7 +956,6 @@ Please contact us using the details above!
             text += f"{emo} **{name}**{opts_str}\n"
             text += f"   {quantity} x {real_price}$ = {item_total}$\n"
 
-            # 👇 РЯД 1 (Товари): [➖] [Назва (5)] [➕]
             btn_text = f"{name} ({quantity})"
             row_btns = [
                 InlineKeyboardButton("➖", callback_data=f"cart_minus_{cart_id}"),
@@ -1027,21 +966,15 @@ Please contact us using the details above!
 
         text += f"\n💰 **Total: {total_amount}$**"
 
-        # 👇 НИЖНІ КНОПКИ 👇
-
-        # Ряд 2: Checkout
         keyboard.append([InlineKeyboardButton("✅ Checkout", callback_data="checkout")])
 
-        # Ряд 3: Clear Cart | Back to Catalog
         keyboard.append([
             InlineKeyboardButton("🗑 Clear Cart", callback_data="clear_cart"),
             InlineKeyboardButton("📂 Back to Catalog", callback_data="catalog")
         ])
 
-        # Ряд 4: Main Menu
         keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
 
-        # Відправка
         if query.message.photo:
             await query.message.delete()
             await context.bot.send_message(chat_id=query.message.chat_id, text=text,
@@ -1056,12 +989,10 @@ Please contact us using the details above!
     async def show_single_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         try:
-            # Парсимо ID: view_product_123 -> 123
             product_id = int(query.data.split("_")[-1])
         except:
             return
 
-        # Налаштовуємо доступ до колонок за назвою
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
 
@@ -1072,8 +1003,6 @@ Please contact us using the details above!
             await query.answer("❌ Product not found")
             return
 
-        # Формуємо красивий опис
-        # Якщо емодзі немає, ставимо 📦
         emo = product['emoji'] if product['emoji'] else "📦"
 
         text = (
@@ -1083,19 +1012,16 @@ Please contact us using the details above!
             f"📂 Category: {product['category']}"
         )
 
-        # Кнопки: Додати ще раз або Повернутись в кошик
         keyboard = [
             [InlineKeyboardButton("🛒 Add One More", callback_data=f"add_to_cart_options_{product['id']}")],
             [InlineKeyboardButton("🔙 Back to Cart", callback_data="my_cart")]
         ]
 
-        # Видаляємо старе повідомлення (бо воно могло бути без фото, а це з фото)
         try:
             await query.message.delete()
         except:
             pass
 
-        # Відправка (з фото або без)
         if product['image_url']:
             try:
                 await context.bot.send_photo(
@@ -1106,7 +1032,7 @@ Please contact us using the details above!
                     parse_mode=ParseMode.MARKDOWN
                 )
             except Exception:
-                # Якщо посилання на фото бите, шлемо просто текст
+
                 await context.bot.send_message(
                     chat_id=query.message.chat_id,
                     text=text + "\n⚠️ (Image unavailable)",
@@ -1133,7 +1059,6 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # 👇 1. ОТРИМУЄМО ВСІ ДАНІ ПРО ТОВАР (Сток, Варіанти, Обрані опції)
         cursor.execute("""
                        SELECT c.quantity, c.selected_options, p.stock, p.variants
                        FROM cart c
@@ -1144,44 +1069,39 @@ Please contact us using the details above!
         row = cursor.fetchone()
 
         if not row:
-            # Товар вже видалено
+
             await self.show_cart(update, context)
             return
 
         current_qty, opts_json, product_stock, variants_json = row
 
-        # 👇 2. ВИЗНАЧАЄМО МАКСИМАЛЬНИЙ ДОСТУПНИЙ СТОК
-        max_stock = product_stock  # За замовчуванням беремо загальний сток
+        max_stock = product_stock
 
-        # Якщо це варіантний товар, шукаємо сток конкретного варіанту
         if variants_json and opts_json:
             try:
                 v_data = json.loads(variants_json)
                 opts = json.loads(opts_json)
 
-                # Проходимо по обраних опціях і шукаємо найменший ліміт
-                # (наприклад, якщо вибрано Колір=Red, Розмір=L, шукаємо ліміт для цієї комбінації)
                 for k, v in opts.items():
                     if k in v_data and isinstance(v_data[k], dict) and v in v_data[k]:
                         info = v_data[k][v]
                         if isinstance(info, dict) and 'qty' in info:
-                            # Знайшли сток конкретного варіанту
+
                             max_stock = info['qty']
                             break
             except:
                 pass
 
-        # 👇 3. ЛОГІКА ЗМІНИ КІЛЬКОСТІ
         if "plus" in action:
-            # ПЕРЕВІРКА СТОКУ
+
             if current_qty < max_stock:
                 new_qty = current_qty + 1
                 cursor.execute("UPDATE cart SET quantity = ? WHERE id = ?", (new_qty, cart_id))
                 self.conn.commit()
-                # Оновлюємо кошик
+
                 await self.show_cart(update, context)
             else:
-                # ❌ ПОМИЛКА: Немає більше товару
+
                 await query.answer(f"❌ Only {max_stock} items left in stock!", show_alert=True)
                 return
 
@@ -1200,16 +1120,13 @@ Please contact us using the details above!
         user_id = update.effective_user.id
         data = query.data
 
-        # 👇 ВИПРАВЛЕННЯ: Правильний парсинг кнопок
         try:
             parts = data.split("_")
-            # Формат кнопки: prod_plus_ID_ProdPage_CatPage
-            # parts[0]=prod, parts[1]=plus/minus, parts[2]=ID
 
-            action_type = parts[1]  # "plus" або "minus"
-            product_id = int(parts[2])  # Тепер беремо ID з правильного місця!
 
-            # Зберігаємо сторінки, щоб кнопка "Back" працювала коректно
+            action_type = parts[1]
+            product_id = int(parts[2])
+
             if len(parts) >= 5:
                 prod_page = int(parts[3])
                 cat_page = int(parts[4])
@@ -1234,14 +1151,11 @@ Please contact us using the details above!
             except:
                 pass
 
-        # === ЛОГІКА ПЛЮСА ===
         if action_type == "plus":
-            # 🔥 ЯКЩО Є ВАРІАНТИ -> ЗАПУСКАЄМО ВИБІР 🔥
             if has_variants:
                 await self.start_variant_selection(update, context, product_id)
                 return
 
-            # Якщо простий товар -> додаємо +1
             cursor.execute("SELECT quantity FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
             res = cursor.fetchone()
             current_qty = res[0] if res else 0
@@ -1257,7 +1171,6 @@ Please contact us using the details above!
                 await query.answer(f"❌ Only {stock} left!", show_alert=True)
                 return
 
-        # === ЛОГІКА МІНУСА ===
         elif action_type == "minus":
             cursor.execute("SELECT id, quantity FROM cart WHERE user_id = ? AND product_id = ? LIMIT 1",
                            (user_id, product_id))
@@ -1274,21 +1187,20 @@ Please contact us using the details above!
 
         self.conn.commit()
 
-        # Оновлюємо картку (використовуємо override, щоб сторінки підтягнулись зі state)
+
         await self.show_product(update, context, product_id_override=product_id)
 
 
     async def start_variant_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id):
             user_id = update.effective_user.id
 
-            # Отримуємо дані про товар
             self.conn.row_factory = sqlite3.Row
             cursor = self.conn.cursor()
             cursor.execute("SELECT variants, name FROM products WHERE id = ?", (product_id,))
             row = cursor.fetchone()
 
             if not row or not row['variants']:
-                # Якщо варіантів немає - зразу в кошик
+
                 await self.add_item_to_cart_db(update, context, product_id, None)
                 return
 
@@ -1298,33 +1210,27 @@ Please contact us using the details above!
                 await self.add_item_to_cart_db(update, context, product_id, None)
                 return
 
-            # 👇 МАГІЯ СОРТУВАННЯ: Колір -> Розмір -> Інше 👇
-            # Ми даємо пріоритет певним словам
+
             priority_keys = ["color", "colour", "колір", "цвєт", "size", "розмір", "размер"]
 
             def sort_key(k):
                 k_lower = k.lower()
                 if k_lower in priority_keys:
                     return priority_keys.index(k_lower)
-                return 999  # Все інше в кінці
-
-            # Сортуємо ключі (Колір буде першим, Розмір другим)
+                return 999
             sorted_keys = sorted(variants_data.keys(), key=sort_key)
 
-            # Зберігаємо стан
             self.user_states[user_id] = {
                 'step': 'selecting_variant',
                 'product_id': product_id,
-                'variant_keys': sorted_keys,  # Відсортований список
-                'current_key_index': 0,  # Починаємо з першого (Колір)
+                'variant_keys': sorted_keys,
+                'current_key_index': 0,
                 'variants_data': variants_data,
                 'selected_options': {}
             }
 
-            # Запускаємо перше питання
             await self.ask_next_variant(update, context)
 
-        # 1. Функція старту додавання
     async def add_to_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
             if await self.check_user_blocked(update, context): return
             query = update.callback_query
@@ -1339,15 +1245,14 @@ Please contact us using the details above!
 
             if not product: return await query.answer("❌ Product not found")
 
-            # 👇 ПЕРЕВІРКА ВАРІАНТІВ 👇
             variants = json.loads(product['variants']) if product['variants'] else {}
 
             if not variants:
-                # Немає варіантів - додаємо одразу
+
                 await self.add_item_to_cart_db(update, context, product_id, {})
             else:
-                # Є варіанти - починаємо візард
-                variant_keys = list(variants.keys())  # ["Size", "Color"]
+
+                variant_keys = list(variants.keys())
 
                 self.user_states[user_id] = {
                     'step': 'selecting_variant',
@@ -1357,10 +1262,9 @@ Please contact us using the details above!
                     'current_key_index': 0,
                     'selected_options': {}
                 }
-                # Запускаємо питання
+
                 await self.ask_next_variant(update, context)
 
-        # 2. Функція, яка задає питання
     async def ask_next_variant(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         state = self.user_states.get(user_id)
@@ -1375,55 +1279,50 @@ Please contact us using the details above!
         keys = state['variant_keys']
         idx = state['current_key_index']
 
-        # Якщо вибрали все -> додаємо в кошик
         if idx >= len(keys):
             await self.add_item_to_cart_db(update, context, state['product_id'], state['selected_options'])
             self.user_states.pop(user_id, None)
             return
 
         current_key = keys[idx]
-        # Отримуємо дані варіантів для поточного ключа (напр. "Memory" -> {128GB:..., 256GB:...})
+
         options_data = state['variants_data'].get(current_key, {})
 
         keyboard = []
         row = []
 
-        # Перевіряємо, чи options_data це словник (складний варіант) чи список (простий)
         if isinstance(options_data, dict):
-            # Сортуємо ключі, щоб порядок був гарним
             sorted_items = sorted(options_data.items(), key=lambda x: x[0])
 
             for opt, val in sorted_items:
                 quantity = 0
                 price_info = ""
 
-                # 👇 БЕЗПЕЧНА ПЕРЕВІРКА ТИПУ ДАНИХ 👇
                 if isinstance(val, dict):
-                    # Це новий формат з ціною: {'qty': 5, 'price': 1200}
+
                     quantity = val.get('qty', 0)
                     if 'price' in val:
                         price_info = f" {val['price']}$"
                 else:
-                    # Це старий формат або просто число: 5
+
                     try:
                         quantity = int(val)
                     except:
-                        quantity = 0  # Якщо там сміття
+                        quantity = 0
 
                 btn_text = f"{opt}{price_info}"
 
-                # ТІЛЬКИ ТЕПЕР перевіряємо quantity
+
                 if quantity > 0:
                     row.append(InlineKeyboardButton(btn_text, callback_data=f"var_sel_{idx}_{opt}"))
                 else:
                     row.append(InlineKeyboardButton(f"{opt} (❌)", callback_data="noop"))
 
         elif isinstance(options_data, list):
-            # Простий список ["Red", "Blue"] без складу
+
             for opt in options_data:
                 row.append(InlineKeyboardButton(str(opt), callback_data=f"var_sel_{idx}_{opt}"))
 
-        # Розбивка кнопок (по 2 в ряд)
         final_keyboard = []
         temp_row = []
         for btn in row:
@@ -1469,10 +1368,9 @@ Please contact us using the details above!
         data = query.data
         user_id = query.from_user.id
 
-        # 1. ОБРОБКА КНОПКИ "CANCEL"
         if data == "cancel_selection":
             state = self.user_states.get(user_id)
-            # Якщо ми знаємо, з якого товару почали - повертаємось на його картку
+
             if state and 'product_id' in state:
                 pid = state['product_id']
                 self.user_states.pop(user_id, None)
@@ -1485,13 +1383,11 @@ Please contact us using the details above!
                     pass
             return
 
-        # 2. РОЗБІР ДАНИХ КНОПКИ (var_sel_Index_OptionName)
         try:
             parts = data.split("_")
-            # data виглядає як: var_sel_0_128GB
-            # parts[0]=var, parts[1]=sel, parts[2]=Index, parts[3:]=Name
+
             idx = int(parts[2])
-            value = "_".join(parts[3:])  # Збираємо назву назад, якщо в ній були підкреслення
+            value = "_".join(parts[3:])
         except:
             await query.answer("❌ Error processing data")
             return
@@ -1505,33 +1401,20 @@ Please contact us using the details above!
                 pass
             return
 
-        # 3. ЗБЕРІГАЄМО ВИБІР
-        # Ми просто зберігаємо НАЗВУ опції (наприклад "128GB")
-        # Нам тут не треба лізти в ціну чи кількість, це робить add_item_to_cart_db
         key = state['variant_keys'][idx]
         state['selected_options'][key] = value
-
-        # 4. ПЕРЕХІД ДО НАСТУПНОГО КРОКУ
         state['current_key_index'] += 1
 
-        # Викликаємо функцію, яка покаже наступне питання або додасть в кошик
         await self.ask_next_variant(update, context)
-
-        # 4. Допоміжна функція запису в БД
 
     async def handle_cart_actions(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         data = query.data
         user_id = update.effective_user.id
-
-        # Формат: cart_item_plus_55 (де 55 - id запису в таблиці cart)
         parts = data.split("_")
-        action = parts[2]  # plus або minus
+        action = parts[2]
         cart_id = parts[3]
-
         cursor = self.conn.cursor()
-
-        # 1. Отримуємо інформацію про цей конкретний запис
         cursor.execute('''
                        SELECT c.quantity, c.selected_options, p.stock, p.variants, p.id
                        FROM cart c
@@ -1541,7 +1424,7 @@ Please contact us using the details above!
         row = cursor.fetchone()
 
         if not row:
-            await self.show_cart(update, context)  # Якщо запис зник, просто оновлюємо екран
+            await self.show_cart(update, context)
             return
 
         current_qty = row[0]
@@ -1549,7 +1432,6 @@ Please contact us using the details above!
         real_stock = row[2]
         variants_json = row[3]
 
-        # 2. Визначаємо ліміт
         limit = real_stock
         if opts_json and variants_json:
             try:
@@ -1567,7 +1449,6 @@ Please contact us using the details above!
             except:
                 pass
 
-        # 3. Виконуємо дію
         if action == "plus":
             if current_qty + 1 > limit:
                 await query.answer(f"❌ Only {limit} items available!", show_alert=True)
@@ -1579,7 +1460,7 @@ Please contact us using the details above!
             if current_qty > 1:
                 cursor.execute("UPDATE cart SET quantity = quantity - 1 WHERE id = ?", (cart_id,))
             else:
-                # Якщо 1, то видаляємо
+
                 cursor.execute("DELETE FROM cart WHERE id = ?", (cart_id,))
 
         self.conn.commit()
@@ -1588,16 +1469,13 @@ Please contact us using the details above!
     async def add_item_to_cart_db(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id, options):
         user_id = update.effective_user.id
 
-        # Сортуємо ключі, щоб уникнути дублікатів у базі ({"Size": "S"} vs {"Size":"S"})
         options_json = json.dumps(options, ensure_ascii=False, sort_keys=True) if options else None
 
         cursor = self.conn.cursor()
-
-        # 1. ПЕРЕВІРКА ЛІМІТУ
         cursor.execute("SELECT stock, variants FROM products WHERE id = ?", (product_id,))
         prod_row = cursor.fetchone()
 
-        # Якщо товар раптом зник
+
         if not prod_row:
             if update.callback_query: await update.callback_query.answer("❌ Error: Product not found")
             return
@@ -1607,7 +1485,6 @@ Please contact us using the details above!
 
         limit = real_stock
 
-        # Пробуємо знайти точний ліміт для варіанту
         if options and variants_json:
             try:
                 variants_data = json.loads(variants_json)
@@ -1615,7 +1492,7 @@ Please contact us using the details above!
                     if key in variants_data:
                         v_data = variants_data[key]
 
-                        # Перевіряємо тип даних (чи це словник з ціною, чи просто число)
+
                         if isinstance(v_data, dict):
                             if val in v_data:
                                 specific_val = v_data[val]
@@ -1623,13 +1500,13 @@ Please contact us using the details above!
                                     limit = specific_val.get('qty', 0)
                                 else:
                                     limit = int(specific_val)
-                        # Якщо це старий формат (просто список без кількості) - ліміт це загальний сток
+
             except Exception as e:
                 print(f"Limit calc error: {e}")
-                # У разі помилки лімітом стає загальний склад (щоб не блокувати продаж)
+
                 limit = real_stock
 
-        # 2. ЩО ВЖЕ Є В КОШИКУ?
+
         if options_json:
             cursor.execute(
                 "SELECT id, quantity FROM cart WHERE user_id = ? AND product_id = ? AND selected_options = ?",
@@ -1644,17 +1521,13 @@ Please contact us using the details above!
         cart_row = cursor.fetchone()
         current_in_cart = cart_row[1] if cart_row else 0
 
-        # 3. ПЕРЕВІРКА: ЧИ НЕ ПЕРЕВИЩУЄМО ЛІМІТ?
         if current_in_cart + 1 > limit:
             if update.callback_query:
                 await update.callback_query.answer(f"❌ Limit reached! Only {limit} available.", show_alert=True)
 
-            # 🔥 ВАЖЛИВО: Навіть якщо помилка, повертаємо юзера на картку товару!
-            # Раніше тут був просто return, і меню зникало або зависало.
             await self.show_product(update, context, product_id_override=product_id)
             return
 
-        # 4. ДОДАВАННЯ В БАЗУ
         if cart_row:
             cart_id = cart_row[0]
             cursor.execute("UPDATE cart SET quantity = quantity + 1 WHERE id = ?", (cart_id,))
@@ -1667,7 +1540,6 @@ Please contact us using the details above!
         if update.callback_query:
             await update.callback_query.answer("✅ Added to cart!", show_alert=False)
 
-        # Повертаємось на картку товару
         await self.show_product(update, context, product_id_override=product_id)
 
 
@@ -1762,7 +1634,6 @@ Please contact us using the details above!
 
             image_link_markdown = f"[\u200b]({img_source})" if (img_source and not is_file_id) else ""
 
-            # --- КНОПКА ДОДАВАННЯ (Короткий текст) ---
             if stock > 0:
                 stock_text = f"📦 **In Stock:** {stock}"
                 add_btn = InlineKeyboardButton("➕ Add", callback_data=f"add_to_cart_{product_id}")
@@ -1783,32 +1654,23 @@ Please contact us using the details above!
 
             keyboard = []
 
-            # --- РЯДОК 1: Кнопки управління (В один ряд!) ---
             control_row = []
 
-            # 1. Кнопка "Відняти" (ліворуч)
             if cart_qty > 0:
                 control_row.append(InlineKeyboardButton("➖ Remove", callback_data=f"remove_from_cart_{product_id}"))
 
-            # 2. Кнопка "Додати" (праворуч)
             if add_btn:
                 control_row.append(add_btn)
 
-            # Додаємо цей спільний ряд
             if control_row:
                 keyboard.append(control_row)
 
-            # --- РЯДОК 2: КОШИК ---
             keyboard.append([InlineKeyboardButton(f"🛒 Go to Cart ({cart_qty})", callback_data="cart")])
-
-            # --- РЯДОК 3: НАЗАД ---
             keyboard.append([InlineKeyboardButton(f"🔙 Back to {product['category']}",
                                                   callback_data=f"category_{product['category']}")])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Логіка оновлення (фото або текст)
-            # Якщо поточне повідомлення - Фото -> Редагуємо підпис (Caption)
             if query.message.photo:
                 try:
                     await query.edit_message_caption(caption=text, reply_markup=reply_markup,
@@ -1816,7 +1678,7 @@ Please contact us using the details above!
                 except Exception:
                     pass
             else:
-                # Якщо текст -> Редагуємо текст
+
                 try:
                     await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
                 except Exception:
@@ -1829,19 +1691,19 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # Скидаємо стан
+
         self.user_states[user_id] = {
             'step': 'waiting_email',
             'msg_id': query.message.message_id
         }
 
         cursor = self.conn.cursor()
-        # Беремо ВСІ дані (Телефон, Адреса, Email)
+
         cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
         keyboard = []
-        # Кнопка є, якщо заповнено хоч щось (телефон АБО адреса АБО email)
+
         if user_data and (user_data[0] or user_data[1] or user_data[2]):
             keyboard.append([InlineKeyboardButton("👤 Use my profile data", callback_data="use_profile_data")])
 
@@ -1865,7 +1727,7 @@ Please contact us using the details above!
         address = state.get('address')
         email = state.get('email')
 
-        # 1. If no Email -> Request Email
+
         if not email:
             state['step'] = 'waiting_email_checkout_flow'
             keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
@@ -1891,7 +1753,7 @@ Please contact us using the details above!
             state['msg_id'] = m.message_id
             return True
 
-        # 2. If no Address -> Request Address
+
         if not address:
             state['step'] = 'waiting_address'
             keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
@@ -1918,9 +1780,6 @@ Please contact us using the details above!
 
         return False
 
-
-
-
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         user_id = update.effective_user.id
@@ -1929,7 +1788,7 @@ Please contact us using the details above!
         msg = update.message
         chat_id = msg.chat_id
 
-        # Чистка чату
+
         try:
             await msg.delete()
         except:
@@ -1944,7 +1803,7 @@ Please contact us using the details above!
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
 
         try:
-            # --- EMAIL ---
+
             if state['step'] in ['waiting_email', 'waiting_email_checkout_flow']:
                 email = msg.text.strip()
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
@@ -1973,13 +1832,13 @@ Please contact us using the details above!
                 await self.send_payment_keyboard(context, chat_id, user_id)
                 return
 
-            # --- ADDRESS ---
+
             elif state['step'] == 'waiting_address':
                 state['address'] = msg.text.strip()
                 await self.send_payment_keyboard(context, chat_id, user_id)
                 return
 
-            # --- PHONE (ТУТ БУЛА ПОМИЛКА) ---
+
             elif state['step'] == 'waiting_phone':
                 phone = msg.contact.phone_number if msg.contact else msg.text.strip()
 
@@ -1992,13 +1851,13 @@ Please contact us using the details above!
 
                 state['phone'] = clean_phone
 
-                # Запускаємо фіналізацію
+
                 if state.get('payment'):
                     await self.finalize_order(update, context, state.get('payment'))
                 return
 
         except Exception as e:
-            # Якщо помилка, бот напише її в чат
+
             await context.bot.send_message(chat_id=chat_id, text=f"⚠️ SYSTEM ERROR: {str(e)}")
             print(f"ERROR: {e}")
 
@@ -2046,7 +1905,7 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = query.from_user.id
 
-        # Визначаємо метод
+
         payment_map = {"pay_cod": "Cash on delivery", "pay_card": "Card to courier", "pay_bank": "Bank transfer"}
         payment_key = query.data
         if payment_key not in payment_map: return
@@ -2057,12 +1916,11 @@ Please contact us using the details above!
             await self.show_cart(update, context)
             return
 
-        # Зберігаємо метод оплати
+
         self.user_states[user_id]['payment'] = payment_method
 
-        # 👇 ПЕРЕВІРКА: ЧИ Є ТЕЛЕФОН? 👇
+
         if not self.user_states[user_id].get('phone'):
-            # Якщо телефону немає - питаємо його і ЗБЕРІГАЄМО ID повідомлення
             self.user_states[user_id]['step'] = 'waiting_phone'
             self.user_states[user_id]['msg_id'] = query.message.message_id  # <--- ЗАПИСАЛИ
 
@@ -2079,7 +1937,7 @@ Please contact us using the details above!
             )
             return
 
-        # Якщо телефон є - створюємо замовлення (як раніше)
+
         order_details = await self.create_order(update, context, send_message=False)
 
         if not order_details:
@@ -2124,13 +1982,11 @@ Please contact us using the details above!
         msg = update.message
         chat_id = msg.chat_id
 
-        # 1. Чистка чату (видаляємо повідомлення юзера)
         try:
             await msg.delete()
         except:
             pass
 
-        # 2. Видаляємо старе питання бота
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
@@ -2140,7 +1996,7 @@ Please contact us using the details above!
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
 
         try:
-            # --- EMAIL ---
+
             if state['step'] in ['waiting_email', 'waiting_email_checkout_flow']:
                 email = msg.text.strip()
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
@@ -2154,7 +2010,7 @@ Please contact us using the details above!
 
                 state['email'] = email
 
-                # Логіка переходів
+
                 if state['step'] == 'waiting_email_checkout_flow' and state.get('address'):
                     await self.send_payment_keyboard(context, chat_id, user_id)
                     return
@@ -2173,20 +2029,18 @@ Please contact us using the details above!
                 await self.send_payment_keyboard(context, chat_id, user_id)
                 return
 
-            # --- ADDRESS ---
+
             elif state['step'] == 'waiting_address':
                 state['address'] = msg.text.strip()
                 await self.send_payment_keyboard(context, chat_id, user_id)
                 return
 
-            # --- PHONE (ОСЬ ЦЬОГО БЛОКУ У ВАС НЕ БУЛО) ---
             elif state['step'] == 'waiting_phone':
                 phone = msg.contact.phone_number if msg.contact else msg.text.strip()
 
-                # Чистимо номер від дужок і пробілів
+
                 clean_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
 
-                # Перевірка формату
                 if not re.fullmatch(r"\+?\d{9,15}", clean_phone):
                     m = await context.bot.send_message(
                         chat_id=chat_id,
@@ -2198,18 +2052,15 @@ Please contact us using the details above!
 
                 state['phone'] = clean_phone
 
-                # Запускаємо створення замовлення
                 if state.get('payment'):
                     await self.finalize_order(update, context, state.get('payment'))
                 return
 
         except Exception as e:
-            # Якщо станеться помилка, бот про неї напише
+
             await context.bot.send_message(chat_id=chat_id, text=f"⚠️ SYSTEM ERROR: {str(e)}")
             print(f"ERROR: {e}")
 
-    # Допоміжна функція
-        # 👇 ОНОВЛЕНА ФУНКЦІЯ
     async def send_payment_keyboard(self, context, chat_id, user_id):
         self.user_states[user_id]['step'] = 'waiting_payment'
 
@@ -2255,7 +2106,6 @@ Please contact us using the details above!
         payment = payment_map.get(data)
         if not payment: return await query.answer("❌ Invalid payment method")
 
-        # 1. Якщо COD і немає телефону -> Питаємо телефон
         if payment == "Cash on delivery" and not state.get("phone"):
             self.user_states[user_id]['payment'] = payment
             self.user_states[user_id]['step'] = 'waiting_phone'
@@ -2275,7 +2125,6 @@ Please contact us using the details above!
 
         self.user_states[user_id]['payment'] = payment
 
-        # Рахуємо суму для відображення в IBAN
         cursor = self.conn.cursor()
         cursor.execute(
             'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
@@ -2286,10 +2135,9 @@ Please contact us using the details above!
             self.user_states.pop(user_id, None)
             return
 
-        # Рахуємо "розумну" ціну (з урахуванням варіантів)
         total_amount = 0
         for base_price, quantity, variants_json, opts_json in cart_items:
-            # Якщо є функція calculate_item_price - використовуємо її, інакше просто base_price
+
             price = base_price
             try:
                 price = self.calculate_item_price(base_price, variants_json, opts_json)
@@ -2297,7 +2145,6 @@ Please contact us using the details above!
                 pass
             total_amount += price * quantity
 
-        # 👇 ПОВЕРНУЛИ БЛОК BANK TRANSFER З ВАШОГО ФАЙЛУ 👇
         if payment == "Bank transfer":
             order_text = (
                 f"🏦 *Bank transfer selected*\n\n"
@@ -2309,7 +2156,6 @@ Please contact us using the details above!
                 f"_After payment, click Confirm below._"
             )
             keyboard = [
-                # 👇 ДОДАВ ЦЮ КНОПКУ, ЩОБ ЗАМОВЛЕННЯ СТВОРЮВАЛОСЬ
                 [InlineKeyboardButton("✅ Confirm Order", callback_data="confirm_bank_order")],
                 [InlineKeyboardButton("🔙 Back", callback_data="back_to_payment")],
                 [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
@@ -2318,7 +2164,6 @@ Please contact us using the details above!
                                           parse_mode=ParseMode.MARKDOWN)
             return
 
-        # Для Card to Courier - створюємо одразу
         await self.finalize_order(update, context, payment, total_amount)
 
 
@@ -2329,7 +2174,6 @@ Please contact us using the details above!
         data = query.data
         user_id = query.from_user.id
 
-        # Back to Step 1 (Email)
         if data == "back_to_email":
             if user_id in self.user_states:
                 self.user_states[user_id]['step'] = 'waiting_email'
@@ -2346,7 +2190,6 @@ Please contact us using the details above!
         elif data == "back_to_cart":
             await self.show_cart(update, context)
 
-        # Back to Step 2 (Address)
         elif data == "back_to_address":
             if user_id in self.user_states:
                 self.user_states[user_id]['step'] = 'waiting_address'
@@ -2360,7 +2203,6 @@ Please contact us using the details above!
                 parse_mode="Markdown"
             )
 
-        # Back to Step 3 (Payment) - Це використовується, якщо ми повертаємось з вікна телефону (якщо передумали COD)
         elif data == "back_to_payment":
             if user_id in self.user_states:
                 self.user_states[user_id]['step'] = 'waiting_payment'
@@ -2389,17 +2231,16 @@ Please contact us using the details above!
         query = update.callback_query
         data = query.data
 
-        # Формат: category_{Name}_{ProdPage}_{CatPage}
         parts = data.split("_")
         cat_page = 1
         prod_page = 1
         category = ""
 
-        # Розумний парсинг
+
         try:
             if len(parts) >= 4 and parts[-1].isdigit() and parts[-2].isdigit():
-                cat_page = int(parts[-1])  # Сторінка каталогу (куди вертатись)
-                prod_page = int(parts[-2])  # Сторінка товарів (де ми зараз)
+                cat_page = int(parts[-1])
+                prod_page = int(parts[-2])
                 category = "_".join(parts[1:-2])
             elif len(parts) >= 3 and parts[-1].isdigit():
                 prod_page = int(parts[-1])
@@ -2431,7 +2272,6 @@ Please contact us using the details above!
         for p_id, name, base_price, emoji, variants_json in products:
             emo = emoji if emoji else "📦"
 
-            # Розрахунок ціни (from X$)
             all_prices = []
             if variants_json:
                 try:
@@ -2451,7 +2291,6 @@ Please contact us using the details above!
             max_p = max(all_prices)
             price_str = f"from {min_p}$" if min_p != max_p else f"{min_p}$"
 
-            # 🔥 Передаємо обидві сторінки далі в товар: product_ID_ProdPage_CatPage
             keyboard.append([InlineKeyboardButton(f"{emo} {name} - {price_str}",
                                                   callback_data=f"product_{p_id}_{prod_page}_{cat_page}")])
 
@@ -2462,7 +2301,6 @@ Please contact us using the details above!
             nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"category_{category}_{prod_page + 1}_{cat_page}"))
         if nav: keyboard.append(nav)
 
-        # 🔥 КНОПКА НАЗАД ВЕДЕ НА СТОРІНКУ КАТАЛОГУ (cat_page)
         keyboard.append([InlineKeyboardButton("🔙 Back to Catalog", callback_data=f"catalog_page_{cat_page}")])
 
         try:
@@ -2500,20 +2338,18 @@ Please contact us using the details above!
                 name, base_price, emoji, variants_json, current_stock = prod
                 selected_opts = json.loads(opts) if opts else {}
 
-                # 1. Розрахунок ціни
+
                 price = self.calculate_item_price(base_price, variants_json, json.dumps(selected_opts))
                 item_total = price * qty
                 total_amount += item_total
 
-                # 2. Формуємо текст опцій (ТІЛЬКИ ЗНАЧЕННЯ)
                 opts_str = ""
                 if selected_opts:
-                    # Було: k: v -> Стало: v
-                    # Формат: (128GB, Red)
+
                     opts_vals = [f"{v}" for k, v in selected_opts.items()]
                     opts_str = f" ({', '.join(opts_vals)})"
 
-                # Додаємо в список для деталізації
+
                 products_details.append({
                     'name': name,
                     'quantity': qty,
@@ -2524,10 +2360,10 @@ Please contact us using the details above!
                     'product_id': prod_id
                 })
 
-                # Текст для адміна: Name (128GB) x1
+
                 products_text_list.append(f"{name}{opts_str} x{qty}")
 
-                # 3. Віднімаємо зі складу
+
                 new_stock = max(0, current_stock - qty)
                 cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, prod_id))
 
@@ -2552,7 +2388,6 @@ Please contact us using the details above!
                     except:
                         pass
 
-        # Дані користувача
         phone = state.get('phone')
         address = state.get('address')
         email = state.get('email')
@@ -2566,7 +2401,6 @@ Please contact us using the details above!
 
         payment_method = state.get('payment', 'Unknown')
 
-        # Зберігаємо JSON
         products_json_for_db = json.dumps(products_details, ensure_ascii=False)
 
         cursor.execute('''
@@ -2582,7 +2416,6 @@ Please contact us using the details above!
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
-        # Сповіщення адміну
         try:
             items_str = "\n".join([f"- {item}" for item in products_text_list])
             admin_text = (
@@ -2648,7 +2481,7 @@ Please contact us using the details above!
     async def show_my_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
-        await query.answer() # Прибираємо годинник завантаження
+        await query.answer()
         user_id = update.effective_user.id
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
@@ -2727,11 +2560,10 @@ Please contact us using the details above!
         query = getattr(update, "callback_query", None)
         user_id = update.effective_user.id
 
-        # 1. Парсинг ID та Сторінки
+
         if order_id is None:
             if query:
                 data = query.data
-                # Шукаємо ID і сторінку в кінці рядка (наприклад ..._125_2)
                 match = re.search(r'_(\d+)(?:_(\d+))?$', data)
                 if match:
                     order_id = int(match.group(1))
@@ -2743,7 +2575,7 @@ Please contact us using the details above!
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
 
-        # 2. Отримання замовлення
+
         if int(user_id) == int(ADMIN_ID):
             cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
         else:
@@ -2754,29 +2586,27 @@ Please contact us using the details above!
             if query: await query.answer("❌ Order not found")
             return
 
-        # 3. Безпечний парсинг товарів (Fix для "An error has occurred")
         products_text = ""
         try:
             products_list = json.loads(order["products"])
             for p in products_list:
-                if isinstance(p, str): raise ValueError()  # Якщо це старий текстовий список -> в except
+                if isinstance(p, str): raise ValueError()
 
-                # Формуємо рядок товару
+
                 name = p.get('name', 'Unknown')
-                # Очистка назви від технічних даних
+
                 name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(name))
 
                 emoji = p.get('emoji', '📦')
                 qty = p.get('quantity', 1)
                 price_total = p.get('total', 0)
 
-                # Опції (колір, розмір)
                 opts = p.get('selected_options', {})
                 opts_str = f" ({', '.join([str(v) for v in opts.values()])})" if opts else ""
 
                 products_text += f"{emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = <b>{price_total}$</b>\n"
         except:
-            # Fallback для старих замовлень (текстових)
+
             raw = order["products"]
             if raw:
                 for line in str(raw).split('\n'):
@@ -2785,7 +2615,7 @@ Please contact us using the details above!
             else:
                 products_text = "📦 Items info unavailable\n"
 
-        # 4. Формування тексту
+
         status_map = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent',
                       'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
         status_display = status_map.get(order['status'], order['status'])
@@ -2805,12 +2635,11 @@ Please contact us using the details above!
             f"🕐 <b>Date:</b> {fmt_date}"
         )
 
-        # 5. Кнопки (зникають, якщо статус фінальний)
         keyboard = []
         is_final = order['status'] in ('cancelled', 'delivered')
 
         if int(user_id) == int(ADMIN_ID):
-            # Адмінські кнопки тільки якщо замовлення активне
+
             if not is_final:
                 keyboard.append([
                     InlineKeyboardButton("🔵 Confirm", callback_data=f"admin_confirm_{order_id}_{origin_page}"),
@@ -2820,21 +2649,20 @@ Please contact us using the details above!
                     InlineKeyboardButton("🟢 Delivered", callback_data=f"admin_deliver_{order_id}_{origin_page}"),
                     InlineKeyboardButton("🔴 Cancel", callback_data=f"admin_cancel_{order_id}_{origin_page}")
                 ])
-            # Кнопка назад для адміна
+
             keyboard.append(
                 [InlineKeyboardButton("🔙 Back to All Orders", callback_data=f"admin_all_orders_page_{origin_page}")])
         else:
-            # Клієнтські кнопки
+
             if not is_final:
                 keyboard.append([InlineKeyboardButton("❌ Cancel Order", callback_data=f"user_cancel_{order_id}")])
             keyboard.append([InlineKeyboardButton("🔙 Back to list", callback_data=f"my_orders_page_{origin_page}")])
 
-        # Відправка (через edit або send)
         if query:
             try:
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
             except Exception:
-                # Якщо повідомлення застаріло, шлемо нове
+
                 await query.message.delete()
                 await context.bot.send_message(query.message.chat_id, text, reply_markup=InlineKeyboardMarkup(keyboard),
                                                parse_mode="HTML")
@@ -2851,20 +2679,11 @@ Please contact us using the details above!
         text = "👑 **ADMIN PANEL**\n\n👇 **Dashboard:**"
 
         keyboard = [
-            # 1. Найважливіше - Замовлення
             [InlineKeyboardButton("📋 ALL ORDERS", callback_data="admin_all_orders")],
-
-            # 2. Товари (Кнопку "Додати" прибрали, вона є всередині цього меню)
             [InlineKeyboardButton("📦 Products", callback_data="admin_products")],
-
-            # 3. Аналітика
             [InlineKeyboardButton("📊 Stats", callback_data="admin_statistics"),
              InlineKeyboardButton("📈 Revenue", callback_data="admin_revenue_chart")],
-
-            # 4. Користувачі
             [InlineKeyboardButton("👥 Users", callback_data="admin_user_management")],
-
-            # 5. Вихід
             [InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]
         ]
 
@@ -2882,20 +2701,15 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # 1. Загальні цифри
+
         cursor.execute("SELECT COUNT(*) FROM orders")
         total_orders = cursor.fetchone()[0]
-
         cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'pending'")
         pending_orders = cursor.fetchone()[0]
-
         cursor.execute("SELECT SUM(total_amount) FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered')")
         total_revenue = cursor.fetchone()[0] or 0
-
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
-
-        # 2. Аналіз товарів (Популярність)
         cursor.execute("SELECT products FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered')")
         product_sales = {}
 
@@ -2903,25 +2717,23 @@ Please contact us using the details above!
             try:
                 products_list = json.loads(products_json)
                 for item in products_list:
-                    # Безпечно дістаємо назву
+
                     name = item.get('name', 'Unknown')
                     qty = item.get('quantity', 0)
                     product_sales[name] = product_sales.get(name, 0) + qty
             except:
-                continue  # Ігноруємо старі замовлення, які не в JSON форматі
+                continue
 
-        # Сортування
+
         sorted_sales = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)
 
-        # Найпопулярніші (Top 5)
         top_5 = sorted_sales[:5]
         top_text = "\n".join([f"🔥 {name}: {qty} pcs" for name, qty in top_5]) if top_5 else "No data"
 
-        # Найменш популярні (Bottom 5)
         bottom_5 = sorted_sales[-5:] if len(sorted_sales) > 0 else []
         bottom_text = "\n".join([f"🧊 {name}: {qty} pcs" for name, qty in bottom_5]) if bottom_5 else "No data"
 
-        # 3. Статистика покупців
+
         cursor.execute("SELECT COUNT(DISTINCT user_id) FROM orders")
         active_buyers = cursor.fetchone()[0]
 
@@ -2946,7 +2758,7 @@ Please contact us using the details above!
     async def admin_categories_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
 
-        # 1. Визначаємо сторінку
+
         page = 1
         if query and query.data.startswith("admin_cat_page_"):
             try:
@@ -2956,20 +2768,17 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # 2. Рахуємо загальну кількість категорій
         cursor.execute("SELECT COUNT(DISTINCT category) FROM products")
         total_items = cursor.fetchone()[0]
 
         CATS_PER_PAGE = 5
         total_pages = (total_items + CATS_PER_PAGE - 1) // CATS_PER_PAGE
 
-        # Коригування сторінки
         if page > total_pages: page = total_pages
         if page < 1: page = 1
 
         offset = (page - 1) * CATS_PER_PAGE
 
-        # 3. Отримуємо категорії для поточної сторінки (Сортування А-Я)
         cursor.execute(
             "SELECT DISTINCT category FROM products ORDER BY category ASC LIMIT ? OFFSET ?",
             (CATS_PER_PAGE, offset)
@@ -2983,16 +2792,14 @@ Please contact us using the details above!
 
         keyboard = []
 
-        # 4. Генеруємо кнопки категорій
         for (cat_name,) in categories:
-            # Рахуємо кількість товарів всередині
+
             cursor.execute("SELECT COUNT(*) FROM products WHERE category = ?", (cat_name,))
             count = cursor.fetchone()[0]
 
             keyboard.append(
                 [InlineKeyboardButton(f"📂 {cat_name} ({count})", callback_data=f"admin_list_cat_{cat_name}_1")])
 
-        # 5. Кнопки навігації (⬅️ ➡️)
         nav_row = []
         if page > 1:
             nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_cat_page_{page - 1}"))
@@ -3003,11 +2810,9 @@ Please contact us using the details above!
         if nav_row:
             keyboard.append(nav_row)
 
-        # Кнопки дій
         keyboard.append([InlineKeyboardButton("➕ Add Product", callback_data="admin_add_product")])
         keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
 
-        # 6. Відправка
         if query:
             try:
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
@@ -3028,14 +2833,12 @@ Please contact us using the details above!
         query = update.callback_query
         data = query.data
 
-        # 👇 ЛОГІКА: Якщо передали категорію вручну (після видалення) - беремо її.
-        # Якщо ні - парсимо з натиснутої кнопки.
         if category_override:
             category = category_override
             page = 1
         else:
             try:
-                # Парсимо дані: admin_list_cat_{Category}_{Page}
+
                 parts = data.split("_")
                 page = int(parts[-1])
                 category = "_".join(parts[3:-1])
@@ -3045,20 +2848,16 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # 1. Рахуємо загальну кількість
         cursor.execute("SELECT COUNT(*) FROM products WHERE category = ?", (category,))
         total_items = cursor.fetchone()[0]
 
-        # Якщо категорія стала порожньою після видалення останнього товару
         if total_items == 0:
-            # Можна повернути в список категорій
+
             await self.admin_categories_menu(update, context)
             return
 
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
         offset = (page - 1) * ITEMS_PER_PAGE
-
-        # 2. Отримуємо товари
         cursor.execute("SELECT id, name, stock FROM products WHERE category = ? LIMIT ? OFFSET ?",
                        (category, ITEMS_PER_PAGE, offset))
         products = cursor.fetchall()
@@ -3070,7 +2869,6 @@ Please contact us using the details above!
             status = "✅" if p_stock > 0 else "❌"
             keyboard.append([InlineKeyboardButton(f"{status} {p_name}", callback_data=f"admin_prod_{p_id}")])
 
-        # 3. Кнопки пагінації
         nav_row = []
         if page > 1:
             nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_list_cat_{category}_{page - 1}"))
@@ -3101,18 +2899,16 @@ Please contact us using the details above!
             await update.callback_query.answer("❌ Access denied")
             return
 
-        # Pagination settings
+
         items_per_page = 10
         offset = page * items_per_page
 
         cursor = self.conn.cursor()
 
-        # Count total users
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
         total_pages = (total_users - 1) // items_per_page + 1 if total_users > 0 else 1
 
-        # Fetch only the required page
         cursor.execute("SELECT user_id, blocked FROM users LIMIT ? OFFSET ?", (items_per_page, offset))
         users = cursor.fetchall()
 
@@ -3121,7 +2917,6 @@ Please contact us using the details above!
             action_text = "✅ Unblock" if blocked else "⛔ Block"
             callback_action = 0 if blocked else 1
 
-            # Try to fetch username (Nick)
             try:
                 chat = await context.bot.get_chat(user_id)
                 if chat.username:
@@ -3134,13 +2929,11 @@ Please contact us using the details above!
                 user_display = f"ID: {user_id}"
 
             keyboard.append([
-                # Display Nickname/Name
+
                 InlineKeyboardButton(f"👤 {user_display}", callback_data="noop"),
-                # Block/Unblock Action
                 InlineKeyboardButton(action_text, callback_data=f"admin_user_block_{user_id}_{callback_action}")
             ])
 
-        # Navigation buttons
         nav_buttons = []
         if page > 0:
             nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_user_page_{page - 1}"))
@@ -3167,21 +2960,21 @@ Please contact us using the details above!
         if update.effective_user.id != ADMIN_ID:
             await update.callback_query.answer("❌ Access denied")
             return
-        
+
         _, _, _, user_id, block_status = update.callback_query.data.split("_")
         user_id = int(user_id)
         block_status = int(block_status)
-        
+
         cursor = self.conn.cursor()
         cursor.execute("UPDATE users SET blocked = ? WHERE user_id = ?", (block_status, user_id))
         self.conn.commit()
-        
+
         if block_status:
             cursor.execute("INSERT OR IGNORE INTO blocked_users (user_id) VALUES (?)", (user_id,))
         else:
             cursor.execute("DELETE FROM blocked_users WHERE user_id = ?", (user_id,))
         self.conn.commit()
-        
+
         await self.admin_user_management(update, context)
 
     async def handle_admin_user_pagination(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3201,7 +2994,6 @@ Please contact us using the details above!
 
         query = update.callback_query
 
-        # Time filter settings
         period_sql = ""
         label = "all time"
 
@@ -3217,17 +3009,13 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # 1. Get revenue (only from successful orders)
         cursor.execute(
             f"SELECT SUM(total_amount), COUNT(id) FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered'){period_sql}")
         res = cursor.fetchone()
         total_rev = res[0] or 0
         total_orders = res[1] or 0
 
-        # 2. Calculate average check
         avg_check = round(total_rev / total_orders, 2) if total_orders > 0 else 0
-
-        # 3. Pending revenue
         cursor.execute(f"SELECT SUM(total_amount) FROM orders WHERE status = 'pending'{period_sql}")
         pending_rev = cursor.fetchone()[0] or 0
 
@@ -3259,7 +3047,6 @@ Please contact us using the details above!
         query = update.callback_query
         await query.answer()
 
-        # Extract period from callback_data (rev_today -> today)
         period = query.data.replace("rev_", "")
         await self.admin_revenue(update, context, period=period)
 
@@ -3302,7 +3089,6 @@ Please contact us using the details above!
             emoji_status = status_emoji.get(order["status"], '⚫')
             fmt_date = self.format_date(order['created_at'])
 
-            # 👇 ЕКРАНУВАННЯ ІМЕНІ В СПИСКУ 👇
             safe_user_name = self.escape_md(order['user_name'])
 
             text += f"{emoji_status} #{order['id']} | {safe_user_name} | {order['total_amount']}$ | {fmt_date}\n"
@@ -3332,12 +3118,11 @@ Please contact us using the details above!
 
     async def admin_order_status_change(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
-        # Перевірка на адміна
+
         if int(update.effective_user.id) != int(ADMIN_ID):
             await query.answer("❌ Access denied")
             return
 
-        # Надійний парсинг даних (ID та Сторінка)
         match = re.search(r'admin_(confirm|ship|deliver|cancel)_(\d+)(?:_(\d+))?', query.data)
         if not match:
             await query.answer("❌ Error parsing data")
@@ -3355,22 +3140,20 @@ Please contact us using the details above!
         }
         new_status = status_map.get(action)
 
-        # 1. Оновлюємо статус у Базі Даних
         cursor = self.conn.cursor()
         cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
         self.conn.commit()
 
         await query.answer(f"✅ Status updated: {new_status}")
 
-        # 2. 🔥 ВІДНОВЛЕНО: Сповіщення користувача
+
         try:
-            # Дізнаємось ID покупця
+
             cursor.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
             row = cursor.fetchone()
             if row:
                 buyer_id = row[0]
 
-                # Красиві назви статусів для повідомлення
                 status_text_map = {
                     'confirmed': '🔵 Confirmed',
                     'shipped': '🟠 Sent',
@@ -3389,7 +3172,7 @@ Please contact us using the details above!
         except Exception as e:
             print(f"⚠️ Failed to notify user: {e}")
 
-        # 3. Оновлюємо вигляд замовлення у адміна (щоб кнопки зникли/змінились)
+
         await self.show_order_details(update, context, order_id=order_id, origin_page=origin_page)
 
     # -------------------- ADMIN: PRODUCT MANAGEMENT --------------------
@@ -3400,10 +3183,10 @@ Please contact us using the details above!
         products = cursor.fetchall()
         text = "📦 **Product management:**\n\n"
         keyboard = []
-        for pid, name, price, stock, emoji in products[:20]:  # Show more products
+        for pid, name, price, stock, emoji in products[:20]:
             stock_status = "✅" if stock > 0 else "❌"
             text_line = f"{stock_status} {emoji or ''} **{name}** | {price}$ | Stock: {stock}\n"
-            if len(text) + len(text_line) > 4000: break # Avoid hitting message length limit
+            if len(text) + len(text_line) > 4000: break
             text += text_line
             keyboard.append([
                 InlineKeyboardButton(f"{emoji or '📦'} {name}", callback_data=f"admin_view_product_{pid}"),
@@ -3419,15 +3202,13 @@ Please contact us using the details above!
         user_id = update.effective_user.id
         if user_id != ADMIN_ID: return
 
-        # Розбираємо дані: "admin_order_reject_55" -> action="reject", order_id="55"
         data = query.data
         parts = data.split("_")
-        action = parts[2]  # accept або reject
+        action = parts[2]
         order_id = parts[3]
 
         cursor = self.conn.cursor()
 
-        # Отримуємо дані про замовлення
         cursor.execute("SELECT products, status, user_id FROM orders WHERE id = ?", (order_id,))
         row = cursor.fetchone()
 
@@ -3444,7 +3225,7 @@ Please contact us using the details above!
             return
 
         if action == "accept":
-            # Просто змінюємо статус
+
             cursor.execute("UPDATE orders SET status = 'accepted' WHERE id = ?", (order_id,))
             self.conn.commit()
 
@@ -3455,7 +3236,7 @@ Please contact us using the details above!
                 pass
 
         elif action == "reject":
-            # 👇 ТУТ МАГІЯ ПОВЕРНЕННЯ ТОВАРУ 👇
+
 
             try:
                 products_list = json.loads(products_json)
@@ -3464,18 +3245,13 @@ Please contact us using the details above!
                     qty_to_return = item['quantity']
                     sel_opts = item['selected_options']
 
-                    # 1. Отримуємо актуальний стан товару
                     cursor.execute("SELECT stock, variants FROM products WHERE id = ?", (p_id,))
                     prod_row = cursor.fetchone()
 
                     if prod_row:
                         current_stock = prod_row[0]
                         variants_json = prod_row[1]
-
-                        # 2. Повертаємо в Загальний Сток
                         new_stock = current_stock + qty_to_return
-
-                        # 3. Повертаємо в Варіанти (наприклад, в 128GB)
                         new_vars_json = variants_json
                         if variants_json and sel_opts:
                             try:
@@ -3485,13 +3261,12 @@ Please contact us using the details above!
                                     if key in v_data:
                                         group = v_data[key]
 
-                                        # Якщо варіант складний {"qty": 0, "price":...}
                                         if isinstance(group, dict) and val in group:
                                             target = group[val]
                                             if isinstance(target, dict) and 'qty' in target:
                                                 target['qty'] += qty_to_return
                                                 changed = True
-                                            # Якщо варіант простий (int)
+
                                             elif isinstance(target, int):
                                                 group[val] += qty_to_return
                                                 changed = True
@@ -3501,11 +3276,10 @@ Please contact us using the details above!
                             except:
                                 pass
 
-                        # Оновлюємо товар в базі
                         cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
                                        (new_stock, new_vars_json, p_id))
 
-                # Оновлюємо статус замовлення
+
                 cursor.execute("UPDATE orders SET status = 'canceled' WHERE id = ?", (order_id,))
                 self.conn.commit()
 
@@ -3522,7 +3296,6 @@ Please contact us using the details above!
     async def admin_product_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id_override=None):
         query = update.callback_query
 
-        # 1. Отримуємо ID
         try:
             if product_id_override:
                 product_id = int(product_id_override)
@@ -3547,10 +3320,9 @@ Please contact us using the details above!
             'step': 'edit_product_menu'
         }
 
-        # 2. Розрахунок цін (Ваша правильна логіка)
         stock_details = ""
         base_price = product['price']
-        all_prices = []  # Список реальних цін
+        all_prices = []
 
         if product['variants']:
             try:
@@ -3583,7 +3355,6 @@ Please contact us using the details above!
             except:
                 pass
 
-        # Якщо варіантів з цінами немає, беремо базову
         if not all_prices:
             all_prices.append(base_price)
 
@@ -3626,14 +3397,12 @@ Please contact us using the details above!
         cat_back = product['category']
         keyboard.append([InlineKeyboardButton("🔙 Back to List", callback_data=f"admin_list_cat_{cat_back}_1")])
 
-        # 3. ВИПРАВЛЕННЯ: Видаляємо старе повідомлення
         if query:
             try:
                 await query.message.delete()
             except:
                 pass
 
-        # 4. ВИПРАВЛЕННЯ: Пробуємо відправити ФОТО, незалежно від того, це лінк чи файл
         sent_photo = False
         if product['image_url']:
             try:
@@ -3646,7 +3415,7 @@ Please contact us using the details above!
                 )
                 sent_photo = True
             except Exception:
-                # Якщо файл битий або помилка - шлемо текст
+
                 pass
 
         if not sent_photo:
@@ -3671,7 +3440,6 @@ Please contact us using the details above!
 
         emoji = product['emoji'] or ''
 
-        # 👇 БЕЗПЕЧНЕ ВІДОБРАЖЕННЯ ВАРІАНТІВ 👇
         variants_text = "❌ None"
         if 'variants' in product.keys() and product['variants']:
             try:
@@ -3718,14 +3486,13 @@ Please contact us using the details above!
 
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="admin_products")]]
 
-        # 👇 ЗМІНА: Отримуємо об'єкт повідомлення (msg) і зберігаємо його ID
         msg = await update.callback_query.edit_message_text(
             "📦 **Adding a new product**\n\nEnter the name of the product:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
 
-        # Записуємо ID, щоб handle_admin_product_input міг його видалити
+
         self.user_states[user_id]['msg_id'] = msg.message_id
 
     async def admin_edit_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3745,8 +3512,6 @@ Please contact us using the details above!
         self.user_states[user_id] = {'step': 'edit_product_field', 'product_id': product_id}
 
         has_img = "✅ Set" if product['image_url'] else "❌ Not set"
-
-        # 👇 ВИПРАВЛЕННЯ ТУТ: Безпечна перевірка без .get() 👇
         has_vars = "❌ None"
         if 'variants' in product.keys() and product['variants']:
             has_vars = "✅ Set"
@@ -3797,8 +3562,6 @@ Please contact us using the details above!
         field, msg_text = field_map[query.data]
         self.user_states[user_id]['editing_field'] = field
         product_id = self.user_states[user_id].get('product_id')
-
-        # 👇 ВИПРАВЛЕНО: Повертаємось в admin_prod_ (нове меню)
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data=f"admin_prod_{product_id}")]]
 
         try:
@@ -3807,7 +3570,7 @@ Please contact us using the details above!
             pass
 
         if field == "variants":
-            # (Логіка тексту варіантів без змін)
+
             cursor = self.conn.cursor()
             cursor.execute("SELECT variants FROM products WHERE id = ?", (product_id,))
             row = cursor.fetchone()
@@ -3884,10 +3647,8 @@ Please contact us using the details above!
             keyboard.append([InlineKeyboardButton("✏️ Change Photo", callback_data=f"admin_image_set_{product_id}")])
             keyboard.append([InlineKeyboardButton("🗑️ Delete Photo", callback_data=f"admin_image_delete_{product_id}")])
 
-        # 👇 ВИПРАВЛЕННЯ ТУТ: Ведемо на admin_prod_ (красиве меню), а не admin_edit_product_ (старе)
         keyboard.append([InlineKeyboardButton("🔙 Back to Editing", callback_data=f"admin_prod_{product_id}")])
 
-        # Видаляємо старе фото, щоб показати меню налаштувань
         if query.message.photo:
             try: await query.message.delete()
             except: pass
@@ -3907,7 +3668,6 @@ Please contact us using the details above!
                 'product_id': product_id
             }
 
-            # Cleaner: Delete menu, send prompt
             try:
                 await query.message.delete()
             except:
@@ -3928,20 +3688,17 @@ Please contact us using the details above!
         if not match: return
         product_id = int(match.group(1))
 
-        # 1. Видаляємо фото з Бази Даних
         cursor = self.conn.cursor()
         cursor.execute("UPDATE products SET image_url = NULL WHERE id = ?", (product_id,))
         self.conn.commit()
 
         await query.answer("🗑️ Image deleted!")
 
-        # 2. Видаляємо старе повідомлення з фото (щоб уникнути помилок редагування)
         try:
             await query.message.delete()
         except Exception:
             pass
 
-        # 3. Надсилаємо меню "Без фото" напряму (надійно)
         text = (
             f"🖼️ **Product Image Management**\n\n"
             f"Status: ❌ No image"
@@ -3972,13 +3729,12 @@ Please contact us using the details above!
         if not row: return await query.answer("❌ Product not found")
 
         name = row[0]
-        # Кнопки підтвердження
+
         keyboard = [
             [InlineKeyboardButton("❌ Yes, delete", callback_data=f"admin_delete_product_confirm_{product_id}")],
             [InlineKeyboardButton("🔙 Cancel", callback_data="admin_products")]
         ]
 
-        # ПИЛОСОС: Видаляємо старе повідомлення і шлемо нове (безпечніше для діалогу)
         try:
             await query.message.delete()
         except:
@@ -3995,15 +3751,10 @@ Please contact us using the details above!
         if update.effective_user.id != ADMIN_ID: return
         query = update.callback_query
 
-        # 1. Очищаємо пам'ять (стан) створення
         self.user_states.pop(update.effective_user.id, None)
 
-        # 2. Сповіщаємо Телеграм, що кнопку натиснуто
         await query.answer("🚫 Cancelled")
 
-        # 3. Просто викликаємо меню товарів.
-        # Воно саме ОНОВИТЬ поточне повідомлення (замість старого тексту з'явиться список товарів).
-        # Видаляти нічого не треба!
         await self.admin_products(update, context)
 
     async def admin_delete_product_confirm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4016,26 +3767,24 @@ Please contact us using the details above!
 
         cursor = self.conn.cursor()
 
-        # 👇 1. ОТРИМУЄМО КАТЕГОРІЮ ПЕРЕД ВИДАЛЕННЯМ 👇
         cursor.execute("SELECT name, category FROM products WHERE id = ?", (product_id,))
         row = cursor.fetchone()
 
         if not row:
             await query.answer("❌ Product already deleted")
-            # Якщо товару немає, повертаємо в корінь
             await self.admin_categories_menu(update, context)
             return
 
         name = row[0]
-        category_to_return = row[1]  # Запам'ятали категорію
+        category_to_return = row[1]
 
-        # 2. Видаляємо
+
         cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
         self.conn.commit()
 
         await query.answer(f"🗑️ {name} deleted!")
 
-        # 👇 3. ПОВЕРТАЄМОСЬ В СПИСОК ТОВАРІВ ЦІЄЇ КАТЕГОРІЇ 👇
+
         await self.admin_products_list(update, context, category_override=category_to_return)
 
     # -------------------- TEXT HANDLERS --------------------
@@ -4047,22 +3796,21 @@ Please contact us using the details above!
             state = self.user_states[user_id]
             step = state.get('step', '')
 
-            # 👇 ВИПРАВЛЕНО: Додали нові адмінські кроки сюди 👇
             if (step.startswith('add_product') or
                     step.startswith('edit_') or
-                    step.startswith('waiting_simple_') or  # <--- НОВЕ
-                    step.startswith('waiting_var_') or  # <--- НОВЕ
+                    step.startswith('waiting_simple_') or
+                    step.startswith('waiting_var_') or
                     step == 'waiting_product_image' or
                     step == 'waiting_variant_values' or
                     step == 'waiting_type_decision'):
 
                 await self.handle_admin_product_input(update, context)
 
-            # Профіль
+
             elif step.startswith('waiting_') and '_profile' in step:
                 await self.handle_profile_input(update, context)
 
-            # Чекаут (всі інші waiting_, наприклад waiting_email, waiting_phone)
+
             elif step.startswith('waiting_'):
                 await self.handle_checkout_input(update, context)
         else:
@@ -4077,7 +3825,6 @@ Please contact us using the details above!
         text = update.message.text.strip()
         msg = update.message
 
-        # 🧹 ПИЛОСОС: Видаляємо повідомлення юзера і старе питання бота
         try:
             await msg.delete()
         except:
@@ -4089,12 +3836,12 @@ Please contact us using the details above!
             except:
                 pass
 
-        # Оновлюємо базу даних
+
         cursor = self.conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
 
         if state['step'] == 'waiting_phone_profile':
-            # Валідація телефону
+
             clean_phone = text.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
             if not re.fullmatch(r"\+?\d{9,15}", clean_phone):
                 m = await context.bot.send_message(
@@ -4133,13 +3880,11 @@ Please contact us using the details above!
 
         self.conn.commit()
 
-        # ❌ ПРИБРАЛИ ЗАЙВЕ ПОВІДОМЛЕННЯ "✅ Updated!"
 
-        # Очищаємо стан і показуємо оновлене меню профілю
         self.user_states.pop(user_id, None)
         await self.show_profile(update, context)
 
-        # --- DELETE DATA MENU ---
+
     async def profile_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
             if await self.check_user_blocked(update, context): return
             user_id = update.effective_user.id
@@ -4148,7 +3893,6 @@ Please contact us using the details above!
             cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
             user_data = cursor.fetchone()
 
-            # Перевіряємо, що саме заповнено
             phone, address, email = user_data if user_data else (None, None, None)
 
             keyboard = []
@@ -4196,7 +3940,6 @@ Please contact us using the details above!
 
             await query.answer(f"✅ {display_name} deleted!")
 
-            # Оновлюємо меню
             await self.profile_delete_menu(update, context)
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4207,7 +3950,6 @@ Please contact us using the details above!
         step = state.get("step")
         msg = update.message
 
-        # Чистка чату
         try:
             await msg.delete()
         except:
@@ -4227,7 +3969,7 @@ Please contact us using the details above!
 
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
 
-        # --- СТВОРЕННЯ ТОВАРУ (Steps) ---
+
         if step == 'add_product_name':
             state['product_data']['name'] = input_value
             state['step'] = 'add_product_description'
@@ -4248,8 +3990,6 @@ Please contact us using the details above!
             state['msg_id'] = m.message_id
             return
 
-        # ... (Пропускаємо прості кроки waiting_simple_... і waiting_var_... вони стандартні) ...
-        # (Якщо у вас вони є, залиште їх як були, або скопіюйте з минулого разу. Головне - це EDIT MODE внизу)
 
         if step == 'waiting_simple_price':
             try:
@@ -4322,7 +4062,7 @@ Please contact us using the details above!
             state['msg_id'] = m.message_id
             return
 
-        # Введення значень варіантів (Creation Mode)
+
         if step == 'waiting_variant_values':
             variant_type = state.get('current_variant_type', 'Option')
             raw_values = input_value.split(",")
@@ -4332,21 +4072,20 @@ Please contact us using the details above!
                 if not v: continue
                 parts = v.split("=")
 
-                # Чистимо ім'я від префіксу (наприклад "Memory: 128GB" -> "128GB")
                 opt_name = parts[0].strip()
                 if opt_name.lower().startswith(f"{variant_type.lower()}:"):
                     opt_name = opt_name[len(variant_type) + 1:].strip()
                 elif opt_name.lower().startswith(f"{variant_type.lower()} "):
                     opt_name = opt_name[len(variant_type) + 1:].strip()
 
-                if len(parts) == 3:  # Name=Qty=Price
+                if len(parts) == 3:
                     try:
                         q = int(parts[1].strip())
                         p = float(parts[2].replace("$", "").strip())
                         parsed_data[opt_name] = {"qty": q, "price": p}
                     except:
                         pass
-                elif len(parts) == 2:  # Name=Qty
+                elif len(parts) == 2:
                     try:
                         parsed_data[opt_name] = int(parts[1].strip())
                     except:
@@ -4365,9 +4104,6 @@ Please contact us using the details above!
             state['msg_id'] = m.message_id
             return
 
-        # =========================================================================
-        # 🔥🔥🔥 ВИПРАВЛЕНИЙ EDIT MODE (РЕДАГУВАННЯ) 🔥🔥🔥
-        # =========================================================================
         if state.get('editing_field'):
             field_to_edit = state['editing_field']
             product_id = state['product_id']
@@ -4395,7 +4131,7 @@ Please contact us using the details above!
                         variants_dict = {}
                         current_calc_stock = 0
 
-                        # 1. Авто-визначення категорії, якщо немає ":"
+
                         if ":" not in input_value:
                             cursor = self.conn.cursor()
                             cursor.execute("SELECT variants FROM products WHERE id = ?", (product_id,))
@@ -4419,8 +4155,7 @@ Please contact us using the details above!
                                     v = v.strip()
                                     if not v: continue
 
-                                    # Чистимо ім'я опції від дублювання категорії
-                                    # Наприклад "Memory: 128GB" всередині "Memory: ..."
+
                                     cat_name = k.strip()
                                     opt_raw = v
 
@@ -4428,18 +4163,17 @@ Please contact us using the details above!
                                         sub = opt_raw.split("=")
                                         opt_name = sub[0].strip()
 
-                                        # Чистка імені
                                         if opt_name.lower().startswith(f"{cat_name.lower()}:"):
                                             opt_name = opt_name[len(cat_name) + 1:].strip()
 
-                                        if len(sub) == 2:  # Name=Qty
+                                        if len(sub) == 2:
                                             try:
-                                                q = int(sub[1].replace("$", "").strip())  # На випадок помилки
+                                                q = int(sub[1].replace("$", "").strip())
                                                 parsed_vals[opt_name] = q
                                                 current_calc_stock += q
                                             except:
                                                 pass
-                                        elif len(sub) == 3:  # Name=Qty=Price
+                                        elif len(sub) == 3:
                                             try:
                                                 q = int(sub[1].strip())
                                                 p = float(sub[2].replace("$", "").strip())
@@ -4448,7 +4182,7 @@ Please contact us using the details above!
                                             except:
                                                 pass
                                     else:
-                                        # Просто ім'я
+
                                         parsed_vals[opt_raw] = 0
 
                                 if parsed_vals:
@@ -4496,7 +4230,6 @@ Please contact us using the details above!
                                            reply_markup=InlineKeyboardMarkup(kb))
             return
 
-    # Допоміжна функція для редагування (щоб не захаращувати основну)
     async def handle_edit_field_input(self, update, context, state, input_value, msg):
         field_to_edit = state['editing_field']
         product_id = state['product_id']
@@ -4599,12 +4332,10 @@ Please contact us using the details above!
 
         variant_type = query.data.replace("vartype_", "").replace("admin_add_variant_type_", "")
 
-        # --- ЛОГІКА 1: ЗБЕРЕЖЕННЯ (DONE) ---
         if variant_type == "DONE":
             p = state['product_data']
             variants_data = p.get('variants', {})
 
-            # АВТОМАТИЧНИЙ ПІДРАХУНОК СТОКУ
             total_stock = 0
             if variants_data:
                 for key, val in variants_data.items():
@@ -4641,7 +4372,7 @@ Please contact us using the details above!
             )
             return
 
-        # --- ЛОГІКА 2: ВИБРАНО ТИП (Size, Color...) ---
+
         state['current_variant_type'] = variant_type
         state['step'] = 'waiting_variant_values'
 
@@ -4684,13 +4415,11 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # Отримуємо тип (видаляємо префікс)
         variant_type = query.data.replace("admin_add_variant_type_", "")
 
-        # 👇 ОНОВЛЕНІ ПРИКЛАДИ З ЦІНАМИ 👇
         examples_map = {
-            "Size": "S=10, M=5, L=2=1200",  # L коштує 1200
-            "Color": "Red=5, Blue=3, Gold=10=50",  # Gold дорожчий
+            "Size": "S=10, M=5, L=2=1200",
+            "Color": "Red=5, Blue=3, Gold=10=50",
             "Memory": "128GB=10=800, 256GB=5=900, 512GB=2=1100",  # Класика
             "Volume": "0.5L=20=2, 1L=10=3, 2L=5=5",
             "ShoeSize": "40=2, 41=5, 42=3",
@@ -4710,18 +4439,15 @@ Please contact us using the details above!
             f"`{example_text}`"
         )
 
-        # Кнопка НАЗАД
         kb = [[InlineKeyboardButton("🔙 Back to Types", callback_data="admin_step_variants_init")]]
 
-        # Оновлюємо стан
         self.user_states[user_id]['step'] = 'waiting_variant_values'
         self.user_states[user_id]['current_variant_type'] = variant_type
 
-        # Редагуємо повідомлення
         try:
             await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
         except:
-            # Fallback якщо повідомлення застаріло
+
             msg = await context.bot.send_message(chat_id=query.message.chat_id, text=text,
                                                  reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
             self.user_states[user_id]['msg_id'] = msg.message_id
@@ -4731,13 +4457,11 @@ Please contact us using the details above!
         user_id = update.effective_user.id
         data = query.data
 
-        # Видаляємо старе повідомлення з кнопками
         try:
             await query.message.delete()
         except:
             pass
 
-        # --- ГІЛКА 1: ПРОСТИЙ ТОВАР (Запитуємо Ціну) ---
         if data == "admin_decision_vars_no":
             self.user_states[user_id]['step'] = 'waiting_simple_price'
 
@@ -4751,13 +4475,12 @@ Please contact us using the details above!
             )
             self.user_states[user_id]['msg_id'] = msg.message_id
 
-        # --- ГІЛКА 2: ВАРІАНТИ (Пропускаємо ціну/сток, йдемо до Фото) ---
         elif data == "admin_decision_vars_yes":
             self.user_states[user_id]['step'] = 'waiting_var_image'
-            # Ініціалізуємо порожні дані для варіантів
+
             self.user_states[user_id]['product_data']['variants'] = {}
             self.user_states[user_id]['product_data']['stock'] = 0
-            self.user_states[user_id]['product_data']['price'] = 0  # Ціна буде залежати від варіантів
+            self.user_states[user_id]['product_data']['price'] = 0
 
             cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
 
@@ -4774,7 +4497,6 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # Повертаємо стан вибору типу
         self.user_states[user_id]['step'] = 'add_product_variants_loop'
 
         text = "🎨 **Product Variants**\n\nSelect a type below or click **Finish**:"
@@ -4798,7 +4520,7 @@ def main():
 
     application.add_handler(MessageHandler(filters.PHOTO, bot.handle_admin_product_input))
     application.add_handler(MessageHandler(filters.CONTACT, bot.handle_checkout_input))
-    # Текстові повідомлення (має бути нижче команд, щоб не перехоплювати /start)
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text))
 
     # =========================================================================
@@ -4809,7 +4531,6 @@ def main():
 
     # Каталог і категорії
     application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog$'))
-    # 👇 Важливо: show_category_products (з пагінацією) має бути вище за звичайну категорію, якщо патерни схожі
     application.add_handler(CallbackQueryHandler(bot.show_category_products, pattern=r'^category_'))
     application.add_handler(CallbackQueryHandler(bot.show_product, pattern=r'^product_'))
     application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog'))
@@ -4830,14 +4551,14 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.clear_cart, pattern=r'^clear_cart$'))
     application.add_handler(CallbackQueryHandler(bot.handle_cart_update, pattern=r'^cart_(plus|minus)_'))
 
-    # Логіка додавання/видалення
+
     application.add_handler(CallbackQueryHandler(bot.handle_add_to_cart_click, pattern=r'^add_to_cart_'))
     application.add_handler(CallbackQueryHandler(bot.remove_from_cart, pattern=r'^remove_from_cart_'))
     application.add_handler(CallbackQueryHandler(bot.handle_cart_actions, pattern=r'^cart_item_'))  # Нові кнопки +/-
     application.add_handler(
         CallbackQueryHandler(bot.cart_operations, pattern=r'^cart_(add|remove)_'))  # Старі (якщо лишились)
 
-    # Оформлення замовлення
+
     application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
     application.add_handler(CallbackQueryHandler(bot.use_profile_data, pattern=r'^use_profile_data$'))
     application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank)$'))
@@ -4845,7 +4566,7 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
     application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^my_cart$'))
 
-    # Клієнтські замовлення
+
     application.add_handler(CallbackQueryHandler(bot.show_my_orders, pattern=r'^my_orders$'))
     application.add_handler(CallbackQueryHandler(bot.handle_my_orders_pagination, pattern=r'^my_orders_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.show_order_details, pattern=r'^order_details_'))
@@ -4856,20 +4577,20 @@ def main():
     # =========================================================================
     application.add_handler(CallbackQueryHandler(bot.admin_panel, pattern=r'^admin_panel$'))
     application.add_handler(CallbackQueryHandler(bot.admin_statistics, pattern=r'^admin_statistics$'))
-    # Знайдіть цей рядок (на який свариться помилка) і замініть його:
+
     application.add_handler(CallbackQueryHandler(bot.admin_revenue, pattern=r'^admin_revenue_chart$'))
 
-    # Додайте цей рядок для обробки кнопок перемикання періодів:
+
     application.add_handler(CallbackQueryHandler(bot.handle_revenue_period, pattern=r'^rev_'))
 
 
 
-    # Управління користувачами
+
     application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
     application.add_handler(CallbackQueryHandler(bot.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
 
-    # Управління всіма замовленнями
+
     application.add_handler(CallbackQueryHandler(bot.admin_all_orders, pattern=r'^admin_all_orders$'))
     application.add_handler(
         CallbackQueryHandler(bot.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
@@ -4883,50 +4604,48 @@ def main():
     # 5. АДМІН: УПРАВЛІННЯ ТОВАРАМИ (Нова структура)
     # =========================================================================
 
-    # 👇 ГОЛОВНЕ: Кнопка "Products" тепер відкриває КАТЕГОРІЇ
+
     application.add_handler(CallbackQueryHandler(bot.admin_categories_menu, pattern='^admin_products$'))
 
-    # Список товарів у категорії (пагінація)
+
     application.add_handler(CallbackQueryHandler(bot.admin_products_list, pattern=r'^admin_list_cat_'))
     application.add_handler(CallbackQueryHandler(bot.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
 
-    # Меню конкретного товару
+
     application.add_handler(CallbackQueryHandler(bot.admin_product_menu, pattern=r'^admin_prod_'))
     application.add_handler(CallbackQueryHandler(bot.admin_view_product,
-                                                 pattern=r'^admin_view_product_'))  # Старий вьювер, про всяк випадок
+                                                 pattern=r'^admin_view_product_'))
 
-    # Створення та Редагування
+
     application.add_handler(CallbackQueryHandler(bot.admin_add_product, pattern=r'^admin_add_product$'))
     application.add_handler(CallbackQueryHandler(bot.admin_edit_product, pattern=r'^admin_edit_product_'))
     application.add_handler(CallbackQueryHandler(bot.admin_edit_field, pattern=r'^admin_edit_field_'))
 
-    # Видалення
+
     application.add_handler(CallbackQueryHandler(bot.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
     application.add_handler(
         CallbackQueryHandler(bot.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
 
-    # Фото
+
     application.add_handler(CallbackQueryHandler(bot.admin_image_menu, pattern=r'^admin_image_menu_'))
     application.add_handler(CallbackQueryHandler(bot.admin_image_set_prompt, pattern=r'^admin_image_set_'))
     application.add_handler(CallbackQueryHandler(bot.admin_image_delete, pattern=r'^admin_image_delete_'))
 
-    # Розвилка (Простий / Варіанти) та Візард
     application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
     application.add_handler(CallbackQueryHandler(bot.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
 
     # =========================================================================
     # 6. ЛОГІКА ВАРІАНТІВ (Вибір кольору/розміру)
     # =========================================================================
-    # Адмін вибирає тип варіанту (Size, Color...)
+
     application.add_handler(
         CallbackQueryHandler(bot.admin_handle_variant_type_selection, pattern=r'^admin_add_variant_type_'))
-    # Адмін тисне "Назад" у виборі типів
+
     application.add_handler(
         CallbackQueryHandler(bot.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
-    # Загальний хендлер для кнопок варіантів (клієнт і адмін, якщо є спільні)
+
     application.add_handler(CallbackQueryHandler(bot.handle_variant_type_selection, pattern=r'^vartype_'))
 
-    # Клієнт вибирає конкретну опцію (128GB)
     application.add_handler(CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^var_sel_'))
     application.add_handler(CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^cancel_selection$'))
 
