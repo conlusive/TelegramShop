@@ -685,9 +685,38 @@ Please contact us using the details above!
         total_cart_qty = res_total[0] if res_total and res_total[0] else 0
 
         emoji = product['emoji'] or ''
-        price_text = f"{product['price']}$"
 
-        # --- ФОРМУЄМО ОПИС (Відображаємо варіанти текстом) ---
+        # --- ЛОГІКА ЦІНИ (Визначаємо мінімальну "від") ---
+        base_price = product['price']
+        display_price = f"{base_price}$"
+
+        if product['variants']:
+            try:
+                v_data = json.loads(product['variants'])
+                prices = []
+                # Шукаємо всі ціни в варіантах
+                for key, values in v_data.items():
+                    if isinstance(values, dict):
+                        for sub_v in values.values():
+                            if isinstance(sub_v, dict) and 'price' in sub_v:
+                                prices.append(float(sub_v['price']))
+
+                if prices:
+                    min_p = min(prices)
+                    display_price = f"from {min_p}$"
+            except:
+                pass
+
+        # --- ЛОГІКА СТАТУСУ (Без виводу кількості) ---
+        stock_count = product['stock']
+        if stock_count <= 0:
+            stock_status = "❌ Out of Stock"
+        elif stock_count <= 5:
+            stock_status = "⚠️ Status: Low Stock"
+        else:
+            stock_status = "✅ Status: In Stock"
+
+        # Формуємо опис варіантів
         vars_text = ""
         if product['variants']:
             try:
@@ -703,20 +732,18 @@ Please contact us using the details above!
             except:
                 pass
 
-        stock_status = f"📦 In Stock: {product['stock']}" if product['stock'] > 0 else "❌ Out of Stock"
-
-        # 🔥 СТАРИЙ ТЕКСТ (З In Cart) 🔥
+        # Формуємо фінальний текст
         text = (
             f"{emoji} **{product['name']}**\n\n"
             f"📝 {product['description']}"
             f"{vars_text}\n"
-            f"💰 Price: **{price_text}**\n"
-            f"{stock_status}\n"
+            f"💰 Price: **{display_price}**\n"
+            f"📦 {stock_status}\n"
             f"🛒 In Cart: {cart_qty}\n\n"
             f"Category: {product['category']}"
         )
 
-        # 🔥 КНОПКИ (Без цифри посередині) 🔥
+        # Клавіатура
         keyboard = []
         row1 = []
 
@@ -725,12 +752,12 @@ Please contact us using the details above!
             row1.append(InlineKeyboardButton("➖ Remove", callback_data=f"prod_minus_{product_id}"))
 
         # Кнопка Add (показуємо, якщо є сток)
-        if product['stock'] > 0:
-            row1.append(InlineKeyboardButton("➕ Add", callback_data=f"prod_plus_{product_id}"))
+        if stock_count > 0:
+            row1.append(InlineKeyboardButton("➕ Add to Cart", callback_data=f"add_to_cart_{product_id}"))
 
         if row1: keyboard.append(row1)
 
-        # Ряд 2
+        # Ряд з кошиком та назад
         cart_btn_text = f"🛒 Cart ({total_cart_qty})" if total_cart_qty > 0 else "🛒 Cart"
         keyboard.append([
             InlineKeyboardButton(cart_btn_text, callback_data="cart"),
@@ -741,7 +768,7 @@ Please contact us using the details above!
         img = product['image_url']
         is_file = img and not img.startswith("http")
 
-        # Відправка (ВИПРАВЛЕНО СИНТАКСИС)
+        # Відправка або редагування повідомлення
         try:
             if query and query.message.text and not is_file:
                 await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
@@ -755,14 +782,13 @@ Please contact us using the details above!
                     await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                                                    reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
 
-                # Ось тут була помилка відступів. Тепер вірно:
                 if query:
                     try:
                         await query.message.delete()
                     except:
                         pass
-        except:
-            pass
+        except Exception as e:
+            print(f"Error in show_product: {e}")
 
     async def handle_add_to_cart_click(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
