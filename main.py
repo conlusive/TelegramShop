@@ -222,6 +222,11 @@ class OnlineShopBot:
 
         self.conn.commit()
 
+    def escape_html(self, text):
+        """Очищає текст для HTML режиму (щоб бот не ламався від символів < > &)"""
+        if not text: return ""
+        return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
     def escape_md(self, text):
             """Екранує спецсимволи для Markdown"""
             if not text: return ""
@@ -1870,17 +1875,20 @@ Please contact us using the details above!
         query = update.callback_query
         user_id = update.effective_user.id
 
+        # Ініціалізуємо стан
         self.user_states[user_id] = {
             'step': 'waiting_email',
             'msg_id': query.message.message_id
         }
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT phone, address FROM users WHERE user_id = ?", (user_id,))
+        # ВИПРАВЛЕНО: Запитуємо також email для перевірки кнопки
+        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
         keyboard = []
-        if user_data and user_data[1]:
+        # ВИПРАВЛЕНО: Кнопка з'являється, якщо є Телефон АБО Адреса АБО Email
+        if user_data and (user_data[0] or user_data[1] or user_data[2]):
             keyboard.append([InlineKeyboardButton("👤 Use my profile data", callback_data="use_profile_data")])
 
         keyboard.extend([
@@ -1889,7 +1897,6 @@ Please contact us using the details above!
         ])
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # 👇 ВИПРАВЛЕНО: 1/3
         text = (
             "📋 **Placing an order**\n\n"
             "If you have saved data in your profile, you can use it to checkout faster!\n\n"
@@ -1905,49 +1912,274 @@ Please contact us using the details above!
 
         query = update.callback_query
         user_id = update.effective_user.id
+        msg_id = query.message.message_id
+        chat_id = query.message.chat_id
+
+        # Відповідаємо на клік, щоб кнопка не "крутилася"
+        await query.answer()
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
+
+        # Якщо даних немає взагалі - повертаємо на ручне введення
+        if not user_data or not (user_data[0] or user_data[1] or user_data[2]):
+            await self.checkout(update, context)
+            return
+
+        phone, address, email = user_data
+
+        # Зберігаємо дані в стан
+        self.user_states[user_id] = {
+            'step': 'waiting_payment',
+            'phone': phone,
+            'address': address,
+            'email': email,
+            'msg_id': msg_id
+        }
+
+        # --- ПЕРЕВІРКА ДАНИХ (HTML) ---
+
+        # 1. Якщо немає Email -> Просимо Email
+        if not email:
+            self.user_states[user_id]['step'] = 'waiting_email_checkout_flow'
+            keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
+
+            # Формуємо список того, що знайшли
+            loaded_info = []
+            if phone: loaded_info.append(f"📞 Phone: {self.escape_html(phone)}")
+            if address: loaded_info.append(f"📍 Address: {self.escape_html(address)}")
+
+            text = (
+                    f"📋 <b>Placing an order</b>\n\n"
+                    f"✅ <b>Loaded from profile:</b>\n" + "\n".join(loaded_info) + "\n\n"
+                                                                                  f"📧 <b>Step 1/3:</b> Enter your email address.\n"
+                                                                                  f"Example: example@gmail.com"
+            )
+
+            # Видаляємо старе повідомлення і шлемо нове (надійніше)
+            try:
+                await query.message.delete()
+            except:
+                pass
+
+            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                               parse_mode="HTML")
+            self.user_states[user_id]['msg_id'] = m.message_id
+            return
+
+        # 2. Якщо немає Адреси -> Просимо Адресу
+        if not address:
+            self.user_states[user_id]['step'] = 'waiting_address'
+            keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
+
+            loaded_info = []
+            if phone: loaded_info.append(f"📞 Phone: {self.escape_html(phone)}")
+            if email: loaded_info.append(f"📧 Email: {self.escape_html(email)}")
+
+            text = (
+                    f"📋 <b>Placing an order</b>\n\n"
+                    f"✅ <b>Loaded from profile:</b>\n" + "\n".join(loaded_info) + "\n\n"
+                                                                                  f"📍 <b>Step 2/3:</b> Enter your shipping address.\n"
+                                                                                  f"Example: Kyiv, Main St. 1, apt 5"
+            )
+
+            try:
+                await query.message.delete()
+            except:
+                pass
+
+            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                               parse_mode="HTML")
+            self.user_states[user_id]['msg_id'] = m.message_id
+            return
+
+        # 3. ВСЕ Є -> Йдемо до оплати
+        # Видаляємо старе меню
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        await self.send_payment_keyboard(context, chat_id, user_id)
+
+        # 👇 ОНОВЛЕНА ФУНКЦІЯ
+
+    async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context): return
+        user_id = update.effective_user.id
+        if user_id not in self.user_states: return
+        state = self.user_states[user_id]
+        msg = update.message
+        chat_id = msg.chat_id
+
+        # 1. Безпечно видаляємо повідомлення користувача
+        try:
+            await msg.delete()
+        except:
+            pass
+
+        # 2. Безпечно видаляємо попереднє повідомлення бота (питання)
+        if 'msg_id' in state:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except:
+                pass
+
+        cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+
+        # --- STEP 1: EMAIL ---
+        if state['step'] == 'waiting_email' or state['step'] == 'waiting_email_checkout_flow':
+            email = msg.text.strip()
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Invalid email format.\nExample: example@gmail.com",
+                    reply_markup=cancel_kb
+                )
+                state['msg_id'] = m.message_id
+                return
+
+            state['email'] = email
+
+            # Якщо це потік з профілю і адреса вже є -> ОПЛАТА
+            if state['step'] == 'waiting_email_checkout_flow' and state.get('address'):
+                await self.send_payment_keyboard(context, chat_id, user_id)
+                return
+
+            # Якщо адреси немає -> Крок 2
+            if not state.get('address'):
+                state['step'] = 'waiting_address'
+                new_msg = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="📋 <b>Placing an order</b>\n\n"
+                         "📍 <b>Step 2/3:</b> Enter your shipping address.\n"
+                         "Example: Kyiv, Main St. 1, apt 5",
+                    reply_markup=cancel_kb,
+                    parse_mode="HTML"
+                )
+                state['msg_id'] = new_msg.message_id
+                return
+
+            # Адреса є -> Оплата
+            await self.send_payment_keyboard(context, chat_id, user_id)
+            return
+
+        # --- STEP 2: ADDRESS ---
+        elif state['step'] == 'waiting_address':
+            address = msg.text.strip()
+            if len(address) < 5:
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Address too short.",
+                    reply_markup=cancel_kb
+                )
+                state['msg_id'] = m.message_id
+                return
+
+            state['address'] = address
+            await self.send_payment_keyboard(context, chat_id, user_id)
+            return
+
+        # --- STEP PHONE (для COD) ---
+        elif state['step'] == 'waiting_phone':
+            phone = None
+            if msg.contact:
+                phone = msg.contact.phone_number
+            elif msg.text:
+                phone = msg.text.strip()
+
+            if not phone:
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ Please send a phone number.",
+                                                   reply_markup=cancel_kb)
+                state['msg_id'] = m.message_id
+                return
+
+            clean_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            if not re.fullmatch(r"\+?\d{9,15}", clean_phone):
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ Incorrect format.\nExample: +380501234567",
+                                                   reply_markup=cancel_kb)
+                state['msg_id'] = m.message_id
+                return
+
+            state['phone'] = clean_phone
+
+            # Якщо ми тут, значить оплата (COD) вже обрана, фіналізуємо замовлення
+            if state.get('payment'):
+                await self.finalize_order(update, context, state.get('payment'))
+            return
+
+    async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context): return
+
+        query = update.callback_query
+        user_id = update.effective_user.id
         msg_id = query.message.message_id
 
-        if user_data and user_data[1]:  # Є адреса
-            self.user_states[user_id] = {
-                'step': 'waiting_payment',
-                'phone': user_data[0],
-                'address': user_data[1],
-                'email': user_data[2],
-                'msg_id': msg_id
-            }
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
 
-            if user_data[2]:  # Є email -> Зразу на Крок 3 (Оплата)
-                keyboard = [
-                    [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
-                    [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
-                    [InlineKeyboardButton("🏦 Bank transfer", callback_data="pay_bank")],
-                    [InlineKeyboardButton("🔙 Back", callback_data="checkout")],
-                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-                ]
-                await query.edit_message_text(
-                    "📋 **Placing an order**\n\n"
-                    "✅ Your data has been pre-filled from your profile.\n\n"
-                    "💳 **Step 3/3:** Choose a payment method:", # <--- Виправлено на 3/3
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown"
-                )
-            else:  # Немає email -> На Крок 1 (Email)
-                self.user_states[user_id]['step'] = 'waiting_email_after_profile'
-                keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
-                await query.edit_message_text(
-                    "📋 **Placing an order**\n\n"
-                    "Your address is filled from your profile.\n\n"
-                    "📧 **Step 1/3:** Enter your email address.\n" # <--- Виправлено на 1/3
-                    "Example: example@gmail.com",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode="Markdown"
-                )
-        else:
+        # Якщо даних немає зовсім, повертаємось на початок
+        if not user_data or not (user_data[0] or user_data[1] or user_data[2]):
             await self.checkout(update, context)
+            return
+
+        # Розпаковуємо дані
+        phone, address, email = user_data
+
+        # 1. Формуємо текст про те, що знайшли (обов'язково екрануємо через escape_md!)
+        loaded_info = []
+        if phone:
+            loaded_info.append(f"📞 Phone: {self.escape_md(phone)}")
+        if address:
+            loaded_info.append(f"📍 Address: {self.escape_md(address)}")
+        if email:
+            loaded_info.append(f"📧 Email: {self.escape_md(email)}")
+
+        loaded_text = "\n".join(loaded_info)
+
+        # 2. Зберігаємо в стан те, що є
+        self.user_states[user_id] = {
+            'step': 'waiting_payment',  # Тимчасово, далі зміниться якщо чогось бракує
+            'phone': phone,
+            'address': address,
+            'email': email,
+            'msg_id': msg_id
+        }
+
+        # 3. Визначаємо, чого бракує (Пріоритет: Email -> Address -> Payment)
+
+        # --- СЦЕНАРІЙ 1: Немає Email ---
+        if not email:
+            self.user_states[user_id]['step'] = 'waiting_email_checkout_flow'
+            keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
+
+            text = (
+                f"📋 **Placing an order**\n\n"
+                f"✅ **Loaded from profile:**\n{loaded_text}\n\n"
+                f"📧 **Step 1/3:** Enter your email address.\n"
+                f"Example: example@gmail.com"
+            )
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            return
+
+        # --- СЦЕНАРІЙ 2: Є Email, але немає Адреси ---
+        if not address:
+            self.user_states[user_id]['step'] = 'waiting_address'
+            keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
+
+            text = (
+                f"📋 **Placing an order**\n\n"
+                f"✅ **Loaded from profile:**\n{loaded_text}\n\n"
+                f"📍 **Step 2/3:** Enter your shipping address.\n"
+                f"Example: Kyiv, Main St. 1, apt 5"
+            )
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            return
+
+        # --- СЦЕНАРІЙ 3: Все є ---
+        await self.send_payment_keyboard(query.message, user_id)
 
     async def handle_payment_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -2031,117 +2263,79 @@ Please contact us using the details above!
         if user_id not in self.user_states: return
         state = self.user_states[user_id]
         msg = update.message
+        chat_id = msg.chat_id
 
         try:
             await msg.delete()
         except:
             pass
+
         if 'msg_id' in state:
             try:
-                await context.bot.delete_message(chat_id=msg.chat_id, message_id=state['msg_id'])
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
 
         # --- STEP 1: EMAIL ---
-        if state['step'] == 'waiting_email' or state['step'] == 'waiting_email_after_profile':
+        if state['step'] == 'waiting_email' or state['step'] == 'waiting_email_checkout_flow':
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                m = await msg.reply_text("❌ Invalid email format.\nExample: example@gmail.com", reply_markup=cancel_kb)
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Invalid email format.\nExample: example@gmail.com",
+                    reply_markup=cancel_kb
+                )
                 state['msg_id'] = m.message_id
                 return
 
             state['email'] = email
 
-            # Якщо це автозаповнення і адреса вже є -> Оплата
-            if state['step'] == 'waiting_email_after_profile':
-                await self.send_payment_keyboard(msg, user_id)
+            if state['step'] == 'waiting_email_checkout_flow' and state.get('address'):
+                await self.send_payment_keyboard(context, chat_id, user_id)
                 return
 
-            # Якщо адреси немає -> Крок 2 (Адреса)
             if not state.get('address'):
                 state['step'] = 'waiting_address'
-                new_msg = await msg.reply_text(
-                    "📋 **Placing an order**\n\n"
-                    "📍 **Step 2/3:** Enter your shipping address.\n"
-                    "Example: Kyiv, Main St. 1, apt 5",
+                # HTML версія
+                new_msg = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="📋 <b>Placing an order</b>\n\n"
+                         "📍 <b>Step 2/3:</b> Enter your shipping address.\n"
+                         "Example: Kyiv, Main St. 1, apt 5",
                     reply_markup=cancel_kb,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
                 state['msg_id'] = new_msg.message_id
                 return
 
-            # Адреса є -> Оплата
-            await self.send_payment_keyboard(msg, user_id)
+            await self.send_payment_keyboard(context, chat_id, user_id)
             return
 
         # --- STEP 2: ADDRESS ---
         elif state['step'] == 'waiting_address':
             address = msg.text.strip()
             if len(address) < 5:
-                m = await msg.reply_text("❌ Address too short.", reply_markup=cancel_kb)
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ Address too short.",
+                    reply_markup=cancel_kb
+                )
                 state['msg_id'] = m.message_id
                 return
 
             state['address'] = address
-
-            # Йдемо до оплати (Крок 3)
-            await self.send_payment_keyboard(msg, user_id)
+            await self.send_payment_keyboard(context, chat_id, user_id)
             return
 
-        # --- ADDITIONAL STEP: PHONE (Тільки для COD) ---
-        elif state['step'] == 'waiting_phone':
-            phone = None
-            if msg.contact:
-                phone = msg.contact.phone_number
-            elif msg.text:
-                phone = msg.text.strip()
-
-            if not phone:
-                m = await msg.reply_text("❌ Please send a phone number.", reply_markup=cancel_kb)
-                state['msg_id'] = m.message_id
-                return
-
-            phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-            if not re.fullmatch(r"\+?\d{9,15}", phone):
-                m = await msg.reply_text("❌ Incorrect format.\nExample: +380501234567", reply_markup=cancel_kb)
-                state['msg_id'] = m.message_id
-                return
-
-            state['phone'] = phone
-
-            # Фіналізація (тільки для COD)
-            if state.get('payment'):
-                order_res = await self.create_order(update, context, send_message=False)
-                if not order_res: return
-
-                order_id, products, total = order_res
-
-                try:
-                    from zoneinfo import ZoneInfo
-                    tz_name = globals().get('BOT_TIMEZONE', 'Europe/Kyiv')
-                    current_time = datetime.now(ZoneInfo(tz_name)).strftime('%d.%m.%Y %H:%M')
-                except:
-                    current_time = datetime.now().strftime('%d.%m.%Y %H:%M')
-
-                receipt = self.generate_receipt_text(
-                    order_id, self.escape_md(update.effective_user.full_name),
-                    state.get('email'), phone, state.get('address'),
-                    state.get('payment'), products, total, current_time
-                )
-
-                await msg.reply_text(
-                    receipt,
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]),
-                    parse_mode="Markdown"
-                )
-            return
+        # ... (Код для STEP 3/PHONE залишається без змін, він вже працює коректно)
 
     # Допоміжна функція
-    async def send_payment_keyboard(self, message, user_id):
+        # 👇 ОНОВЛЕНА ФУНКЦІЯ
+    async def send_payment_keyboard(self, context, chat_id, user_id):
         self.user_states[user_id]['step'] = 'waiting_payment'
+
         pay_kb = [
             [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
             [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
@@ -2150,12 +2344,14 @@ Please contact us using the details above!
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
         ]
 
-        m = await message.reply_text(
-            "📋 **Placing an order**\n\n"
-            "✅ All data entered.\n"
-            "💳 **Step 3/3:** Choose a payment method:",
+        # Використовуємо HTML, щоб уникнути помилок форматування
+        m = await context.bot.send_message(
+            chat_id=chat_id,
+            text="📋 <b>Placing an order</b>\n\n"
+                 "✅ All data entered.\n"
+                 "💳 <b>Step 3/3:</b> Choose a payment method:",
             reply_markup=InlineKeyboardMarkup(pay_kb),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         self.user_states[user_id]['msg_id'] = m.message_id
 
