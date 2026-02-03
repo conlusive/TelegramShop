@@ -720,18 +720,43 @@ Please contact us using the details above!
         stock_status = "✅ <b>In Stock</b>" if stock > 5 else (
             f"⚠️ <b>Low Stock</b> ({stock})" if stock > 0 else "❌ <b>Out of Stock</b>")
 
-        # --- ВАРІАНТИ ---
+        # --- ВАРІАНТИ ТА ЦІНА ---
         variants_display = ""
+        base_price = product['price']
+        display_price = f"{base_price}$"  # За замовчуванням
+
         if product['variants']:
             try:
                 v_data = json.loads(product['variants'])
+
+                # 1. Формуємо список варіантів для відображення
                 for v_type, options in v_data.items():
                     opt_list = list(options.keys()) if isinstance(options, dict) else options
                     variants_display += f"\n🔹 <b>{v_type}:</b> {', '.join(map(str, opt_list))}"
-            except:
-                pass
 
-        # --- ЦІНА ТА КОШИК ---
+                # 2. Розраховуємо діапазон цін (from ... $)
+                all_prices = []
+                for v_type, options in v_data.items():
+                    if isinstance(options, dict):
+                        for opt, info in options.items():
+                            # Якщо у варіанта є своя ціна - беремо її, інакше - базову
+                            if isinstance(info, dict) and 'price' in info:
+                                all_prices.append(float(info['price']))
+                            else:
+                                all_prices.append(float(base_price))
+
+                if all_prices:
+                    min_p = min(all_prices)
+                    max_p = max(all_prices)
+                    if min_p != max_p:
+                        display_price = f"from {min_p}$"
+                    else:
+                        display_price = f"{min_p}$"
+
+            except Exception as e:
+                print(f"Price calc error: {e}")
+
+        # --- КОШИК ---
         cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
         in_cart = cursor.fetchone()[0] or 0
 
@@ -740,7 +765,7 @@ Please contact us using the details above!
             f"{product['emoji'] or '📦'} <b>{self.escape_html(product['name'])}</b>\n\n"
             f"{self.escape_html(product['description'] or 'No description.')}\n"
             f"{variants_display}\n\n"
-            f"💰 Price: <b>{product['price']}$</b>\n"
+            f"💰 Price: <b>{display_price}</b>\n"
             f"📦 Status: {stock_status}\n"
             f"🛒 In Cart: <b>{in_cart}</b>"
         )
@@ -1235,10 +1260,25 @@ Please contact us using the details above!
         user_id = update.effective_user.id
         data = query.data
 
+        # 👇 ВИПРАВЛЕННЯ: Правильний парсинг кнопок
         try:
-            action, pid_str = data.rsplit("_", 1)
-            product_id = int(pid_str)
-        except:
+            parts = data.split("_")
+            # Формат кнопки: prod_plus_ID_ProdPage_CatPage
+            # parts[0]=prod, parts[1]=plus/minus, parts[2]=ID
+
+            action_type = parts[1]  # "plus" або "minus"
+            product_id = int(parts[2])  # Тепер беремо ID з правильного місця!
+
+            # Зберігаємо сторінки, щоб кнопка "Back" працювала коректно
+            if len(parts) >= 5:
+                prod_page = int(parts[3])
+                cat_page = int(parts[4])
+                if user_id not in self.user_states: self.user_states[user_id] = {}
+                self.user_states[user_id]['prod_page'] = prod_page
+                self.user_states[user_id]['cat_page'] = cat_page
+
+        except Exception:
+            await query.answer("❌ Error parsing data")
             return
 
         cursor = self.conn.cursor()
@@ -1255,10 +1295,9 @@ Please contact us using the details above!
                 pass
 
         # === ЛОГІКА ПЛЮСА ===
-        if "plus" in action:
+        if action_type == "plus":
             # 🔥 ЯКЩО Є ВАРІАНТИ -> ЗАПУСКАЄМО ВИБІР 🔥
             if has_variants:
-                # Ця функція запустить меню вибору і потім сама додасть у кошик
                 await self.start_variant_selection(update, context, product_id)
                 return
 
@@ -1279,8 +1318,7 @@ Please contact us using the details above!
                 return
 
         # === ЛОГІКА МІНУСА ===
-        elif "minus" in action:
-            # Просто видаляємо 1 шт з кошика (будь-який варіант цього товару)
+        elif action_type == "minus":
             cursor.execute("SELECT id, quantity FROM cart WHERE user_id = ? AND product_id = ? LIMIT 1",
                            (user_id, product_id))
             target = cursor.fetchone()
@@ -1296,8 +1334,7 @@ Please contact us using the details above!
 
         self.conn.commit()
 
-        # 🔥 ОНОВЛЮЄМО КАРТКУ (Щоб змінився текст "In Cart: X" і кнопки)
-        # Викликаємо show_product, щоб гарантовано отримати той самий дизайн
+        # Оновлюємо картку (використовуємо override, щоб сторінки підтягнулись зі state)
         await self.show_product(update, context, product_id_override=product_id)
 
 
@@ -2773,6 +2810,7 @@ Please contact us using the details above!
     async def show_my_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
+        await query.answer() # Прибираємо годинник завантаження
         user_id = update.effective_user.id
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
@@ -2785,11 +2823,7 @@ Please contact us using the details above!
         offset = page * per_page
 
         if total_orders == 0:
-            try:
-                await query.edit_message_text("🛒 <b>You have no orders yet.</b>", parse_mode="HTML")
-            except:
-                pass
-            await query.answer()
+            await query.edit_message_text("🛒 <b>You have no orders yet.</b>", parse_mode="HTML")
             return
 
         cursor.execute(
@@ -2801,104 +2835,42 @@ Please contact us using the details above!
         text += "➖➖➖➖➖➖➖➖➖➖➖➖➖➖\n\n"
 
         keyboard = []
-
-        status_emoji_map = {
-            'pending': '🟡 Processing',
-            'confirmed': '🔵 Confirmed',
-            'shipped': '🟠 Sent',
-            'delivered': '🟢 Delivered',
-            'cancelled': '🔴 Cancelled'
-        }
-
-        # Кеш для емодзі, щоб не смикати базу забагато
-        emoji_cache = {}
+        status_emoji_map = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent', 'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
 
         for order in orders:
             raw_products = order["products"]
             product_display_list = []
-
-            # --- ФУНКЦІЯ ПОШУКУ ЕМОДЗІ В БД ---
-            def get_actual_emoji(p_name, p_id=None):
-                if p_id:
-                    if p_id in emoji_cache: return emoji_cache[p_id]
-                    cursor.execute("SELECT emoji FROM products WHERE id = ?", (p_id,))
-                    res = cursor.fetchone()
-                    if res and res[0]:
-                        emoji_cache[p_id] = res[0]
-                        return res[0]
-
-                # Пошук за назвою (відрізаємо варіанти в дужках)
-                base_name = re.sub(r'\s*\(.*\)$', '', str(p_name)).strip()
-                if base_name in emoji_cache: return emoji_cache[base_name]
-
-                cursor.execute("SELECT emoji FROM products WHERE name = ?", (base_name,))
-                res = cursor.fetchone()
-                emo = res[0] if res and res[0] else "📦"
-                emoji_cache[base_name] = emo
-                return emo
-
             try:
-                # 1. Пробуємо розпарсити JSON
                 products_data = json.loads(raw_products)
-                if isinstance(products_data, list):
-                    for p in products_data:
-                        # Пріоритет: емодзі з історії -> емодзі з БД -> коробка
-                        p_emoji = p.get('emoji')
-                        if not p_emoji:
-                            p_emoji = get_actual_emoji(p.get('name'), p.get('product_id'))
-
-                        p_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
-                        product_display_list.append(f"{p_emoji} {p_name}")
-                else:
-                    raise ValueError()
+                for p in products_data:
+                    p_emoji = p.get('emoji', '📦')
+                    p_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
+                    product_display_list.append(f"{p_emoji} {p_name}")
             except:
-                # 2. Обробка старого тексту
-                if raw_products:
-                    for line in str(raw_products).split('\n'):
-                        line = line.strip()
-                        if not line: continue
-                        # Шукаємо емодзі в БД для цього рядка
-                        p_emoji = get_actual_emoji(line)
-                        clean_line = re.sub(r'\s*\(?x\d+\)?\)*$', '', line)
-                        product_display_list.append(f"{p_emoji} {clean_line}")
-                else:
-                    product_display_list.append("📦 Order Items")
+                product_display_list.append("📦 Order Items")
 
             products_str = ", ".join(product_display_list)
-            if len(products_str) > 40:
-                products_str = products_str[:37] + "..."
+            if len(products_str) > 35: products_str = products_str[:32] + "..."
 
+            status_text = status_emoji_map.get(order['status'], order['status'])
             fmt_date = self.format_date(order['created_at'])
-            status_display = status_emoji_map.get(order['status'], f"⚪ {order['status']}")
 
-            # Форматування
             text += f"📋 <b>Order #{order['id']}</b>\n"
             text += f"   {self.escape_html(products_str)}\n"
-            text += f"💰 <b>{order['total_amount']}$</b> | {status_display}\n"
+            text += f"💰 <b>{order['total_amount']}$</b> | {status_text}\n"
             text += f"🗓 {fmt_date}\n"
             text += "➖➖➖➖➖➖➖➖➖➖➖➖➖➖\n\n"
 
             keyboard.append([InlineKeyboardButton(f"📄 Details #{order['id']}",
                                                   callback_data=f"order_details_{order['id']}_{page}")])
 
-        # Кнопки навігації
         nav = []
         if page > 0: nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"my_orders_page_{page - 1}"))
-        if page + 1 < total_pages: nav.append(
-            InlineKeyboardButton("Next ➡️", callback_data=f"my_orders_page_{page + 1}"))
+        if page + 1 < total_pages: nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"my_orders_page_{page + 1}"))
         if nav: keyboard.append(nav)
         keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="main_menu")])
 
-        try:
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-        except Exception as e:
-            if "Message is not modified" not in str(e):
-                try:
-                    await query.message.delete()
-                    await context.bot.send_message(query.message.chat_id, text,
-                                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-                except:
-                    pass
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     async def handle_my_orders_pagination(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
@@ -2910,33 +2882,30 @@ Please contact us using the details above!
             page = int(match.group(1))
             await self.show_my_orders(update, context, page)
 
-    async def show_order_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE, order_id=None):
+    async def show_order_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE, order_id=None,
+                                 origin_page=0):
         if await self.check_user_blocked(update, context): return
 
         query = getattr(update, "callback_query", None)
         user_id = update.effective_user.id
-        origin_page = 0
 
-        # Парсимо ID та сторінку (наприклад, order_details_126_0 або з кнопок статусу)
-        if order_id is None and query:
-            data = query.data
-            # Шукаємо цифри в форматі: будь_який_текст_ID_PAGE
-            match = re.search(r'_(\d+)_(\d+)$', data)
-            if match:
-                order_id = int(match.group(1))
-                origin_page = int(match.group(2))
-            else:
-                # Якщо сторінки немає, шукаємо просто ID в кінці
-                match_id = re.search(r'_(\d+)$', data)
-                if match_id:
-                    order_id = int(match_id.group(1))
+        # 1. Парсинг ID та Сторінки
+        if order_id is None:
+            if query:
+                data = query.data
+                # Шукаємо ID і сторінку в кінці рядка (наприклад ..._125_2)
+                match = re.search(r'_(\d+)(?:_(\d+))?$', data)
+                if match:
+                    order_id = int(match.group(1))
+                    if match.group(2):
+                        origin_page = int(match.group(2))
                 else:
                     return
 
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
 
-        # Перевірка прав (адмін бачить все, юзер тільки своє)
+        # 2. Отримання замовлення
         if int(user_id) == int(ADMIN_ID):
             cursor.execute("SELECT * FROM orders WHERE id = ?", (order_id,))
         else:
@@ -2947,264 +2916,93 @@ Please contact us using the details above!
             if query: await query.answer("❌ Order not found")
             return
 
-        # Логіка емодзі та продуктів
-        def get_actual_emoji(p_name):
-            base_name = re.sub(r'\s*\(.*\)$', '', str(p_name)).strip()
-            cursor.execute("SELECT emoji FROM products WHERE name = ?", (base_name,))
-            res = cursor.fetchone()
-            return res[0] if res and res[0] else "📦"
-
+        # 3. Безпечний парсинг товарів (Fix для "An error has occurred")
         products_text = ""
         try:
-            p_data = json.loads(order["products"])
-            for p in p_data:
-                p_emoji = p.get('emoji') or get_actual_emoji(p.get('name'))
-                name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
-                opts = p.get('selected_options', {})
-                opts_str = f" ({', '.join(opts.values())})" if opts else ""
-                products_text += f"{p_emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{p.get('quantity', 1)} = {p.get('total', 0)}$\n"
-        except:
-            if order["products"]:
-                for line in str(order["products"]).split('\n'):
-                    if line.strip(): products_text += f"{get_actual_emoji(line)} {self.escape_html(line)} = {order['total_amount']}$\n"
+            products_list = json.loads(order["products"])
+            for p in products_list:
+                if isinstance(p, str): raise ValueError()  # Якщо це старий текстовий список -> в except
 
-        status_emoji_map = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent',
-                            'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
-        status_display = status_emoji_map.get(order['status'], order['status'])
-        fmt_date = self.format_date(order['created_at'])
-        payment_method = order['payment_method'] or 'Not specified'
+                # Формуємо рядок товару
+                name = p.get('name', 'Unknown')
+                # Очистка назви від технічних даних
+                name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(name))
 
-        text = (
-            f"📋 <b>Order #{order['id']}</b>\n\n"
-            f"👤 <b>Customer:</b> {self.escape_html(order['user_name'])}\n"
-            f"📧 <b>Email:</b> {self.escape_html(order['email'] or '—')}\n"
-            f"📞 <b>Phone:</b> {self.escape_html(order['phone'] or '—')}\n"
-            f"📍 <b>Address:</b> {self.escape_html(order['address'])}\n"
-            f"💳 <b>Payment:</b> {self.escape_html(payment_method)}\n\n"
-            f"📦 <b>Products:</b>\n{products_text}\n"
-            f"💰 <b>Total amount: {order['total_amount']}$</b>\n\n"
-            f"📊 <b>Status:</b> {status_display}\n"
-            f"🕐 <b>Date:</b> {fmt_date}"
-        )
-
-        keyboard = []
-        if int(user_id) == int(ADMIN_ID):
-            keyboard.append([
-                InlineKeyboardButton("🔵 Confirm", callback_data=f"admin_confirm_{order_id}_{origin_page}"),
-                InlineKeyboardButton("🟠 Sent", callback_data=f"admin_ship_{order_id}_{origin_page}")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("🟢 Delivered", callback_data=f"admin_deliver_{order_id}_{origin_page}"),
-                InlineKeyboardButton("🔴 Cancel", callback_data=f"admin_cancel_{order_id}_{origin_page}")
-            ])
-            keyboard.append(
-                [InlineKeyboardButton("🔙 Back to All Orders", callback_data=f"admin_all_orders_page_{origin_page}")])
-        else:
-            keyboard.append([InlineKeyboardButton("🔙 Back to list", callback_data=f"my_orders_page_{origin_page}")])
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-
-        # Функція пошуку емодзі
-        def get_actual_emoji(p_name):
-            base_name = re.sub(r'\s*\(.*\)$', '', str(p_name)).strip()
-            cursor.execute("SELECT emoji FROM products WHERE name = ?", (base_name,))
-            res = cursor.fetchone()
-            return res[0] if res and res[0] else "📦"
-
-        products_text = ""
-        try:
-            products_data = json.loads(order["products"])
-            for p in products_data:
-                p_emoji = p.get('emoji') or get_actual_emoji(p.get('name'))
+                emoji = p.get('emoji', '📦')
                 qty = p.get('quantity', 1)
-                total_p = p.get('total', 0)
-                name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
+                price_total = p.get('total', 0)
+
+                # Опції (колір, розмір)
                 opts = p.get('selected_options', {})
-                opts_str = f" ({', '.join(opts.values())})" if opts else ""
-                products_text += f"{p_emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = {total_p}$\n"
+                opts_str = f" ({', '.join([str(v) for v in opts.values()])})" if opts else ""
+
+                products_text += f"{emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = <b>{price_total}$</b>\n"
         except:
-            if order["products"]:
-                for line in str(order["products"]).split('\n'):
-                    if not line.strip(): continue
-                    products_text += f"{get_actual_emoji(line)} {self.escape_html(line)} = {order['total_amount']}$\n"
+            # Fallback для старих замовлень (текстових)
+            raw = order["products"]
+            if raw:
+                for line in str(raw).split('\n'):
+                    if line.strip():
+                        products_text += f"📦 {self.escape_html(line)}\n"
+            else:
+                products_text = "📦 Items info unavailable\n"
 
-        status_emoji_map = {
-            'pending': '🟡 Processing',
-            'confirmed': '🔵 Confirmed',
-            'shipped': '🟠 Sent',
-            'delivered': '🟢 Delivered',
-            'cancelled': '🔴 Cancelled'
-        }
-        status_display = status_emoji_map.get(order['status'], order['status'])
+        # 4. Формування тексту
+        status_map = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent',
+                      'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
+        status_display = status_map.get(order['status'], order['status'])
         fmt_date = self.format_date(order['created_at'])
-        payment_method = order['payment_method'] or 'Not specified'
+        pay_method = order['payment_method'] or '—'
 
-        # Дизайн тексту
         text = (
             f"📋 <b>Order #{order['id']}</b>\n\n"
             f"👤 <b>Customer:</b> {self.escape_html(order['user_name'])}\n"
             f"📧 <b>Email:</b> {self.escape_html(order['email'] or '—')}\n"
             f"📞 <b>Phone:</b> {self.escape_html(order['phone'] or '—')}\n"
             f"📍 <b>Address:</b> {self.escape_html(order['address'])}\n"
-            f"💳 <b>Payment:</b> {self.escape_html(payment_method)}\n\n"
+            f"💳 <b>Payment:</b> {self.escape_html(pay_method)}\n\n"
             f"📦 <b>Products:</b>\n{products_text}\n"
-            f"💰 <b>Total amount: {order['total_amount']}$</b>\n\n"
+            f"💰 <b>Total: {order['total_amount']}$</b>\n\n"
             f"📊 <b>Status:</b> {status_display}\n"
             f"🕐 <b>Date:</b> {fmt_date}"
         )
 
+        # 5. Кнопки (зникають, якщо статус фінальний)
         keyboard = []
+        is_final = order['status'] in ('cancelled', 'delivered')
+
         if int(user_id) == int(ADMIN_ID):
-            # Кнопки для адміна
-            keyboard.append([
-                InlineKeyboardButton("🔵 Confirm", callback_data=f"admin_confirm_{order_id}_{origin_page}"),
-                InlineKeyboardButton("🟠 Sent", callback_data=f"admin_ship_{order_id}_{origin_page}")
-            ])
-            keyboard.append([
-                InlineKeyboardButton("🟢 Delivered", callback_data=f"admin_deliver_{order_id}_{origin_page}"),
-                InlineKeyboardButton("🔴 Cancel", callback_data=f"admin_cancel_{order_id}_{origin_page}")
-            ])
+            # Адмінські кнопки тільки якщо замовлення активне
+            if not is_final:
+                keyboard.append([
+                    InlineKeyboardButton("🔵 Confirm", callback_data=f"admin_confirm_{order_id}_{origin_page}"),
+                    InlineKeyboardButton("🟠 Sent", callback_data=f"admin_ship_{order_id}_{origin_page}")
+                ])
+                keyboard.append([
+                    InlineKeyboardButton("🟢 Delivered", callback_data=f"admin_deliver_{order_id}_{origin_page}"),
+                    InlineKeyboardButton("🔴 Cancel", callback_data=f"admin_cancel_{order_id}_{origin_page}")
+                ])
+            # Кнопка назад для адміна
             keyboard.append(
                 [InlineKeyboardButton("🔙 Back to All Orders", callback_data=f"admin_all_orders_page_{origin_page}")])
         else:
-            # Кнопки для юзера
-            keyboard.append([InlineKeyboardButton("🔙 Back to list", callback_data=f"my_orders_page_{origin_page}")])
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-
-        # Функція пошуку емодзі
-        def get_actual_emoji(p_name):
-            base_name = re.sub(r'\s*\(.*\)$', '', str(p_name)).strip()
-            cursor.execute("SELECT emoji FROM products WHERE name = ?", (base_name,))
-            res = cursor.fetchone()
-            return res[0] if res and res[0] else "📦"
-
-        products_text = ""
-        try:
-            products_data = json.loads(order["products"])
-            for p in products_data:
-                p_emoji = p.get('emoji') or get_actual_emoji(p.get('name'))
-                qty = p.get('quantity', 1)
-                total_p = p.get('total', 0)
-                name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
-                opts = p.get('selected_options', {})
-                opts_str = f" ({', '.join(opts.values())})" if opts else ""
-                products_text += f"{p_emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = {total_p}$\n"
-        except:
-            if order["products"]:
-                for line in str(order["products"]).split('\n'):
-                    if not line.strip(): continue
-                    products_text += f"{get_actual_emoji(line)} {self.escape_html(line)} = {order['total_amount']}$\n"
-
-        status_emoji_map = {
-            'pending': '🟡 Processing',
-            'confirmed': '🔵 Confirmed',
-            'shipped': '🟠 Sent',
-            'delivered': '🟢 Delivered',
-            'cancelled': '🔴 Cancelled'
-        }
-        status_display = status_emoji_map.get(order['status'], order['status'])
-        fmt_date = self.format_date(order['created_at'])
-        payment_method = order['payment_method'] or 'Not specified'
-
-        # --- НОВИЙ ДИЗАЙН ТЕКСТУ ---
-        text = (
-            f"📋 <b>Order #{order['id']}</b>\n\n"
-            f"👤 <b>Customer:</b> {self.escape_html(order['user_name'])}\n"
-            f"📧 <b>Email:</b> {self.escape_html(order['email'] or '—')}\n"
-            f"📞 <b>Phone:</b> {self.escape_html(order['phone'] or '—')}\n"
-            f"📍 <b>Address:</b> {self.escape_html(order['address'])}\n"
-            f"💳 <b>Payment:</b> {self.escape_html(payment_method)}\n\n"
-            f"📦 <b>Products:</b>\n{products_text}\n"
-            f"💰 <b>Total amount: {order['total_amount']}$</b>\n\n"
-            f"📊 <b>Status:</b> {status_display}\n"
-            f"🕐 <b>Date:</b> {fmt_date}"
-        )
-
-        keyboard = []
-        if int(user_id) == int(ADMIN_ID):
-            # Ряд 1: Підтвердити та Надіслано
-            keyboard.append([
-                InlineKeyboardButton("🔵 Confirm", callback_data=f"admin_confirm_{order_id}_{origin_page}"),
-                InlineKeyboardButton("🟠 Sent", callback_data=f"admin_ship_{order_id}_{origin_page}")
-            ])
-            # Ряд 2: Доставлено та Скасувати
-            keyboard.append([
-                InlineKeyboardButton("🟢 Delivered", callback_data=f"admin_deliver_{order_id}_{origin_page}"),
-                InlineKeyboardButton("🔴 Cancel", callback_data=f"admin_cancel_{order_id}_{origin_page}")
-            ])
-            # Ряд 3: Назад до всіх замовлень
-            keyboard.append(
-                [InlineKeyboardButton("🔙 Back to All Orders", callback_data=f"admin_all_orders_page_{origin_page}")])
-        else:
-            if order['status'] not in ('cancelled', 'delivered'):
+            # Клієнтські кнопки
+            if not is_final:
                 keyboard.append([InlineKeyboardButton("❌ Cancel Order", callback_data=f"user_cancel_{order_id}")])
             keyboard.append([InlineKeyboardButton("🔙 Back to list", callback_data=f"my_orders_page_{origin_page}")])
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-
-        # Функція для пошуку актуального емодзі
-        def get_actual_emoji(p_name):
-            base_name = re.sub(r'\s*\(.*\)$', '', str(p_name)).strip()
-            cursor.execute("SELECT emoji FROM products WHERE name = ?", (base_name,))
-            res = cursor.fetchone()
-            return res[0] if res and res[0] else "📦"
-
-        products_text = ""
-        raw_products = order["products"]
-
-        try:
-            products_data = json.loads(raw_products)
-            for p in products_data:
-                p_emoji = p.get('emoji') or get_actual_emoji(p.get('name'))
-                qty = p.get('quantity', 1)
-                total_p = p.get('total', 0)
-                name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
-
-                opts = p.get('selected_options', {})
-                opts_str = f" ({', '.join(opts.values())})" if opts else ""
-
-                products_text += f"{p_emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = {total_p}$\n"
-        except:
-            if raw_products:
-                for line in str(raw_products).split('\n'):
-                    line = line.strip()
-                    if not line: continue
-                    p_emoji = get_actual_emoji(line)
-                    clean_line = re.sub(r'\s*\(?x\d+\)?\)*$', '', line)
-                    products_text += f"{p_emoji} {self.escape_html(clean_line)} = {order['total_amount']}$\n"
-
-        status_emoji_map = {
-            'pending': '🟡 Processing',
-            'confirmed': '🔵 Confirmed',
-            'shipped': '🟠 Sent',
-            'delivered': '🟢 Delivered',
-            'cancelled': '🔴 Cancelled'
-        }
-        status_display = status_emoji_map.get(order['status'], order['status'])
-        fmt_date = self.format_date(order['created_at'])
-
-        # Визначаємо емодзі для методу оплати
-        payment_method = order['payment_method'] or 'Not specified'
-        pay_emoji = "💳" if "Card" in payment_method or "delivery" in payment_method.lower() else "🏦"
-
-        # --- НОВЕ ФОРМАТУВАННЯ ТЕКСТУ ---
-        text = (
-            f"📋 <b>Order #{order['id']}</b>\n\n"
-            f"👤 <b>Customer:</b> {self.escape_html(order['user_name'])}\n"
-            f"📧 <b>Email:</b> {self.escape_html(order['email'] or '—')}\n"
-            f"📞 <b>Phone:</b> {self.escape_html(order['phone'] or '—')}\n"
-            f"📍 <b>Address:</b> {self.escape_html(order['address'])}\n"
-            f"{pay_emoji} <b>Payment:</b> {self.escape_html(payment_method)}\n\n"  # Оплата переїхала сюди
-            f"📦 <b>Products:</b>\n{products_text}\n"
-            f"💰 <b>Total amount: {order['total_amount']}$</b>\n\n"  # Сума відокремлена
-            f"📊 <b>Status:</b> {status_display}\n"
-            f"🕐 <b>Date:</b> {fmt_date}"
-        )
-
-        keyboard = [[InlineKeyboardButton("🔙 Back to list", callback_data=f"my_orders_page_{origin_page}")]]
-
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        # Відправка (через edit або send)
+        if query:
+            try:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+            except Exception:
+                # Якщо повідомлення застаріло, шлемо нове
+                await query.message.delete()
+                await context.bot.send_message(query.message.chat_id, text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                               parse_mode="HTML")
+        else:
+            await context.bot.send_message(update.effective_chat.id, text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                           parse_mode="HTML")
 
     # -------------------- ADMIN PANEL --------------------
     async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3240,57 +3038,71 @@ Please contact us using the details above!
 
     # -------------------- ADMIN: STATISTICS --------------------
     async def admin_statistics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.effective_user.id != ADMIN_ID:
+        if int(update.effective_user.id) != int(ADMIN_ID):
             await update.callback_query.answer("❌ Access denied")
             return
 
         cursor = self.conn.cursor()
+
+        # 1. Загальні цифри
         cursor.execute("SELECT COUNT(*) FROM orders")
         total_orders = cursor.fetchone()[0]
+
         cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'pending'")
         pending_orders = cursor.fetchone()[0]
+
         cursor.execute("SELECT SUM(total_amount) FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered')")
         total_revenue = cursor.fetchone()[0] or 0
-        cursor.execute("SELECT COUNT(*) FROM products")
-        total_products = cursor.fetchone()[0]
-        
-        # Most popular products
+
+        cursor.execute("SELECT COUNT(*) FROM users")
+        total_users = cursor.fetchone()[0]
+
+        # 2. Аналіз товарів (Популярність)
         cursor.execute("SELECT products FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered')")
-        product_counts = {}
-        for row in cursor.fetchall():
-            products = json.loads(row[0])
-            for product in products:
-                product_name = product.get("name", "Unknown")
-                quantity = product.get("quantity", 0)
-                if product_name in product_counts:
-                    product_counts[product_name] += quantity
-                else:
-                    product_counts[product_name] = quantity
-        
-        popular_products = sorted(product_counts.items(), key=lambda item: item[1], reverse=True)
-        popular_products_text = "\n".join([f"• {name}: {count}" for name, count in popular_products[:5]])
+        product_sales = {}
 
-        text = f"""
-👑 **ADMIN PANEL - STATISTICS**
+        for (products_json,) in cursor.fetchall():
+            try:
+                products_list = json.loads(products_json)
+                for item in products_list:
+                    # Безпечно дістаємо назву
+                    name = item.get('name', 'Unknown')
+                    qty = item.get('quantity', 0)
+                    product_sales[name] = product_sales.get(name, 0) + qty
+            except:
+                continue  # Ігноруємо старі замовлення, які не в JSON форматі
 
-📊 **General:**
-• 📋 Total orders: {total_orders}
-• 🟡 New orders: {pending_orders}
-• 💰 Revenue: {total_revenue}$
-• 📦 Products in catalog: {total_products}
+        # Сортування
+        sorted_sales = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)
 
-🏆 **Most Popular Products:**
-{popular_products_text}
-        """
-        
-        keyboard = [
-            [InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")]
-        ]
-        
+        # Найпопулярніші (Top 5)
+        top_5 = sorted_sales[:5]
+        top_text = "\n".join([f"🔥 {name}: {qty} pcs" for name, qty in top_5]) if top_5 else "No data"
+
+        # Найменш популярні (Bottom 5)
+        bottom_5 = sorted_sales[-5:] if len(sorted_sales) > 0 else []
+        bottom_text = "\n".join([f"🧊 {name}: {qty} pcs" for name, qty in bottom_5]) if bottom_5 else "No data"
+
+        # 3. Статистика покупців
+        cursor.execute("SELECT COUNT(DISTINCT user_id) FROM orders")
+        active_buyers = cursor.fetchone()[0]
+
+        text = (
+            f"👑 <b>ADMIN STATISTICS</b>\n\n"
+            f"💰 <b>Total Revenue:</b> {total_revenue}$\n"
+            f"📦 <b>Total Orders:</b> {total_orders} (🟡 {pending_orders} new)\n"
+            f"👥 <b>Users:</b> {total_users} ({active_buyers} active buyers)\n\n"
+            f"🏆 <b>Top 5 Best Sellers:</b>\n{top_text}\n\n"
+            f"📉 <b>Bottom 5 Sellers:</b>\n{bottom_text}\n\n"
+            f"<i>*Statistics based on confirmed/delivered orders</i>"
+        )
+
+        keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")]]
+
         await update.callback_query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode="HTML"
         )
 
     async def admin_categories_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3544,34 +3356,75 @@ Please contact us using the details above!
             await self.admin_user_management(update, context, page)
 
     # -------------------- ADMIN: REVENUE CHART --------------------
-    async def admin_revenue_chart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.effective_user.id != ADMIN_ID:
+    async def admin_revenue(self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "all"):
+        if int(update.effective_user.id) != int(ADMIN_ID):
             await update.callback_query.answer("❌ Access denied")
             return
 
+        query = update.callback_query
+
+        # Time filter settings
+        period_sql = ""
+        label = "all time"
+
+        if period == "today":
+            period_sql = " AND created_at >= date('now', 'localtime')"
+            label = "today"
+        elif period == "week":
+            period_sql = " AND created_at >= date('now', '-7 days')"
+            label = "last 7 days"
+        elif period == "month":
+            period_sql = " AND created_at >= date('now', '-30 days')"
+            label = "last 30 days"
+
         cursor = self.conn.cursor()
-        cursor.execute("SELECT strftime('%Y-%m', created_at) as month, SUM(total_amount) FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered') GROUP BY month ORDER BY month")
-        
-        revenue_by_month = cursor.fetchall()
-        
-        chart_text = "📈 **Revenue Chart (Monthly)**\n\n"
-        if not revenue_by_month:
-            chart_text += "No data available."
-        else:
-            max_revenue = max([r[1] for r in revenue_by_month])
-            for month, revenue in revenue_by_month:
-                bar = "█" * int((revenue / max_revenue) * 20)
-                chart_text += f"`{month}` | {bar} {revenue:.2f}$\n"
-        
-        keyboard = [
-            [InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")]
-        ]
-        
-        await update.callback_query.edit_message_text(
-            chart_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN
+
+        # 1. Get revenue (only from successful orders)
+        cursor.execute(
+            f"SELECT SUM(total_amount), COUNT(id) FROM orders WHERE status IN ('confirmed', 'shipped', 'delivered'){period_sql}")
+        res = cursor.fetchone()
+        total_rev = res[0] or 0
+        total_orders = res[1] or 0
+
+        # 2. Calculate average check
+        avg_check = round(total_rev / total_orders, 2) if total_orders > 0 else 0
+
+        # 3. Pending revenue
+        cursor.execute(f"SELECT SUM(total_amount) FROM orders WHERE status = 'pending'{period_sql}")
+        pending_rev = cursor.fetchone()[0] or 0
+
+        text = (
+            f"💰 <b>FINANCIAL REPORT</b> ({label.upper()})\n\n"
+            f"💵 <b>Total Revenue:</b> {total_rev}$\n"
+            f"💳 <b>Average Check:</b> {avg_check}$\n"
+            f"📦 <b>Sales Count:</b> {total_orders}\n\n"
+            f"⏳ <b>Pending Revenue:</b> {pending_rev}$\n"
+            f"<i>*Only confirmed/delivered orders are included</i>"
         )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("📅 Today", callback_data="rev_today"),
+                InlineKeyboardButton("📅 Week", callback_data="rev_week"),
+                InlineKeyboardButton("📅 Month", callback_data="rev_month")
+            ],
+            [InlineKeyboardButton("📊 All Time", callback_data="rev_all")],
+            [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")]
+        ]
+
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        except Exception:
+            pass
+
+    async def handle_revenue_period(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+
+        # Extract period from callback_data (rev_today -> today)
+        period = query.data.replace("rev_", "")
+        await self.admin_revenue(update, context, period=period)
+
 
     async def admin_all_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
         query = update.callback_query
@@ -3641,32 +3494,65 @@ Please contact us using the details above!
 
     async def admin_order_status_change(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
+        # Перевірка на адміна
         if int(update.effective_user.id) != int(ADMIN_ID):
             await query.answer("❌ Access denied")
             return
 
-        data = query.data
-        # Регулярка для розбору: admin_ДІЯ_ID_PAGE
-        match = re.search(r'admin_(confirm|ship|deliver|cancel)_(\d+)_(\d+)', data)
+        # Надійний парсинг даних (ID та Сторінка)
+        match = re.search(r'admin_(confirm|ship|deliver|cancel)_(\d+)(?:_(\d+))?', query.data)
         if not match:
-            # Спроба розбору без сторінки
-            match = re.search(r'admin_(confirm|ship|deliver|cancel)_(\d+)', data)
-            if not match: return
-            action, order_id = match.group(1), match.group(2)
-        else:
-            action, order_id, _ = match.groups()
+            await query.answer("❌ Error parsing data")
+            return
 
-        status_map = {"confirm": "confirmed", "ship": "shipped", "deliver": "delivered", "cancel": "cancelled"}
+        action = match.group(1)
+        order_id = int(match.group(2))
+        origin_page = int(match.group(3)) if match.group(3) else 0
+
+        status_map = {
+            "confirm": "confirmed",
+            "ship": "shipped",
+            "deliver": "delivered",
+            "cancel": "cancelled"
+        }
         new_status = status_map.get(action)
 
+        # 1. Оновлюємо статус у Базі Даних
         cursor = self.conn.cursor()
         cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
         self.conn.commit()
 
-        await query.answer(f"✅ Status: {new_status}")
+        await query.answer(f"✅ Status updated: {new_status}")
 
-        # Перевикликаємо деталі замовлення (тепер це безпечно)
-        await self.show_order_details(update, context, order_id=int(order_id))
+        # 2. 🔥 ВІДНОВЛЕНО: Сповіщення користувача
+        try:
+            # Дізнаємось ID покупця
+            cursor.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
+            row = cursor.fetchone()
+            if row:
+                buyer_id = row[0]
+
+                # Красиві назви статусів для повідомлення
+                status_text_map = {
+                    'confirmed': '🔵 Confirmed',
+                    'shipped': '🟠 Sent',
+                    'delivered': '🟢 Delivered',
+                    'cancelled': '🔴 Cancelled'
+                }
+                display_status = status_text_map.get(new_status, new_status)
+
+                await context.bot.send_message(
+                    chat_id=buyer_id,
+                    text=f"📦 <b>Order #{order_id} update</b>\n\n"
+                         f"🆕 New status: <b>{display_status}</b>\n\n"
+                         f"Thank you for shopping with us! ❤️",
+                    parse_mode="HTML"
+                )
+        except Exception as e:
+            print(f"⚠️ Failed to notify user: {e}")
+
+        # 3. Оновлюємо вигляд замовлення у адміна (щоб кнопки зникли/змінились)
+        await self.show_order_details(update, context, order_id=order_id, origin_page=origin_page)
 
     # -------------------- ADMIN: PRODUCT MANAGEMENT --------------------
     async def admin_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5132,7 +5018,13 @@ def main():
     # =========================================================================
     application.add_handler(CallbackQueryHandler(bot.admin_panel, pattern=r'^admin_panel$'))
     application.add_handler(CallbackQueryHandler(bot.admin_statistics, pattern=r'^admin_statistics$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_revenue_chart, pattern=r'^admin_revenue_chart$'))
+    # Знайдіть цей рядок (на який свариться помилка) і замініть його:
+    application.add_handler(CallbackQueryHandler(bot.admin_revenue, pattern=r'^admin_revenue_chart$'))
+
+    # Додайте цей рядок для обробки кнопок перемикання періодів:
+    application.add_handler(CallbackQueryHandler(bot.handle_revenue_period, pattern=r'^rev_'))
+
+
 
     # Управління користувачами
     application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
@@ -5147,6 +5039,7 @@ def main():
         CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
     application.add_handler(
         CallbackQueryHandler(bot.admin_handle_order_callback, pattern=r'^admin_order_'))  # Accept/Reject
+
 
     # =========================================================================
     # 5. АДМІН: УПРАВЛІННЯ ТОВАРАМИ (Нова структура)
