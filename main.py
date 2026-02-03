@@ -233,17 +233,13 @@ class OnlineShopBot:
 
 
     def escape_md(self, text):
-            """Екранує спецсимволи Markdown (щоб імена типу Nazar_K не ламали бота)"""
+
             if not text: return ""
 
             return str(text).replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
 
     def calculate_item_price(self, base_price, variants_json, selected_options_json):
-        """
-        Визначає реальну ціну товару.
-        Якщо обраний варіант (напр. 256GB) має свою ціну - бере її.
-        Якщо ні - бере базову ціну товару.
-        """
+
         final_price = base_price
 
         if not variants_json or not selected_options_json:
@@ -281,10 +277,7 @@ class OnlineShopBot:
 
 
     def format_date(self, date_input):
-        """
-        Перетворює будь-який час у той, що вказаний у BOT_TIMEZONE.
-        Працює і для нових замовлень, і для старих з бази.
-        """
+
         try:
 
             if isinstance(date_input, str):
@@ -322,7 +315,7 @@ class OnlineShopBot:
 
 
     def restore_stock(self, order_id):
-        """Повертає товари на склад при скасуванні замовлення."""
+
         cursor = self.conn.cursor()
         cursor.execute("SELECT products FROM orders WHERE id = ?", (order_id,))
         result = cursor.fetchone()
@@ -794,32 +787,7 @@ Please contact us using the details above!
         elif update.message:
             await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
 
-    # --- DELETE DATA MENU ---
-    async def profile_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self.check_user_blocked(update, context): return
-        user_id = update.effective_user.id
 
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
-        user_data = cursor.fetchone()
-        phone, address, email = user_data if user_data else (None, None, None)
-
-        keyboard = []
-        if phone:
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Phone", callback_data="delete_profile_phone")])
-        if address:
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Address", callback_data="delete_profile_address")])
-        if email:
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Email", callback_data="delete_profile_email")])
-
-        keyboard.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="my_profile")])
-
-        text = "🗑️ **Delete Profile Data**\n\nSelect the data you want to remove:"
-        if not (phone or address or email):
-            text = "🗑️ **Delete Profile Data**\n\nYour profile is empty. Nothing to delete."
-
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                                      parse_mode=ParseMode.MARKDOWN)
 
     async def handle_delete_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1780,86 +1748,6 @@ Please contact us using the details above!
 
         return False
 
-    async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self.check_user_blocked(update, context): return
-        user_id = update.effective_user.id
-        if user_id not in self.user_states: return
-        state = self.user_states[user_id]
-        msg = update.message
-        chat_id = msg.chat_id
-
-
-        try:
-            await msg.delete()
-        except:
-            pass
-
-        if 'msg_id' in state:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except:
-                pass
-
-        cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-
-        try:
-
-            if state['step'] in ['waiting_email', 'waiting_email_checkout_flow']:
-                email = msg.text.strip()
-                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                    m = await context.bot.send_message(chat_id=chat_id, text="❌ Invalid email format.",
-                                                       reply_markup=cancel_kb)
-                    state['msg_id'] = m.message_id
-                    return
-
-                state['email'] = email
-
-                if state['step'] == 'waiting_email_checkout_flow' and state.get('address'):
-                    await self.send_payment_keyboard(context, chat_id, user_id)
-                    return
-
-                if not state.get('address'):
-                    state['step'] = 'waiting_address'
-                    new_msg = await context.bot.send_message(
-                        chat_id=chat_id,
-                        text="📋 <b>Placing an order</b>\n\n📍 <b>Step 2/3:</b> Enter your shipping address.\nExample: Kyiv, 1 Khreshchatyk St., apt. 10",
-                        reply_markup=cancel_kb,
-                        parse_mode="HTML"
-                    )
-                    state['msg_id'] = new_msg.message_id
-                    return
-
-                await self.send_payment_keyboard(context, chat_id, user_id)
-                return
-
-
-            elif state['step'] == 'waiting_address':
-                state['address'] = msg.text.strip()
-                await self.send_payment_keyboard(context, chat_id, user_id)
-                return
-
-
-            elif state['step'] == 'waiting_phone':
-                phone = msg.contact.phone_number if msg.contact else msg.text.strip()
-
-                clean_phone = phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-                if not re.fullmatch(r"\+?\d{9,15}", clean_phone):
-                    m = await context.bot.send_message(chat_id=chat_id, text="❌ Incorrect phone format.",
-                                                       reply_markup=cancel_kb)
-                    state['msg_id'] = m.message_id
-                    return
-
-                state['phone'] = clean_phone
-
-
-                if state.get('payment'):
-                    await self.finalize_order(update, context, state.get('payment'))
-                return
-
-        except Exception as e:
-
-            await context.bot.send_message(chat_id=chat_id, text=f"⚠️ SYSTEM ERROR: {str(e)}")
-            print(f"ERROR: {e}")
 
     async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -3918,29 +3806,7 @@ Please contact us using the details above!
                 await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard),
                                                               parse_mode=ParseMode.MARKDOWN)
 
-    async def handle_delete_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-            if await self.check_user_blocked(update, context): return
-            query = update.callback_query
-            data = query.data
-            user_id = query.from_user.id
 
-            field_map = {
-                "delete_profile_phone": ("phone", "Phone number"),
-                "delete_profile_address": ("address", "Address"),
-                "delete_profile_email": ("email", "Email")
-            }
-
-            if data not in field_map: return
-
-            db_field, display_name = field_map[data]
-
-            cursor = self.conn.cursor()
-            cursor.execute(f"UPDATE users SET {db_field} = NULL WHERE user_id = ?", (user_id,))
-            self.conn.commit()
-
-            await query.answer(f"✅ {display_name} deleted!")
-
-            await self.profile_delete_menu(update, context)
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
