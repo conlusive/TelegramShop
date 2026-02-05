@@ -2786,7 +2786,6 @@ Please contact us using the details above!
             page = 1
         else:
             try:
-
                 parts = data.split("_")
                 page = int(parts[-1])
                 category = "_".join(parts[3:-1])
@@ -2800,7 +2799,6 @@ Please contact us using the details above!
         total_items = cursor.fetchone()[0]
 
         if total_items == 0:
-
             await self.admin_categories_menu(update, context)
             return
 
@@ -2815,7 +2813,8 @@ Please contact us using the details above!
 
         for p_id, p_name, p_stock in products:
             status = "✅" if p_stock > 0 else "❌"
-            keyboard.append([InlineKeyboardButton(f"{status} {p_name}", callback_data=f"admin_prod_{p_id}")])
+
+            keyboard.append([InlineKeyboardButton(f"{status} {p_name}", callback_data=f"admin_prod_{p_id}_{page}")])
 
         nav_row = []
         if page > 1:
@@ -2839,7 +2838,6 @@ Please contact us using the details above!
                 pass
             await context.bot.send_message(chat_id=query.message.chat_id, text=text,
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-
 
     # -------------------- ADMIN: USER MANAGEMENT --------------------
     async def admin_user_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
@@ -3040,8 +3038,9 @@ Please contact us using the details above!
             safe_user_name = self.escape_md(order['user_name'])
 
             text += f"{emoji_status} #{order['id']} | {safe_user_name} | {order['total_amount']}$ | {fmt_date}\n"
+
             keyboard.append(
-                [InlineKeyboardButton(f"Details #{order['id']}", callback_data=f"order_details_{order['id']}")])
+                [InlineKeyboardButton(f"Details #{order['id']}", callback_data=f"order_details_{order['id']}_{page}")])
 
         nav_buttons = []
         if page > 0:
@@ -3244,11 +3243,21 @@ Please contact us using the details above!
     async def admin_product_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id_override=None):
         query = update.callback_query
 
+        origin_page = 1
+
         try:
             if product_id_override:
                 product_id = int(product_id_override)
             elif query:
-                product_id = int(query.data.replace("admin_prod_", ""))
+
+                data = query.data
+                parts = data.split("_")
+
+                if len(parts) >= 4:
+                    product_id = int(parts[2])
+                    origin_page = int(parts[3])
+                else:
+                    product_id = int(data.replace("admin_prod_", ""))
             else:
                 return
         except:
@@ -3314,12 +3323,14 @@ Please contact us using the details above!
         else:
             display_price = f"{min_p}$"
 
+
         text = (
             f"🛠 **Product Management**\n\n"
             f"📌 ID: `{product['id']}`\n"
             f"📦 Total Stock: {product['stock']}\n"
             f"{stock_details}\n"
             f"📝 Name: {product['name']}\n"
+            f"📄 Desc: {product['description']}\n"
             f"💰 Price: {display_price}\n"
             f"📂 Category: {product['category']}\n"
             f"😀 Emoji: {product['emoji']}\n\n"
@@ -3343,7 +3354,9 @@ Please contact us using the details above!
         ]
 
         cat_back = product['category']
-        keyboard.append([InlineKeyboardButton("🔙 Back to List", callback_data=f"admin_list_cat_{cat_back}_1")])
+
+        keyboard.append(
+            [InlineKeyboardButton("🔙 Back to List", callback_data=f"admin_list_cat_{cat_back}_{origin_page}")])
 
         if query:
             try:
@@ -3363,7 +3376,6 @@ Please contact us using the details above!
                 )
                 sent_photo = True
             except Exception:
-
                 pass
 
         if not sent_photo:
