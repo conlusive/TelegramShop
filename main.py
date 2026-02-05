@@ -477,27 +477,50 @@ class OnlineShopBot:
         user_id = user.id
         safe_name = self.escape_md(user.first_name)
 
+
+        missing = self.get_profile_completion_status(user_id)
+        registration_promo = ""
+
+        if missing and int(user_id) != int(ADMIN_ID):
+
+            promo_messages = {
+                3: "✨ **Unlock the full experience!**\nComplete your profile once to enjoy one-click checkouts later. 🚀",
+                2: "🔄 **Speed up your shopping!**\nJust two small details left to make your next order instant.",
+                1: "🎯 **Almost a Pro!**\nAdd your last detail to finish your setup and save time on every order.",
+            }
+
+            missing_labels = []
+            if "email" in missing: missing_labels.append("📧 Email")
+            if "address" in missing: missing_labels.append("📍 Address")
+            if "phone" in missing: missing_labels.append("📞 Phone")
+
+            registration_promo = f"\n{promo_messages.get(len(missing), '')}\n"
+            registration_promo += f"Missing: *{', '.join(missing_labels)}*\n"
+            registration_promo += "────────────────────\n"
+
+
         if int(user_id) == int(ADMIN_ID):
             welcome_text = (
-                f"👑 **Admin Panel**\n\n"
-                f"👋 Hello, **{safe_name}**!\n"
-                f"Ready to manage orders and products\n\n"
-                f"👇 **Select an option from the dashboard:**"
+                f"👑 **Admin Dashboard**\n\n"
+                f"Welcome back, **{safe_name}**! ⚡️\n"
+                f"Everything is under control. What's the plan for today?\n\n"
+                f"👇 **Control Center:**"
             )
 
         else:
             welcome_text = (
-                f"🛍️ **Welcome to our store, {safe_name}!**\n\n"
-                "📱 Here you will find the best products at great prices!\n\n"
-                "🛒 **What you can do:**\n"
-                "• Browse the product catalog\n"
-                "• Add products to your cart\n"
-                "• Place orders\n"
-                "• Track order status\n\n"
-                "👇 **Select an action:**"
+                f"👋 **Hi, {safe_name}! Glad to see you!**\n"
+                f"{registration_promo}"
+                f"Discover our latest deals and premium products! 💎\n\n"
+                f"🚀 **What's inside:**\n"
+                f"• 🛍️ **Catalog** — Browse and find your favorites\n"
+                f"• 🛒 **Cart** — Review and manage your picks\n"
+                f"• 📋 **My Orders** — Track your delivery status\n"
+                f"• 👤 **Profile** — Manage your fast-checkout data\n\n"
+                f"👇 **Where should we start?**"
             )
 
-        reply_markup = self.build_main_keyboard(user.id)
+        reply_markup = self.build_main_keyboard(user_id)  #
 
         if update.callback_query:
             try:
@@ -786,6 +809,22 @@ Please contact us using the details above!
                                                           parse_mode=ParseMode.MARKDOWN)
         elif update.message:
             await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+
+    def get_profile_completion_status(self, user_id):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            return ["email", "address", "phone"]
+
+        phone, address, email = row
+        missing_fields = []
+        if not email: missing_fields.append("email")
+        if not address: missing_fields.append("address")
+        if not phone: missing_fields.append("phone")
+
+        return missing_fields
 
 
 
@@ -1654,10 +1693,18 @@ Please contact us using the details above!
 
     # -------------------- CHECKOUT LOGIC --------------------
     async def checkout(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self.check_user_blocked(update, context): return
+        if await self.check_user_blocked(update, context):
+            return
 
         query = update.callback_query
         user_id = update.effective_user.id
+
+        missing = self.get_profile_completion_status(user_id)
+
+        promo_text = ""
+        if missing:
+
+            promo_text = "💡 <b>Tip:</b> Fill in your profile once to skip these steps in the future!\n\n"
 
 
         self.user_states[user_id] = {
@@ -1676,19 +1723,32 @@ Please contact us using the details above!
             keyboard.append([InlineKeyboardButton("👤 Use my profile data", callback_data="use_profile_data")])
 
         keyboard.extend([
-            [InlineKeyboardButton("🔙 Back", callback_data="back_to_cart")],
-            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+            [InlineKeyboardButton("🔙 Back to Cart", callback_data="cart")],
+            [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
         ])
 
         text = (
-            "📋 <b>Placing an order</b>\n\n"
-            "If you have saved data in your profile, you can use it to checkout faster!\n\n"
-            "Or you can proceed with entering your data manually.\n\n"
-            "📧 <b>Step 1/3:</b> Enter your email address.\n"
-            "Example: example@gmail.com"
+            f"📋 <b>Placing an order</b>\n\n"
+            f"{promo_text}"
+            f"If you have saved data in your profile, you can use it to checkout faster!\n\n"
+            f"Or you can proceed with entering your data manually.\n\n"
+            f"📧 <b>Step 1/3:</b> Enter your email address.\n"
+            f"Example: example@gmail.com"
         )
 
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
+        try:
+            await query.edit_message_text(
+                text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="HTML"
+            )
 
     async def _request_missing_checkout_data(self, update, context, state, chat_id):
         phone = state.get('phone')
