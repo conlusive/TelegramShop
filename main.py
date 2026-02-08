@@ -86,6 +86,12 @@ class OnlineShopBot:
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     def generate_receipt(self, order_id, user_name, email, phone, address, payment, products_list, total, date, receipt_format='html'):
+        # Автоматичне визначення заголовка адреси на основі SHIPPING_MODE
+        if SHIPPING_MODE == 'UKRAINE':
+            shipping_label = "📍 Shipping (City/Branch):"
+        else:
+            shipping_label = "📍 Shipping (City/ZIP):"
+
         if receipt_format == 'html':
             bold_start, bold_end = "<b>", "</b>"
             escaper = self.escape_html
@@ -99,28 +105,30 @@ class OnlineShopBot:
         for item in products_list:
             opts_str = ""
             if item.get('selected_options'):
-                opts_vals = [f"{k}: {v}" for k, v in item['selected_options'].items()]
+                # Відображаємо тільки значення обраних варіантів
+                opts_vals = [f"{v}" for k, v in item['selected_options'].items()]
                 opts_str = f" ({', '.join(opts_vals)})"
 
             products_text += product_line_format.format(
-                emoji=item['emoji'],
-                name=escaper(item['name']),
+                emoji=item.get('emoji', '📦'),
+                name=escaper(item.get('name', 'Product')),
                 opts=escaper(opts_str),
-                quantity=item['quantity'],
-                price=item['price'],
-                total=item['total']
+                quantity=item.get('quantity', 1),
+                price=item.get('price', 0),
+                total=item.get('total', 0)
             )
 
+        # Формуємо фінальний текст із подвійними відступами
         return (
             f"✅ {bold_start}Order #{order_id} has been successfully placed!{bold_end}\n\n"
-            f"👤 {bold_start}Customer:{bold_end} {escaper(user_name)}\n"
-            f"📧 {bold_start}Email:{bold_end} {escaper(email)}\n"
-            f"📞 {bold_start}Phone:{bold_end} {escaper(str(phone))}\n"
-            f"📍 {bold_start}Address:{bold_end} {escaper(address)}\n"
+            f"👤 {bold_start}Customer:{bold_end} {escaper(user_name)}\n\n"
+            f"📧 {bold_start}Email:{bold_end} {escaper(email)}\n\n"
+            f"📞 {bold_start}Phone:{bold_end} {escaper(str(phone))}\n\n"
+            f"{bold_start}{shipping_label}{bold_end}\n{escaper(address)}\n\n"
             f"💳 {bold_start}Payment Method:{bold_end} {payment}\n\n"
-            f"📦 {bold_start}Products:{bold_end}\n{products_text}"
+            f"📦 {bold_start}Products:{bold_end}\n{products_text}\n"
             f"💰 {bold_start}Total Amount: {total}${bold_end}\n\n"
-            f"📋 {bold_start}Status:{bold_end} In progress\n"
+            f"📋 {bold_start}Status:{bold_end} In progress\n\n"
             f"🕐 {bold_start}Date:{bold_end} {date}\n\n"
             f"Thank you for shopping with us! 🛍️"
         )
@@ -371,28 +379,34 @@ class OnlineShopBot:
         user_id = user.id
         safe_name = self.escape_md(user.first_name)
 
-
         missing = self.get_profile_completion_status(user_id)
         registration_promo = ""
 
         if missing and int(user_id) != int(ADMIN_ID):
-
+            # Оновлюємо словник для підтримки 4-х полів
             promo_messages = {
-                3: "✨ **Unlock the full experience!**\nComplete your profile once to enjoy one-click checkouts later. 🚀",
+                4: "✨ **Welcome!**\nComplete your profile setup once for instant checkouts! 🚀",
+                3: "✨ **Unlock the full experience!**\nComplete your profile details to enjoy one-click orders later. 🚀",
                 2: "🔄 **Speed up your shopping!**\nJust two small details left to make your next order instant.",
                 1: "🎯 **Almost a Pro!**\nAdd your last detail to finish your setup and save time on every order.",
             }
 
             missing_labels = []
+            if "full_name" in missing: missing_labels.append("👤 Name")
             if "email" in missing: missing_labels.append("📧 Email")
-            if "address" in missing: missing_labels.append("📍 Address")
+
+            if "address" in missing:
+                # Динамічна мітка адреси залежно від регіону
+                label = "📍 Shipping (City/Branch)" if SHIPPING_MODE == 'UKRAINE' else "📍 Shipping (City/ZIP)"
+                missing_labels.append(label)
+
             if "phone" in missing: missing_labels.append("📞 Phone")
 
             registration_promo = f"\n{promo_messages.get(len(missing), '')}\n"
             registration_promo += f"Missing: *{', '.join(missing_labels)}*\n"
             registration_promo += "───────────────────────────────\n"
 
-
+        # ... (решта коду welcome_text та відправки повідомлення залишається без змін)
         if int(user_id) == int(ADMIN_ID):
             welcome_text = (
                 f"👑 **Admin Dashboard**\n\n"
@@ -400,7 +414,6 @@ class OnlineShopBot:
                 f"Everything is under control. What's the plan for today?\n\n"
                 f"👇 **Control Center:**"
             )
-
         else:
             welcome_text = (
                 f"👋 **Hi, {safe_name}! Glad to see you!**\n"
@@ -414,7 +427,7 @@ class OnlineShopBot:
                 f"👇 **Where should we start?**"
             )
 
-        reply_markup = self.build_main_keyboard(user_id)  #
+        reply_markup = self.build_main_keyboard(user_id)
 
         if update.callback_query:
             try:
@@ -671,49 +684,56 @@ Please contact us using the details above!
         await self.ask_next_variant(update, context)
 
     async def show_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self.check_user_blocked(update, context):
-            return
+        if await self.check_user_blocked(update, context): return
         user_id = update.effective_user.id
         cursor = self.conn.cursor()
-        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
-        phone = user_data[0] if user_data and user_data[0] else "Not set"
-        address = user_data[1] if user_data and user_data[1] else "Not set"
-        email = user_data[2] if user_data and user_data[2] else "Not set"
+        name = user_data[0] if user_data and user_data[0] else "Not set"
+        email = user_data[1] if user_data and user_data[1] else "Not set"
+        address = user_data[2] if user_data and user_data[2] else "Not set"
+        phone = user_data[3] if user_data and user_data[3] else "Not set"
 
-        text = f"""
-    👤 **My Profile**
+        shipping_label = "Shipping (City/Branch):" if SHIPPING_MODE == 'UKRAINE' else "Shipping (City/ZIP):"
 
-    📞 **Phone:** {phone}
-    📍 **Address:** {address}
-    📧 **Email:** {email}
-            """
-        keyboard = [
-            [InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_phone")],
-            [InlineKeyboardButton("✏️ Edit Address", callback_data="edit_address")],
+        text = (
+            "👤 <b>My Profile</b>\n\n"
+            f"<b>Name:</b> {self.escape_html(name)}\n\n"
+            f"<b>Email:</b> {self.escape_html(email)}\n\n"
+            f"<b>{shipping_label}</b>\n{self.escape_html(address)}\n\n"
+            f"<b>Phone:</b> {self.escape_html(phone)}"
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✏️ Edit Name", callback_data="edit_full_name")],
             [InlineKeyboardButton("✏️ Edit Email", callback_data="edit_email")],
+            [InlineKeyboardButton("✏️ Edit Shipping Info", callback_data="edit_address")],
+            [InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_phone")],
             [InlineKeyboardButton("🗑️ Delete Data", callback_data="profile_delete_menu")],
             [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        ])
 
+        # ВИПРАВЛЕНО: Якщо викликано текстом, надсилаємо НОВЕ повідомлення
         if update.callback_query:
-            await update.callback_query.edit_message_text(text, reply_markup=reply_markup,
-                                                          parse_mode=ParseMode.MARKDOWN)
-        elif update.message:
-            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        else:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=keyboard, parse_mode="HTML")
 
     def get_profile_completion_status(self, user_id):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        # Додаємо full_name у вибірку
+        cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
 
         if not row:
-            return ["email", "address", "phone"]
+            return ["full_name", "email", "address", "phone"]
 
-        phone, address, email = row
+        full_name, email, address, phone = row
         missing_fields = []
+
+        # Перевіряємо всі 4 обов'язкові поля
+        if not full_name: missing_fields.append("full_name")
         if not email: missing_fields.append("email")
         if not address: missing_fields.append("address")
         if not phone: missing_fields.append("phone")
@@ -727,25 +747,33 @@ Please contact us using the details above!
         query = update.callback_query
         data = query.data
         user_id = query.from_user.id
+
+        # Розширений список полів для видалення
         field_map = {
+            "delete_profile_full_name": ("full_name", "Full Name"),
             "delete_profile_phone": ("phone", "Phone number"),
             "delete_profile_address": ("address", "Address"),
             "delete_profile_email": ("email", "Email")
         }
 
-        if data not in field_map: return
+        if data not in field_map:
+            await query.answer("Invalid action")
+            return
 
         db_field, display_name = field_map[data]
 
+        # Оновлення бази даних
         cursor = self.conn.cursor()
         cursor.execute(f"UPDATE users SET {db_field} = NULL WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
         await query.answer(f"✅ {display_name} deleted!")
 
+        # ПЕРЕВАЖЛИВО: Оновлюємо меню видалення, щоб кнопка зникла
         await self.profile_delete_menu(update, context)
 
-    async def _edit_user_profile_attribute(self, update: Update, context: ContextTypes.DEFAULT_TYPE, field: str, prompt: str):
+    async def _edit_user_profile_attribute(self, update: Update, context: ContextTypes.DEFAULT_TYPE, field: str,
+                                           prompt: str):
         query = update.callback_query
         await query.answer()
         user_id = update.effective_user.id
@@ -756,35 +784,49 @@ Please contact us using the details above!
         }
 
         keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]]
+
+        # Використовуємо HTML для підтримки жирного тексту та курсиву
         await query.edit_message_text(
             prompt,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode="HTML"
         )
 
-    async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def edit_full_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._edit_user_profile_attribute(
-            update,
-            context,
-            "phone",
-            "📞 **Enter your phone number:**\nExample: +380501234567"
-        )
-
-    async def edit_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._edit_user_profile_attribute(
-            update,
-            context,
-            "address",
-            "📍 **Enter your shipping address:**\nExample: Kyiv, Khreshchatyk 1, apt 10"
+            update, context, "full_name",
+            "👤 <b>Enter your Full Name:</b>\n\n"
+            "<b>Example:</b> <i>John Doe</i>"
         )
 
     async def edit_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._edit_user_profile_attribute(
-            update,
-            context,
-            "email",
-            "📧 **Enter your email:**\nExample: user@example.com"
+            update, context, "email",
+            "📧 <b>Enter your email:</b>\n\n"
+            "<b>Example:</b> <i>user@example.com</i>"
         )
+
+    async def edit_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if SHIPPING_MODE == 'UKRAINE':
+            prompt = (
+                "📍 <b>Enter City, Delivery Service, and Branch #:</b>\n\n"
+                "<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
+            )
+        else:
+            prompt = (
+                "📍 <b>Enter City and Postal Code (ZIP):</b>\n\n"
+                "<b>Example:</b> <i>Berlin, 10115</i>"
+            )
+        await self._edit_user_profile_attribute(update, context, "address", prompt)
+
+    async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
+        await self._edit_user_profile_attribute(
+            update, context, "phone",
+            f"📞 <b>Enter your phone number:</b>\n\n"
+            f"<b>Example:</b> <i>{example}</i>"
+        )
+
     # -------------------- CART LOGIC --------------------
     async def show_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -1586,6 +1628,7 @@ Please contact us using the details above!
                     pass
 
     # -------------------- CHECKOUT LOGIC --------------------
+    # -------------------- CHECKOUT LOGIC --------------------
     async def checkout(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
@@ -1597,21 +1640,29 @@ Please contact us using the details above!
             await query.answer("Your cart is empty")
             return
 
+        # Перевірка наявності даних у профілі для кнопки швидкого заповнення
+        cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
+        user_data = cursor.fetchone()
+        has_data = user_data and any(user_data)
+
         self.user_states[user_id] = {'step': 'waiting_full_name'}
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back to Cart", callback_data="cart")],
-            [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
-        ])
+        keyboard = []
+        if has_data:
+            keyboard.append([InlineKeyboardButton("👤 Use my Profile Data", callback_data="use_profile_data")])
 
-        total_steps = "3" if SHIPPING_MODE == 'UKRAINE' else "4"
+        keyboard.append([InlineKeyboardButton("🔙 Back to Cart", callback_data="cart")])
+        keyboard.append([InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")])
+
+        # Встановлюємо 4 кроки для всіх регіонів
+        total_steps = "4"
         text = (
             f"📋 <b>Order Checkout (1/{total_steps})</b>\n\n"
             "👤 <b>Please enter the Recipient's Full Name:</b>\n\n"
             "<b>Example:</b> <i>John Doe</i>"
         )
 
-        m = await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML")
+        m = await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
         self.user_states[user_id]['msg_id'] = m.message_id
 
     async def _request_missing_checkout_data(self, update, context, state, chat_id):
@@ -1675,41 +1726,95 @@ Please contact us using the details above!
 
     async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
-
         query = update.callback_query
         user_id = update.effective_user.id
-        msg_id = query.message.message_id
         chat_id = query.message.chat_id
 
-        await query.answer()
+        await query.answer("Loading profile data...")
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
-        if not user_data or not any(user_data):
+        if not user_data:
             await self.checkout(update, context)
             return
 
-        phone, address, email = user_data
+        full_name, email, address, phone = user_data
 
+        # Записуємо дані та ставимо прапорець from_profile
         self.user_states[user_id] = {
-            'step': 'waiting_payment',
-            'phone': phone,
-            'address': address,
+            'full_name': full_name,
             'email': email,
-            'msg_id': msg_id
+            'address': address,
+            'phone': phone,
+            'msg_id': query.message.message_id,
+            'from_profile': True  # ВКАЗУЄМО, ЩО ЦЕ З ПРОФІЛЮ
         }
 
-        if await self._request_missing_checkout_data(update, context, self.user_states[user_id], chat_id):
+        # Перевірка на заповненість і перехід далі
+        if full_name and email and address and phone:
+            try: await query.message.delete()
+            except: pass
+            await self.show_order_summary(context, chat_id, user_id)
+        else:
+            await self.continue_checkout_flow(update, context)
+
+    async def continue_checkout_flow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        state = self.user_states[user_id]
+        chat_id = update.effective_chat.id
+        total_steps = "4"
+
+        from_profile = state.get('from_profile', False)
+        header = ""
+
+        if from_profile:
+            loaded = []
+            if state.get('full_name'): loaded.append(f"👤 Name: {self.escape_html(state['full_name'])}")
+            if state.get('email'): loaded.append(f"📧 Email: {self.escape_html(state['email'])}")
+            if state.get('address'): loaded.append(f"📍 Shipping: {self.escape_html(state['address'])}")
+            if state.get('phone'): loaded.append(f"📱 Phone: {self.escape_html(state['phone'])}")
+            if loaded:
+                header = "📋 <b>Checkout</b> (Profile data loaded)\n\n✅ <b>Ready:</b>\n" + "\n".join(loaded) + "\n\n"
+        else:
+            header = "📋 <b>Order Checkout</b>\n\n"
+
+        if not state.get('full_name'):
+            state['step'] = 'waiting_full_name'
+            text = header + f"👤 <b>Step 1/4: Full Name</b>\n\n<b>Example:</b> <i>John Doe</i>"
+            back_callback = "cart"
+        elif not state.get('email'):
+            state['step'] = 'waiting_email'
+            text = header + f"📧 <b>Step 2/4: Email Address</b>\n\n<b>Example:</b> <i>user@gmail.com</i>"
+            back_callback = "back_to_name"
+        elif not state.get('address'):
+            state['step'] = 'waiting_shipping'
+            if SHIPPING_MODE == 'UKRAINE':
+                text = header + f"📍 <b>Step 3/4: Shipping Info</b>\n\nEnter City, Delivery Service, and Branch #\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
+            else:
+                text = header + f"📍 <b>Step 3/4: Shipping Info</b>\n\n<b>Example:</b> <i>Berlin, 10115</i>"
+            back_callback = "back_to_email"
+        elif not state.get('phone'):
+            state['step'] = 'waiting_phone'
+            # Змінено з Final Step на Step 4/4
+            text = header + f"📱 <b>Step 4/4: Phone Number</b>\n\n<b>Example:</b> <i>+380501234567</i>"
+            back_callback = "back_to_shipping"
+        else:
+            await self.show_order_summary(context, chat_id, user_id)
             return
 
-        try:
-            await query.message.delete()
-        except:
-            pass
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back", callback_data=back_callback)],
+            [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
+        ])
 
-        await self.send_payment_keyboard(context, chat_id, user_id)
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+        else:
+            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
+            state['msg_id'] = m.message_id
+
 
     async def handle_payment_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1794,73 +1899,65 @@ Please contact us using the details above!
         msg = update.message
         chat_id = msg.chat_id
 
+        # Видаляємо повідомлення користувача для чистоти чату
         try:
             await msg.delete()
         except:
             pass
 
+        # Видаляємо попереднє повідомлення бота
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
-        total_steps = "3" if SHIPPING_MODE == 'UKRAINE' else "4"
-        cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_name"),
-                                           InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-
-        # --- Step 1: Name ---
+        # --- Крок 1: Обробка ПІБ ---
         if state['step'] == 'waiting_full_name':
             name = msg.text.strip()
             if len(name.split()) < 2:
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="cart"),
-                                            InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-                m = await context.bot.send_message(chat_id=chat_id,
-                                                   text="❌ <b>Invalid Name</b>\n\nPlease provide both First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
-                                                   reply_markup=kb, parse_mode="HTML")
+                kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="cart")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                ])
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ <b>Invalid Name (Step 1/4)</b>\n\nPlease provide both First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
                 state['msg_id'] = m.message_id
                 return
             state['full_name'] = name
-            state['step'] = 'waiting_email'
-            m = await context.bot.send_message(chat_id=chat_id,
-                                               text=f"📧 <b>Step 2/{total_steps}: Email Address</b>\n\nPlease enter your email:\n\n<b>Example:</b> <i>user@gmail.com</i>",
-                                               reply_markup=cancel_kb, parse_mode="HTML")
-            state['msg_id'] = m.message_id
+            # Передаємо управління в розумний потік для вибору наступного кроку
+            await self.continue_checkout_flow(update, context)
 
-        # --- Step 2: Email ---
+        # --- Крок 2: Обробка Email ---
         elif state['step'] == 'waiting_email':
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                m = await context.bot.send_message(chat_id=chat_id,
-                                                   text="❌ <b>Invalid Email Format</b>\n\nPlease enter a valid email address.\n\n<b>Example:</b> <i>user@gmail.com</i>",
-                                                   reply_markup=cancel_kb, parse_mode="HTML")
+                kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="back_to_name")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                ])
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ <b>Invalid Email (Step 2/4)</b>\n\nPlease enter a valid email address.\n\n<b>Example:</b> <i>user@gmail.com</i>",
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
                 state['msg_id'] = m.message_id
                 return
             state['email'] = email
-            state['step'] = 'waiting_shipping'
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_email"),
-                                        InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+            await self.continue_checkout_flow(update, context)
 
-            if SHIPPING_MODE == 'UKRAINE':
-                text = "📍 <b>Step 3/3: Shipping Info</b>\n\nEnter City, Delivery Service, and Branch #\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
-            else:
-                text = "📍 <b>Step 3/4: Shipping Info</b>\n\nEnter City and Postal Code (ZIP)\n\n<b>Example:</b> <i>Berlin, 10115</i>"
-
-            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
-            state['msg_id'] = m.message_id
-
-        # --- Step 3: Shipping ---
+        # --- Крок 3: Обробка Адреси (Shipping) ---
         elif state['step'] == 'waiting_shipping':
+            # Зберігаємо введене місто та відділення
             state['address'] = msg.text.strip()
-            state['step'] = 'waiting_phone'
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping"),
-                                        InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-            m = await context.bot.send_message(chat_id=chat_id,
-                                               text=f"📱 <b>Final Step: Phone Number</b>\n\nPlease enter your phone number (must start with +380):\n\n<b>Example:</b> <i>+380501234567</i>",
-                                               reply_markup=kb, parse_mode="HTML")
-            state['msg_id'] = m.message_id
+            await self.continue_checkout_flow(update, context)
 
-        # --- Step 4: Phone (Strict Check) ---
+        # --- Крок 4: Обробка Телефону (Сувора перевірка) ---
         elif state['step'] == 'waiting_phone':
             phone = msg.text.strip()
 
@@ -1870,24 +1967,31 @@ Please contact us using the details above!
                 if re.fullmatch(r"^\+380\d{9}$", phone):
                     is_valid = True
             else:
-                # Для світу просто '+' та від 10 до 15 цифр
+                # Для міжнародного режиму: '+' та від 10 до 15 цифр
                 if re.fullmatch(r"^\+\d{10,15}$", phone):
                     is_valid = True
 
             if not is_valid:
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping"),
-                                            InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-                error_msg = (
-                    "❌ <b>Invalid Phone Number</b>\n\n"
-                    "Format must be: <b>+380XXXXXXXXX</b>\n"
-                    "Make sure to include '+' and all 12 digits.\n\n"
-                    "<b>Example:</b> <i>+380501234567</i>"
+                kb = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping")],
+                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+                ])
+
+                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
+                format_hint = "+380XXXXXXXXX" if SHIPPING_MODE == 'UKRAINE' else "+[country code][number]"
+
+                error_text = (
+                    f"❌ <b>Invalid Phone (Step 4/4)</b>\n\n"
+                    f"Format must be: <b>{format_hint}</b>\n"
+                    "Make sure to include '+' and all digits.\n\n"
+                    f"<b>Example:</b> <i>{example}</i>"
                 )
-                m = await context.bot.send_message(chat_id=chat_id, text=error_msg, reply_markup=kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
 
             state['phone'] = phone
+            # Перехід до підсумкового вікна замовлення
             await self.show_order_summary(context, chat_id, user_id)
 
     async def send_payment_keyboard(self, context, chat_id, user_id):
@@ -1904,7 +2008,7 @@ Please contact us using the details above!
         text = (
             "💳 <b>Final Step: Payment Method</b>\n\n"
             "Please select how you would like to pay for your order:\n\n"
-            "<i>Note: Online payments are processed manually by our manager.</i>"
+
         )
 
         m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=pay_kb, parse_mode="HTML")
@@ -2005,16 +2109,20 @@ Please contact us using the details above!
 
         elif data == "back_to_email":
             state['step'] = 'waiting_email'
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_name"),
-                                        InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_name")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+            ])
             await query.edit_message_text(
                 f"📧 <b>Step 2/{total_steps}: Email Address</b>\n\nPlease enter your email:\n\n<b>Example:</b> <i>user@gmail.com</i>",
                 reply_markup=kb, parse_mode="HTML")
 
         elif data == "back_to_shipping":
             state['step'] = 'waiting_shipping'
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_email"),
-                                        InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_email")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+            ])
             if SHIPPING_MODE == 'UKRAINE':
                 text = "📍 <b>Step 3/3: Shipping Info</b>\n\nEnter City, Delivery Service, and Branch #\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
             else:
@@ -2023,11 +2131,20 @@ Please contact us using the details above!
 
         elif data == "back_to_phone_input":
             state['step'] = 'waiting_phone'
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping"),
-                                        InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping")],
+                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
+            ])
             await query.edit_message_text(
-                f"📱 <b>Step {total_steps}/{total_steps}: Phone Number</b>\n\nPlease enter your phone number:\n\n<b>Example:</b> <i>+380501234567</i>",
+                f"📱 <b>Final Step: Phone Number</b>\n\nPlease enter your phone number:\n\n<b>Example:</b> <i>+380501234567</i>",
                 reply_markup=kb, parse_mode="HTML")
+
+        elif data == "back_to_payment":
+            try:
+                await query.message.delete()
+            except:
+                pass
+            await self.send_payment_keyboard(context, query.message.chat_id, user_id)
 
     async def handle_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
@@ -2043,11 +2160,11 @@ Please contact us using the details above!
 
         summary_text = (
             "🔍 <b>Confirm your details:</b>\n\n"
-            f"👤 <b>Name:</b> {state['full_name']}\n\n"
-            f"📧 <b>Email:</b> {state['email']}\n\n"
-            f"📍 <b>Shipping:</b> {state['address']}\n\n"
-            f"📱 <b>Phone:</b> {state['phone']}\n\n"
-            "────────────────────\n\n"
+            f"👤 <b>Name:</b> {self.escape_html(state['full_name'])}\n\n"
+            f"📧 <b>Email:</b> {self.escape_html(state['email'])}\n\n"
+            f"📍 <b>Shipping:</b> {self.escape_html(state['address'])}\n\n"
+            f"📱 <b>Phone:</b> {self.escape_html(state['phone'])}\n\n"
+            "─────────────────────────\n\n"
             "Is everything correct? Proceed to payment selection?"
         )
 
@@ -2151,8 +2268,8 @@ Please contact us using the details above!
         user_id = user.id
         state = self.user_states.get(user_id, {})
 
+        # 1. Отримання товарів з кошика
         cursor = self.conn.cursor()
-        # Отримуємо товари з кошика
         cursor.execute("SELECT product_id, quantity, selected_options FROM cart WHERE user_id = ?", (user_id,))
         cart_items = cursor.fetchall()
 
@@ -2163,6 +2280,7 @@ Please contact us using the details above!
         products_details = []
         products_text_list = []
 
+        # 2. Обробка кожного товару та розрахунок вартості
         for prod_id, qty, opts_json in cart_items:
             cursor.execute("SELECT name, price, emoji, variants, stock FROM products WHERE id = ?", (prod_id,))
             prod = cursor.fetchone()
@@ -2170,12 +2288,14 @@ Please contact us using the details above!
                 name, base_price, emoji, variants_json, current_stock = prod
                 selected_opts = json.loads(opts_json) if opts_json else {}
 
-                # Рахуємо ціну з урахуванням варіантів
+                # Розрахунок ціни з урахуванням обраних варіантів
                 price = self.calculate_item_price(base_price, variants_json, opts_json)
                 item_total = price * qty
                 total_amount += item_total
 
+                # Формування рядка з опціями для чека
                 opts_str = f" ({', '.join(selected_opts.values())})" if selected_opts else ""
+
                 products_details.append({
                     'name': name,
                     'quantity': qty,
@@ -2185,19 +2305,21 @@ Please contact us using the details above!
                     'selected_options': selected_opts,
                     'product_id': prod_id
                 })
+
                 products_text_list.append(f"{emoji or '📦'} {name}{opts_str} x{qty}")
 
-                # Оновлюємо загальний склад товару
-                cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (max(0, current_stock - qty), prod_id))
+                # Оновлення залишків на складі
+                new_stock = max(0, current_stock - qty)
+                cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, prod_id))
 
-        # Дані отримувача
+        # 3. Збір даних отримувача зі стану
         full_name = state.get('full_name', '')
         phone = state.get('phone', '')
         address = state.get('address', '')
         email = state.get('email', '')
         payment_method = state.get('payment', 'Unknown')
 
-        # Зберігаємо замовлення в базу (Важливо: full_name має бути в таблиці orders)
+        # 4. Збереження замовлення в базу даних
         cursor.execute('''
                        INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address,
                                            payment_method, email)
@@ -2207,29 +2329,35 @@ Please contact us using the details above!
 
         order_id = cursor.lastrowid
 
-        # Очищаємо кошик
+        # Очищення кошика після успішного створення замовлення
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
-        # Сповіщення адміністраторів (цикл по ADMIN_ID з dom.py)
+        # 5. Сповіщення адміністраторів
         if send_message:
             items_str = "\n".join([f"- {item}" for item in products_text_list])
+
+            # Визначення мітки регіону залежно від налаштувань у dom.py
+            region_tag = "🇺🇦 UKRAINE" if SHIPPING_MODE == 'UKRAINE' else "🌎 INTERNATIONAL"
+
             admin_text = (
-                f"🆕 <b>New Order #{order_id}</b>\n"
-                f"👤 <b>Recipient:</b> {self.escape_html(full_name)}\n"
+                f"🆕 <b>NEW ORDER #{order_id}</b>\n"
+                f"📍 Region: <b>{region_tag}</b>\n\n"
+                f"👤 <b>Customer:</b> {self.escape_html(full_name)}\n"
                 f"📧 <b>Email:</b> {self.escape_html(email)}\n"
                 f"📞 <b>Phone:</b> {self.escape_html(str(phone))}\n"
-                f"📍 <b>Address:</b> {self.escape_html(address)}\n"
+                f"📍 <b>Shipping:</b> {self.escape_html(address)}\n"
                 f"💳 <b>Payment:</b> {payment_method}\n\n"
                 f"🛒 <b>Items:</b>\n{items_str}\n\n"
                 f"💰 <b>Total: {total_amount}$</b>"
             )
 
+            # Надсилання повідомлення кожному адміну зі списку ADMIN_ID
             for admin in ADMIN_ID:
                 try:
                     await context.bot.send_message(chat_id=admin, text=admin_text, parse_mode="HTML")
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Could not notify admin {admin}: {e}")
 
         return order_id, products_details, total_amount
 
@@ -3649,104 +3777,144 @@ Please contact us using the details above!
     async def handle_profile_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         user_id = update.effective_user.id
-        if user_id not in self.user_states: return
+        state = self.user_states.get(user_id)
+        if not state: return
 
-        state = self.user_states[user_id]
         text = update.message.text.strip()
         msg = update.message
+        chat_id = msg.chat_id
 
         try:
             await msg.delete()
         except:
             pass
-
         if 'msg_id' in state:
             try:
-                await context.bot.delete_message(chat_id=msg.chat_id, message_id=state['msg_id'])
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
-
 
         cursor = self.conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
 
-        if state['step'] == 'waiting_phone_profile':
+        # Залишаємо тільки кнопку Cancel
+        error_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]
+        ])
 
-            clean_phone = text.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-            if not re.fullmatch(r"\+?\d{9,15}", clean_phone):
-                m = await context.bot.send_message(
-                    chat_id=msg.chat_id,
-                    text="❌ Invalid format.\nTry again (e.g., +380...):",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]])
+        # --- Обробка ПІБ ---
+        if state['step'] == 'waiting_full_name_profile':
+            if len(text.split()) < 2:
+                error_text = (
+                    "❌ <b>Invalid Name</b>\n\n"
+                    "Please provide both First and Last name.\n\n"
+                    "<b>Example:</b> <i>John Doe</i>"
                 )
+                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
+                                                   parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
+            cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
 
-            cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (clean_phone, user_id))
-
-        elif state['step'] == 'waiting_address_profile':
-            if len(text) < 5:
-                m = await context.bot.send_message(
-                    chat_id=msg.chat_id,
-                    text="❌ Address too short. Try again:",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]])
-                )
-                state['msg_id'] = m.message_id
-                return
-
-            cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
-
+        # --- Обробка Email ---
         elif state['step'] == 'waiting_email_profile':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
-                m = await context.bot.send_message(
-                    chat_id=msg.chat_id,
-                    text="❌ Invalid email. Try again:",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]])
+                error_text = (
+                    "❌ <b>Invalid Email Format</b>\n\n"
+                    "Please enter a valid email address.\n\n"
+                    "<b>Example:</b> <i>user@gmail.com</i>"
                 )
+                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
+                                                   parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
-
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
 
+        # --- Обробка Телефону ---
+        elif state['step'] == 'waiting_phone_profile':
+            is_valid = False
+            if SHIPPING_MODE == 'UKRAINE':
+                if re.fullmatch(r"^\+380\d{9}$", text): is_valid = True
+            else:
+                if re.fullmatch(r"^\+\d{10,15}$", text): is_valid = True
+
+            if not is_valid:
+                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
+                error_text = (
+                    "❌ <b>Invalid Phone Number</b>\n\n"
+                    f"Format must be: <b>{'+380XXXXXXXXX' if SHIPPING_MODE == 'UKRAINE' else '+[country code][number]'}</b>\n"
+                    "Make sure to include '+' and all digits.\n\n"
+                    f"<b>Example:</b> <i>{example}</i>"
+                )
+                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
+                                                   parse_mode="HTML")
+                state['msg_id'] = m.message_id
+                return
+            cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
+
+        # --- Обробка Адреси ---
+        elif state['step'] == 'waiting_address_profile':
+            if len(text) < 3:
+                error_text = "❌ <b>Address too short</b>\n\nPlease enter a more detailed address."
+                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
+                                                   parse_mode="HTML")
+                state['msg_id'] = m.message_id
+                return
+            cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
+
         self.conn.commit()
-
-
         self.user_states.pop(user_id, None)
         await self.show_profile(update, context)
 
-
     async def profile_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-            if await self.check_user_blocked(update, context): return
-            user_id = update.effective_user.id
+        if await self.check_user_blocked(update, context): return
+        query = update.callback_query
+        user_id = update.effective_user.id
 
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT phone, address, email FROM users WHERE user_id = ?", (user_id,))
-            user_data = cursor.fetchone()
+        # Отримуємо всі дані профілю
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
 
-            phone, address, email = user_data if user_data else (None, None, None)
+        # Якщо даних взагалі немає
+        if not row:
+            await query.answer("Your profile is already empty")
+            await self.show_profile(update, context)
+            return
 
-            keyboard = []
-            if phone:
-                keyboard.append([InlineKeyboardButton("🗑️ Delete Phone", callback_data="delete_profile_phone")])
-            if address:
-                keyboard.append([InlineKeyboardButton("🗑️ Delete Address", callback_data="delete_profile_address")])
-            if email:
-                keyboard.append([InlineKeyboardButton("🗑️ Delete Email", callback_data="delete_profile_email")])
+        full_name, email, address, phone = row
+        keyboard = []
 
-            keyboard.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="my_profile")])
+        # Додаємо кнопки тільки для тих даних, які існують у базі
+        if full_name:
+            keyboard.append([InlineKeyboardButton("🗑️ Delete Name", callback_data="delete_profile_full_name")])
+        if email:
+            keyboard.append([InlineKeyboardButton("🗑️ Delete Email", callback_data="delete_profile_email")])
 
-            text = "🗑️ **Delete Profile Data**\n\nSelect the data you want to remove:"
-            if not (phone or address or email):
-                text = "🗑️ **Delete Profile Data**\n\nYour profile is empty. Nothing to delete."
+        if address:
+            # Адаптивна назва залежно від регіону
+            shipping_label = "🗑️ Delete Shipping (City/Branch)" if SHIPPING_MODE == 'UKRAINE' else "🗑️ Delete Shipping (City/ZIP)"
+            keyboard.append([InlineKeyboardButton(shipping_label, callback_data="delete_profile_address")])
 
-            if update.callback_query.message.photo:
-                await update.callback_query.message.delete()
-                await context.bot.send_message(chat_id=update.callback_query.message.chat_id, text=text,
-                                               reply_markup=InlineKeyboardMarkup(keyboard),
-                                               parse_mode=ParseMode.MARKDOWN)
-            else:
-                await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                                              parse_mode=ParseMode.MARKDOWN)
+        if phone:
+            keyboard.append([InlineKeyboardButton("🗑️ Delete Phone", callback_data="delete_profile_phone")])
+
+        keyboard.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="my_profile")])
+
+        text = "🗑️ <b>Delete Personal Data</b>\n\nSelect the information you want to remove from your profile:"
+
+        # Видаляємо старе повідомлення, щоб уникнути помилок при зміні типів (текст/фото)
+        try:
+            await query.message.delete()
+        except:
+            pass
+
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML"
+        )
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -4371,15 +4539,16 @@ def main():
     bot = OnlineShopBot()
     application = Application.builder().token(BOT_TOKEN).build()
 
-
     # =========================================================================
     # 1. БАЗОВІ КОМАНДИ ТА ПОВІДОМЛЕННЯ
     # =========================================================================
     application.add_handler(CommandHandler("start", bot.start))
 
+    # Обробка медіа та контактів
     application.add_handler(MessageHandler(filters.PHOTO, bot.handle_admin_product_input))
     application.add_handler(MessageHandler(filters.CONTACT, bot.handle_checkout_input))
 
+    # Загальний текстовий обробник (має бути останнім серед MessageHandler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text))
 
     # =========================================================================
@@ -4388,143 +4557,102 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.show_main_menu, pattern=r'^main_menu$'))
     application.add_handler(CallbackQueryHandler(bot.show_help, pattern=r'^help$'))
 
-    # Каталог і категорії
-    application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog$'))
+    # Каталог та категорії
+    application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog(_page_\d+)?$'))
     application.add_handler(CallbackQueryHandler(bot.show_category_products, pattern=r'^category_'))
     application.add_handler(CallbackQueryHandler(bot.show_product, pattern=r'^product_'))
-    application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog'))
     application.add_handler(CallbackQueryHandler(bot.handle_product_action, pattern=r'^prod_(plus|minus)_'))
 
-    # Профіль
+    # Профіль користувача
     application.add_handler(CallbackQueryHandler(bot.show_profile, pattern=r'^my_profile$'))
     application.add_handler(CallbackQueryHandler(bot.edit_phone, pattern=r'^edit_phone$'))
     application.add_handler(CallbackQueryHandler(bot.edit_email, pattern=r'^edit_email$'))
     application.add_handler(CallbackQueryHandler(bot.edit_address, pattern=r'^edit_address$'))
     application.add_handler(CallbackQueryHandler(bot.profile_delete_menu, pattern=r'^profile_delete_menu$'))
     application.add_handler(CallbackQueryHandler(bot.handle_delete_profile_data, pattern=r'^delete_profile_'))
+    application.add_handler(CallbackQueryHandler(bot.edit_full_name, pattern=r'^edit_full_name$'))
 
     # =========================================================================
     # 3. КОШИК ТА ОФОРМЛЕННЯ (Checkout)
     # =========================================================================
-    application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^cart$'))
+    application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^(cart|my_cart)$'))
     application.add_handler(CallbackQueryHandler(bot.clear_cart, pattern=r'^clear_cart$'))
     application.add_handler(CallbackQueryHandler(bot.handle_cart_update, pattern=r'^cart_(plus|minus)_'))
-
-
     application.add_handler(CallbackQueryHandler(bot.handle_add_to_cart_click, pattern=r'^add_to_cart_'))
     application.add_handler(CallbackQueryHandler(bot.remove_from_cart, pattern=r'^remove_from_cart_'))
-    application.add_handler(CallbackQueryHandler(bot.handle_cart_actions, pattern=r'^cart_item_'))  # Нові кнопки +/-
-    application.add_handler(
-        CallbackQueryHandler(bot.cart_operations, pattern=r'^cart_(add|remove)_'))  # Старі (якщо лишились)
+    application.add_handler(CallbackQueryHandler(bot.handle_cart_actions, pattern=r'^cart_item_'))
 
-
+    # Логіка замовлення (Checkout flow)
     application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
     application.add_handler(CallbackQueryHandler(bot.use_profile_data, pattern=r'^use_profile_data$'))
+
+    # ПІДТВЕРДЖЕННЯ (має бути ПЕРЕД загальним back_to_)
+    application.add_handler(
+        CallbackQueryHandler(bot.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
+
+    # Оплата
     application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank)$'))
+
+    # Універсальний обробник кнопок "Назад"
     application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^back_to_'))
     application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
-    application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^my_cart$'))
 
-
+    # Мої замовлення
     application.add_handler(CallbackQueryHandler(bot.show_my_orders, pattern=r'^my_orders$'))
     application.add_handler(CallbackQueryHandler(bot.handle_my_orders_pagination, pattern=r'^my_orders_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.show_order_details, pattern=r'^order_details_'))
     application.add_handler(CallbackQueryHandler(bot.user_cancel_order, pattern=r'^user_cancel_'))
 
     # =========================================================================
-    # 4. АДМІН-ПАНЕЛЬ (Загальне)
+    # 4. АДМІН-ПАНЕЛЬ
     # =========================================================================
     application.add_handler(CallbackQueryHandler(bot.admin_panel, pattern=r'^admin_panel$'))
     application.add_handler(CallbackQueryHandler(bot.admin_statistics, pattern=r'^admin_statistics$'))
-
     application.add_handler(CallbackQueryHandler(bot.admin_revenue, pattern=r'^admin_revenue_chart$'))
-
-
     application.add_handler(CallbackQueryHandler(bot.handle_revenue_period, pattern=r'^rev_'))
 
-
-
-
+    # Управління користувачами
     application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
     application.add_handler(CallbackQueryHandler(bot.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
 
-
+    # Управління замовленнями (Адмін)
     application.add_handler(CallbackQueryHandler(bot.admin_all_orders, pattern=r'^admin_all_orders$'))
     application.add_handler(
         CallbackQueryHandler(bot.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
     application.add_handler(
         CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
+    application.add_handler(CallbackQueryHandler(bot.admin_handle_order_callback, pattern=r'^admin_order_'))
+
+    # Управління товарами (Адмін)
     application.add_handler(
-        CallbackQueryHandler(bot.admin_handle_order_callback, pattern=r'^admin_order_'))  # Accept/Reject
-
-
-    # =========================================================================
-    # 5. АДМІН: УПРАВЛІННЯ ТОВАРАМИ (Нова структура)
-    # =========================================================================
-
-
-    application.add_handler(CallbackQueryHandler(bot.admin_categories_menu, pattern='^admin_products$'))
-
-
+        CallbackQueryHandler(bot.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
     application.add_handler(CallbackQueryHandler(bot.admin_products_list, pattern=r'^admin_list_cat_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
     application.add_handler(CallbackQueryHandler(bot.admin_handle_category_selection, pattern=r'^admin_set_cat_'))
-
-
     application.add_handler(CallbackQueryHandler(bot.admin_product_menu, pattern=r'^admin_prod_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_view_product,
-                                                 pattern=r'^admin_view_product_'))
-
-
+    application.add_handler(CallbackQueryHandler(bot.admin_view_product, pattern=r'^admin_view_product_'))
     application.add_handler(CallbackQueryHandler(bot.admin_add_product, pattern=r'^admin_add_product$'))
     application.add_handler(CallbackQueryHandler(bot.admin_edit_product, pattern=r'^admin_edit_product_'))
     application.add_handler(CallbackQueryHandler(bot.admin_edit_field, pattern=r'^admin_edit_field_'))
-
-
     application.add_handler(CallbackQueryHandler(bot.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
     application.add_handler(
         CallbackQueryHandler(bot.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
 
-
+    # Фото та варіанти (Адмін)
     application.add_handler(CallbackQueryHandler(bot.admin_image_menu, pattern=r'^admin_image_menu_'))
     application.add_handler(CallbackQueryHandler(bot.admin_image_set_prompt, pattern=r'^admin_image_set_'))
     application.add_handler(CallbackQueryHandler(bot.admin_image_delete, pattern=r'^admin_image_delete_'))
-
     application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
     application.add_handler(CallbackQueryHandler(bot.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
-
-    # =========================================================================
-    # 6. ЛОГІКА ВАРІАНТІВ (Вибір кольору/розміру)
-    # =========================================================================
-
     application.add_handler(
         CallbackQueryHandler(bot.admin_handle_variant_type_selection, pattern=r'^admin_add_variant_type_'))
-
     application.add_handler(
         CallbackQueryHandler(bot.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
 
+    # Логіка варіантів (Клієнт)
     application.add_handler(CallbackQueryHandler(bot.handle_variant_type_selection, pattern=r'^vartype_'))
-
-    application.add_handler(CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^var_sel_'))
-    application.add_handler(CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^cancel_selection$'))
-    # Знайдіть цей блок у самому кінці файлу і приведіть його до такого вигляду:
-    application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
-    application.add_handler(CallbackQueryHandler(bot.use_profile_data, pattern=r'^use_profile_data$'))
-    application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank)$'))
-
-    # ЦЕЙ РЯДОК ТРЕБА ДОДАТИ (для підтвердження даних):
     application.add_handler(
-        CallbackQueryHandler(bot.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
-
-    # ЦЕЙ РЯДОК У ВАС ВЖЕ МАЄ БУТИ (він обробляє всі кнопки back_to_):
-    application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^back_to_'))
-
-    application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_checkout_confirm,
-                                                 pattern=r'^(confirm_details|confirm_details_back|back_to_payment)$'))
-
-
+        CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^var_sel_|^cancel_selection$'))
 
     # =========================================================================
     # ЗАПУСК
