@@ -49,37 +49,16 @@ class OnlineShopBot:
         cursor.execute('''
                        CREATE TABLE IF NOT EXISTS products
                        (
-                           id
-                           INTEGER
-                           PRIMARY
-                           KEY
-                           AUTOINCREMENT,
-                           name
-                           TEXT
-                           NOT
-                           NULL,
-                           description
-                           TEXT,
-                           price
-                           REAL
-                           NOT
-                           NULL,
-                           image_url
-                           TEXT,
-                           category
-                           TEXT,
-                           stock
-                           INTEGER
-                           DEFAULT
-                           0,
-                           emoji
-                           TEXT,
-                           variants
-                           TEXT,
-                           created_at
-                           TIMESTAMP
-                           DEFAULT
-                           CURRENT_TIMESTAMP
+                           id INTEGER PRIMARY KEY AUTOINCREMENT,
+                           name TEXT NOT NULL,
+                           description TEXT,
+                           price REAL NOT NULL,
+                           image_url TEXT,
+                           category TEXT,
+                           stock INTEGER DEFAULT 0,
+                           emoji TEXT,
+                           variants TEXT,
+                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                        )
                        ''')
 
@@ -87,13 +66,17 @@ class OnlineShopBot:
         self._add_column_if_not_exists(cursor, "products", "image_url", "TEXT")
         self._add_column_if_not_exists(cursor, "products", "variants", "TEXT")
 
+
         try:
-            cursor.execute("SELECT selected_options FROM cart LIMIT 1")
+
+            cursor.execute("SELECT id, selected_options FROM cart LIMIT 1")
         except Exception:
+
             cursor.execute("DROP TABLE IF EXISTS cart")
             cursor.execute('''
                            CREATE TABLE cart
                            (
+                               id               INTEGER PRIMARY KEY AUTOINCREMENT,
                                user_id          INTEGER,
                                product_id       INTEGER,
                                quantity         INTEGER DEFAULT 1,
@@ -101,87 +84,50 @@ class OnlineShopBot:
                                FOREIGN KEY (product_id) REFERENCES products (id)
                            )
                            ''')
-            print("✅ Cart table updated!")
+            print("✅ Cart table updated with ID column!")
+
 
         cursor.execute('''
                        CREATE TABLE IF NOT EXISTS orders
                        (
-                           id
-                           INTEGER
-                           PRIMARY
-                           KEY
-                           AUTOINCREMENT,
-                           user_id
-                           INTEGER
-                           NOT
-                           NULL,
-                           user_name
-                           TEXT,
-                           products
-                           TEXT
-                           NOT
-                           NULL,
-                           total_amount
-                           REAL
-                           NOT
-                           NULL,
-                           phone
-                           TEXT,
-                           address
-                           TEXT,
-                           payment_method
-                           TEXT,
-                           email
-                           TEXT,
-                           status
-                           TEXT
-                           DEFAULT
-                           'pending',
-                           created_at
-                           TIMESTAMP
-                           DEFAULT
-                           CURRENT_TIMESTAMP
+                           id INTEGER PRIMARY KEY AUTOINCREMENT,
+                           user_id INTEGER NOT NULL,
+                           user_name TEXT,
+                           products TEXT NOT NULL,
+                           total_amount REAL NOT NULL,
+                           phone TEXT,
+                           address TEXT,
+                           payment_method TEXT,
+                           email TEXT,
+                           status TEXT DEFAULT 'pending',
+                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                        )
                        ''')
-
 
         self._add_column_if_not_exists(cursor, "orders", "payment_method", "TEXT")
         self._add_column_if_not_exists(cursor, "orders", "email", "TEXT")
 
+
         cursor.execute('''
                        CREATE TABLE IF NOT EXISTS users
                        (
-                           user_id
-                           INTEGER
-                           PRIMARY
-                           KEY,
-                           phone
-                           TEXT,
-                           address
-                           TEXT,
-                           email
-                           TEXT,
-                           blocked
-                           INTEGER
-                           DEFAULT
-                           0
+                           user_id INTEGER PRIMARY KEY,
+                           phone TEXT,
+                           address TEXT,
+                           email TEXT,
+                           blocked INTEGER DEFAULT 0
                        )
                        ''')
 
         self._add_column_if_not_exists(cursor, "users", "email", "TEXT")
         self._add_column_if_not_exists(cursor, "users", "blocked", "INTEGER DEFAULT 0")
 
+
         cursor.execute('''
                        CREATE TABLE IF NOT EXISTS blocked_users
                        (
-                           user_id
-                           INTEGER
-                           PRIMARY
-                           KEY,
-                           blocked_at
-                           TIMESTAMP
-                           DEFAULT
-                           CURRENT_TIMESTAMP
+                           user_id INTEGER PRIMARY KEY,
+                           blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                        )
                        ''')
 
@@ -496,7 +442,7 @@ class OnlineShopBot:
 
             registration_promo = f"\n{promo_messages.get(len(missing), '')}\n"
             registration_promo += f"Missing: *{', '.join(missing_labels)}*\n"
-            registration_promo += "────────────────────\n"
+            registration_promo += "───────────────────────────────\n"
 
 
         if int(user_id) == int(ADMIN_ID):
@@ -2437,13 +2383,18 @@ Please contact us using the details above!
         cursor.execute("SELECT COUNT(*) as total FROM orders WHERE user_id = ?", (user_id,))
         total_orders = cursor.fetchone()["total"]
 
-        per_page = 5
-        total_pages = (total_orders - 1) // per_page + 1 if total_orders else 1
-        offset = page * per_page
-
         if total_orders == 0:
-            await query.edit_message_text("🛒 <b>You have no orders yet.</b>", parse_mode="HTML")
+            keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]
+            await query.edit_message_text(
+                "🛒 <b>You have no orders yet.</b>",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="HTML"
+            )
             return
+
+        per_page = 5
+        total_pages = (total_orders - 1) // per_page + 1
+        offset = page * per_page
 
         cursor.execute(
             'SELECT id, total_amount, status, created_at, products FROM orders WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?',
@@ -2454,7 +2405,13 @@ Please contact us using the details above!
         text += "➖➖➖➖➖➖➖➖➖➖➖➖➖➖\n\n"
 
         keyboard = []
-        status_emoji_map = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent', 'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
+        status_emoji_map = {
+            'pending': '🟡 Processing',
+            'confirmed': '🔵 Confirmed',
+            'shipped': '🟠 Sent',
+            'delivered': '🟢 Delivered',
+            'cancelled': '🔴 Cancelled'
+        }
 
         for order in orders:
             raw_products = order["products"]
@@ -2484,10 +2441,15 @@ Please contact us using the details above!
                                                   callback_data=f"order_details_{order['id']}_{page}")])
 
         nav = []
-        if page > 0: nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"my_orders_page_{page - 1}"))
-        if page + 1 < total_pages: nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"my_orders_page_{page + 1}"))
-        if nav: keyboard.append(nav)
-        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="main_menu")])
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"my_orders_page_{page - 1}"))
+        if page + 1 < total_pages:
+            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"my_orders_page_{page + 1}"))
+
+        if nav:
+            keyboard.append(nav)
+
+        keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 

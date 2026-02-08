@@ -11,4 +11,4 @@ venv/
 shop.db/
 *.db
 
-dom.py/
+dom.py
