@@ -438,39 +438,57 @@ class OnlineShopBot:
         elif update.message:
             await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
 
-
     async def show_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
             return
-        text = """
-ℹ️ **HELP**
 
-🛍️ How to shop**:
-1. Go to the product catalog
-2. Select a category and product
-3. Add products to your cart
-4. Place your order
+        # Визначаємо умови залежно від регіону
+        if SHIPPING_MODE == 'UKRAINE':
+            delivery_info = (
+                "• Kyiv: 100₴\n"
+                "• Ukraine: 150₴\n"
+                "• Free delivery for orders over 1000₴"
+            )
+            payment_info = (
+                "• Cash on delivery\n"
+                "• Card payment to courier\n"
+                "• Bank transfer"
+            )
+        else:
+            delivery_info = (
+                "• Worldwide International Shipping\n"
+                "• Carriers: DHL / FedEx / UPS\n"
+                "• Rates calculated after order placement"
+            )
+            payment_info = (
+                "• Bank transfer (Full Prepayment required)"
+            )
 
-📞 **Contact details:**
-• Telephone: +380501234567
-• Email: shop@example.com
-• Working hours: 9:00 a.m. to 6:00 p.m.
+        text = (
+            "ℹ️ **HELP & INFORMATION**\n\n"
+            "🛍️ **How to shop:**\n"
+            "1. Browse our **Catalog**\n"
+            "2. Select product and options (Size/Color)\n"
+            "3. Add items to **Cart**\n"
+            "4. Complete checkout (4 steps)\n\n"
+            "📞 **Contact Support:**\n"
+            "• Email: shop@example.com\n"
+            "• Mon-Fri: 9:00 AM - 6:00 PM\n\n"
+            f"🚚 **Delivery ({SHIPPING_MODE}):**\n"
+            f"{delivery_info}\n\n"
+            "💳 **Payment:**\n"
+            f"{payment_info}\n\n"
+            "❓ **Questions?**\n"
+            "Feel free to message our support for any assistance!"
+        )
 
-🚚 **Delivery:**
-• In Kyiv: 100₴
-• In Ukraine: 150₴
-• Free delivery for orders over 1000₴
-
-💳 **Payment:**
-• Cash on delivery
-• Card payment to the courier
-• Bank transfer
-
-❓ **Questions?**
-Please contact us using the details above!
-        """
         keyboard = [[InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]]
-        await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+
+        await update.callback_query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.MARKDOWN
+        )
 
     async def show_catalog(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -808,15 +826,9 @@ Please contact us using the details above!
 
     async def edit_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if SHIPPING_MODE == 'UKRAINE':
-            prompt = (
-                "📍 <b>Enter City, Delivery Service, and Branch #:</b>\n\n"
-                "<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
-            )
+            prompt = "📍 <b>Enter City, Delivery Service, and Branch #:</b>\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
         else:
-            prompt = (
-                "📍 <b>Enter City and Postal Code (ZIP):</b>\n\n"
-                "<b>Example:</b> <i>Berlin, 10115</i>"
-            )
+            prompt = "📍 <b>Enter Full Address:</b>\n\n<b>Format:</b> Country, City, Street/House, ZIP\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
         await self._edit_user_profile_attribute(update, context, "address", prompt)
 
     async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1793,12 +1805,17 @@ Please contact us using the details above!
             if SHIPPING_MODE == 'UKRAINE':
                 text = header + f"📍 <b>Step 3/4: Shipping Info</b>\n\nEnter City, Delivery Service, and Branch #\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
             else:
-                text = header + f"📍 <b>Step 3/4: Shipping Info</b>\n\n<b>Example:</b> <i>Berlin, 10115</i>"
+                text = header + (
+                    f"📍 <b>Step 3/4: Shipping Info</b>\n\n"
+                    f"Please enter: <b>Country, City, Street/House, and ZIP code</b>.\n\n"
+                    f"<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+                )
             back_callback = "back_to_email"
         elif not state.get('phone'):
             state['step'] = 'waiting_phone'
-            # Змінено з Final Step на Step 4/4
-            text = header + f"📱 <b>Step 4/4: Phone Number</b>\n\n<b>Example:</b> <i>+380501234567</i>"
+            # Динамічний приклад телефону
+            phone_example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+491512345678"
+            text = header + f"📱 <b>Step 4/4: Phone Number</b>\n\n<b>Example:</b> <i>{phone_example}</i>"
             back_callback = "back_to_shipping"
         else:
             await self.show_order_summary(context, chat_id, user_id)
@@ -1895,96 +1912,65 @@ Please contact us using the details above!
         msg = update.message
         chat_id = msg.chat_id
 
-        # Видаляємо повідомлення користувача для чистоти чату
-        try:
-            await msg.delete()
-        except:
-            pass
-
-        # Видаляємо попереднє повідомлення бота
+        try: await msg.delete()
+        except: pass
         if 'msg_id' in state:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except:
-                pass
+            try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except: pass
 
-        # --- Крок 1: Обробка ПІБ ---
+        # --- Крок 1: ПІБ ---
         if state['step'] == 'waiting_full_name':
             name = msg.text.strip()
             if len(name.split()) < 2:
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="cart")],
-                                           [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-                m = await context.bot.send_message(chat_id=chat_id,
-                                                   text="❌ <b>Invalid Name (Step 1/4)</b>\n\nPlease provide both First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
-                                                   reply_markup=kb, parse_mode="HTML")
+                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="cart")], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Name (Step 1/4)</b>\n\nPlease provide First and Last name.", reply_markup=kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             state['full_name'] = name
             await self.continue_checkout_flow(update, context)
 
-        # --- Крок 2: Обробка Email ---
+        # --- Крок 2: Email ---
         elif state['step'] == 'waiting_email':
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_name")],
-                                           [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-                m = await context.bot.send_message(chat_id=chat_id,
-                                                   text="❌ <b>Invalid Email (Step 2/4)</b>\n\n<b>Example:</b> <i>user@gmail.com</i>",
-                                                   reply_markup=kb, parse_mode="HTML")
+                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_name")], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Email (Step 2/4)</b>", reply_markup=kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             state['email'] = email
             await self.continue_checkout_flow(update, context)
 
-        # --- Крок 3: Обробка Адреси (Shipping) - СУВОРА ПЕРЕВІРКА ---
+        # --- Крок 3: Адреса (Shipping) ---
         elif state['step'] == 'waiting_shipping':
             address = msg.text.strip()
             is_valid = True
-            error_msg = ""
-
             if SHIPPING_MODE == 'UKRAINE':
-                # Перевіряємо: чи є текст після коми, або чи введено мінімум 3 слова (Kyiv NP 15)
                 comma_parts = [p.strip() for p in address.split(',') if p.strip()]
                 space_parts = [p.strip() for p in address.split() if p.strip()]
-
-                # Якщо введено "Kyiv," (1 частина по комі) і менше 3 слів — це помилка
-                if not (len(comma_parts) >= 2 or len(space_parts) >= 3):
-                    is_valid = False
-                    error_msg = (
-                        "❌ <b>Invalid Shipping Info (Step 3/4)</b>\n\n"
-                        "Please specify both <b>City</b> and <b>Delivery Service/Branch</b>.\n\n"
-                        "<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
-                    )
+                if not (len(comma_parts) >= 2 or len(space_parts) >= 3): is_valid = False
             else:
-                # Для міжнародного режиму
-                if len(address) < 8 or not any(char.isdigit() for char in address):
-                    is_valid = False
-                    error_msg = "❌ <b>Invalid Address (Step 3/4)</b>\n\nPlease include City and ZIP code.\n\n<b>Example:</b> <i>Berlin, 10115</i>"
+                # Перевірка на 3 коми для міжнародного формату
+                if address.count(',') < 3: is_valid = False
 
             if not is_valid:
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_email")],
-                                           [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+                error_msg = "❌ <b>Invalid Address (Step 3/4)</b>\n\n"
+                if SHIPPING_MODE == 'UKRAINE': error_msg += "Format: Kyiv, Nova Poshta #15"
+                else: error_msg += "Format: Country, City, Street, ZIP\nExample: <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_email")], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
                 m = await context.bot.send_message(chat_id=chat_id, text=error_msg, reply_markup=kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
-
             state['address'] = address
             await self.continue_checkout_flow(update, context)
 
-        # --- Крок 4: Обробка Телефону ---
+        # --- Крок 4: Телефон ---
         elif state['step'] == 'waiting_phone':
             phone = msg.text.strip()
-            is_valid = (
-                re.fullmatch(r"^\+380\d{9}$", phone) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$",
-                                                                                                     phone))
-
+            is_valid = (re.fullmatch(r"^\+380\d{9}$", phone) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", phone))
             if not is_valid:
-                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping")],
-                                           [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
-                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
-                m = await context.bot.send_message(chat_id=chat_id,
-                                                   text=f"❌ <b>Invalid Phone (Step 4/4)</b>\n\n<b>Example:</b> <i>{example}</i>",
-                                                   reply_markup=kb, parse_mode="HTML")
+                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+441234567890"
+                kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="back_to_shipping")], [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]])
+                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Invalid Phone (Step 4/4)</b>\n\nExample: <i>{example}</i>", reply_markup=kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             state['phone'] = phone
@@ -1992,22 +1978,18 @@ Please contact us using the details above!
 
     async def send_payment_keyboard(self, context, chat_id, user_id):
         self.user_states[user_id]['step'] = 'waiting_payment'
+        kb = []
+        if SHIPPING_MODE == 'UKRAINE':
+            kb.append([InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")])
+            kb.append([InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")])
 
-        pay_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")],
-            [InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")],
-            [InlineKeyboardButton("🏦 Bank transfer", callback_data="pay_bank")],
-            [InlineKeyboardButton("🔙 Back", callback_data="confirm_details_back")],  # Повернення до перевірки даних
-            [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
-        ])
+        kb.append([InlineKeyboardButton("🏦 Bank transfer (Prepayment)", callback_data="pay_bank")])
+        kb.append([InlineKeyboardButton("🔙 Back", callback_data="confirm_details_back")])
+        kb.append([InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")])
 
-        text = (
-            "💳 <b>Final Step: Payment Method</b>\n\n"
-            "Please select how you would like to pay for your order:\n\n"
-
-        )
-
-        m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=pay_kb, parse_mode="HTML")
+        text = "💳 <b>Final Step: Payment Method</b>\n\nPlease select how you would like to pay:"
+        m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(kb),
+                                           parse_mode="HTML")
         self.user_states[user_id]['msg_id'] = m.message_id
 
     async def choose_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3772,80 +3754,53 @@ Please contact us using the details above!
         msg = update.message
         chat_id = msg.chat_id
 
-        try:
-            await msg.delete()
-        except:
-            pass
+        try: await msg.delete()
+        except: pass
         if 'msg_id' in state:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except:
-                pass
+            try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except: pass
 
         cursor = self.conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
+        error_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]])
 
-        # Залишаємо тільки кнопку Cancel
-        error_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]
-        ])
-
-        # --- Обробка ПІБ ---
+        # --- ПІБ ---
         if state['step'] == 'waiting_full_name_profile':
             if len(text.split()) < 2:
-                error_text = (
-                    "❌ <b>Invalid Name</b>\n\n"
-                    "Please provide both First and Last name.\n\n"
-                    "<b>Example:</b> <i>John Doe</i>"
-                )
-                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
-                                                   parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Name</b>\n\nEnter First and Last name.", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
 
-        # --- Обробка Email ---
+        # --- Email ---
         elif state['step'] == 'waiting_email_profile':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
-                error_text = (
-                    "❌ <b>Invalid Email Format</b>\n\n"
-                    "Please enter a valid email address.\n\n"
-                    "<b>Example:</b> <i>user@gmail.com</i>"
-                )
-                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
-                                                   parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Email Format</b>", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
 
-        # --- Обробка Телефону ---
+        # --- Телефон (Виправлено перевірку) ---
         elif state['step'] == 'waiting_phone_profile':
-            is_valid = False
-            if SHIPPING_MODE == 'UKRAINE':
-                if re.fullmatch(r"^\+380\d{9}$", text): is_valid = True
-            else:
-                if re.fullmatch(r"^\+\d{10,15}$", text): is_valid = True
-
+            is_valid = (re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", text))
             if not is_valid:
-                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
-                error_text = (
-                    "❌ <b>Invalid Phone Number</b>\n\n"
-                    f"Format must be: <b>{'+380XXXXXXXXX' if SHIPPING_MODE == 'UKRAINE' else '+[country code][number]'}</b>\n"
-                    "Make sure to include '+' and all digits.\n\n"
-                    f"<b>Example:</b> <i>{example}</i>"
-                )
-                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
-                                                   parse_mode="HTML")
+                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+441234567890"
+                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Invalid Phone</b>\n\nExample: {example}", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
 
-        # --- Обробка Адреси ---
+        # --- Адреса (Оновлено перевірку та приклад) ---
         elif state['step'] == 'waiting_address_profile':
-            if len(text) < 3:
-                error_text = "❌ <b>Address too short</b>\n\nPlease enter a more detailed address."
-                m = await context.bot.send_message(chat_id=chat_id, text=error_text, reply_markup=error_kb,
-                                                   parse_mode="HTML")
+            is_valid = True
+            if SHIPPING_MODE == 'UKRAINE':
+                if text.count(',') < 1 and len(text.split()) < 3: is_valid = False
+            else:
+                if text.count(',') < 3: is_valid = False
+
+            if not is_valid:
+                example = "Kyiv, Nova Poshta #15" if SHIPPING_MODE == 'UKRAINE' else "Germany, Berlin, Hauptstraße 10, 10115"
+                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Address too short</b>\n\nExample: <i>{example}</i>", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
