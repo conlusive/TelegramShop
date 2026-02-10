@@ -1775,16 +1775,23 @@ class OnlineShopBot:
         chat_id = update.effective_chat.id
         total_steps = "4"
 
+        # Якщо ми щойно виправили одне поле через "✏️ Edit", повертаємо в Summary
+        if state.get('is_editing_single'):
+            state['is_editing_single'] = False
+            await self.show_order_summary(context, chat_id, user_id)
+            return
+
         from_profile = state.get('from_profile', False)
         header = "📋 <b>Checkout</b> (Profile data loaded)\n\n" if from_profile else "📋 <b>Order Checkout</b>\n\n"
 
+        # Визначаємо, який наступний крок потрібно показати
         if not state.get('full_name'):
             state['step'] = 'waiting_full_name'
-            text = header + f"👤 <b>Step 1/{total_steps}: Full Name</b>\n\nEnter recipient's name:\n\n<b>Example:</b> <i>John Doe</i>"
+            text = header + f"👤 <b>Step 1/{total_steps}: Full Name</b>\n\nPlease enter the recipient's full name:\n\n<b>Example:</b> <i>John Doe</i>"
             back_callback = "cart"
         elif not state.get('email'):
             state['step'] = 'waiting_email'
-            text = header + f"📧 <b>Step 2/{total_steps}: Email Address</b>\n\nEnter your email:\n\n<b>Example:</b> <i>user@gmail.com</i>"
+            text = header + f"📧 <b>Step 2/{total_steps}: Email Address</b>\n\nPlease enter your email:\n\n<b>Example:</b> <i>user@gmail.com</i>"
             back_callback = "back_to_name"
         elif not state.get('address'):
             state['step'] = 'waiting_shipping'
@@ -1799,6 +1806,7 @@ class OnlineShopBot:
             text = header + f"📱 <b>Step 4/{total_steps}: Phone Number</b>\n\nEnter phone with country code:\n\n<b>Example:</b> <i>{example}</i>"
             back_callback = "back_to_shipping"
         else:
+            # Якщо все заповнено, показуємо підсумок
             await self.show_order_summary(context, chat_id, user_id)
             return
 
@@ -1807,14 +1815,15 @@ class OnlineShopBot:
             [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
         ])
 
+        # Логіка "пилососа": якщо це не натискання кнопки, а ввід тексту - видаляємо старе повідомлення бота
         if update.callback_query:
-            # Якщо ми прийшли через кнопку - просто редагуємо
             await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
         else:
-            # Якщо юзер ввів текст - видаляємо старе повідомлення бота і шлемо нове
             if 'msg_id' in state:
-                try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-                except: pass
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+                except Exception:
+                    pass
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -2079,22 +2088,34 @@ class OnlineShopBot:
         state = self.user_states.get(user_id)
         if not state: return
 
-        # Скидаємо дані відповідного кроку, щоб continue_checkout_flow показав його знову
-        if data == "back_to_name":
-            state['full_name'] = None
-        elif data == "back_to_email":
-            state['email'] = None
-        elif data == "back_to_shipping":
-            state['address'] = None
-        elif data == "back_to_phone_input":
-            state['phone'] = None
-        elif data == "back_to_payment":
+        # Словник для швидкого визначення поля та його поточної назви
+        edit_map = {
+            "edit_check_name": ("full_name", "Name", "waiting_full_name"),
+            "edit_check_email": ("email", "Email", "waiting_email"),
+            "edit_check_address": ("address", "Shipping Address", "waiting_shipping"),
+            "edit_check_phone": ("phone", "Phone Number", "waiting_phone")
+        }
+
+        if data in edit_map:
+            field_key, display_name, next_step = edit_map[data]
+            current_val = state.get(field_key, "Not set")
+            state['step'] = next_step
+            state['is_editing_single'] = True # Прапорець, щоб повернутись саме в Summary
+
+            text = (
+                f"✏️ <b>Editing {display_name}</b>\n\n"
+                f"<b>Current value:</b> <code>{self.escape_html(current_val)}</code>\n\n"
+                f"Please enter the new value below:"
+            )
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Cancel Editing", callback_data="confirm_details_back")]])
+            await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+            return
+
+        # Стара логіка для кнопки Back (якщо залишилась десь у лінійному потоці)
+        if data == "back_to_payment":
             try: await query.message.delete()
             except: pass
             await self.send_payment_keyboard(context, query.message.chat_id, user_id)
-            return
-
-        await self.continue_checkout_flow(update, context)
 
     async def handle_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
@@ -2110,19 +2131,26 @@ class OnlineShopBot:
 
         summary_text = (
             "🔍 <b>Confirm your details:</b>\n\n"
-            f"👤 <b>Name:</b> {self.escape_html(state['full_name'])}\n\n"
-            f"📧 <b>Email:</b> {self.escape_html(state['email'])}\n\n"
-            f"📍 <b>Shipping:</b> {self.escape_html(state['address'])}\n\n"
+            f"👤 <b>Name:</b> {self.escape_html(state['full_name'])}\n"
+            f"📧 <b>Email:</b> {self.escape_html(state['email'])}\n"
+            f"📍 <b>Shipping:</b> {self.escape_html(state['address'])}\n"
             f"📱 <b>Phone:</b> {self.escape_html(state['phone'])}\n\n"
-            "─────────────────────────\n\n"
-            "Is everything correct? Proceed to payment selection?"
+            "─────────────────────────\n"
+            "Click ✏️ next to a field to change it, or ✅ to proceed."
         )
 
         keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✏️ Edit Name", callback_data="edit_check_name"),
+             InlineKeyboardButton("✏️ Edit Email", callback_data="edit_check_email")],
+            [InlineKeyboardButton("✏️ Edit Shipping", callback_data="edit_check_address"),
+             InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_check_phone")],
             [InlineKeyboardButton("✅ Everything is correct", callback_data="confirm_details")],
-            [InlineKeyboardButton("🔄 Edit (Back)", callback_data="back_to_phone_input")],
             [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
         ])
+
+        if 'msg_id' in state:
+            try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except: pass
 
         m = await context.bot.send_message(chat_id=chat_id, text=summary_text, reply_markup=keyboard, parse_mode="HTML")
         state['msg_id'] = m.message_id
@@ -4444,6 +4472,8 @@ def main():
     # Універсальний обробник кнопок "Назад"
     application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^back_to_'))
     application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
+    application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^back_to_|edit_'))
+
 
     # Мої замовлення
     application.add_handler(CallbackQueryHandler(bot.show_my_orders, pattern=r'^my_orders$'))
