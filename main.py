@@ -7,7 +7,9 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.constants import ParseMode
-from dom import BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE
+from dom import BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE, PORTMONE_TOKEN
+from telegram import LabeledPrice
+from telegram.ext import PreCheckoutQueryHandler
 
 
 # -------------------- LOGGING --------------------
@@ -404,7 +406,7 @@ class OnlineShopBot:
 
             registration_promo = f"\n{promo_messages.get(len(missing), '')}\n"
             registration_promo += f"Missing: *{', '.join(missing_labels)}*\n"
-            registration_promo += "───────────────────────────────\n"
+            registration_promo += "────────────────────\n"
 
         # ... (решта коду welcome_text та відправки повідомлення залишається без змін)
         if int(user_id) == int(ADMIN_ID):
@@ -1978,17 +1980,20 @@ class OnlineShopBot:
 
     async def send_payment_keyboard(self, context, chat_id, user_id):
         self.user_states[user_id]['step'] = 'waiting_payment'
-        kb = []
+        keyboard = []
+
+        # Регіональна логіка: для світу - тільки онлайн, для України - онлайн + готівка
         if SHIPPING_MODE == 'UKRAINE':
-            kb.append([InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")])
-            kb.append([InlineKeyboardButton("💳 Card to courier", callback_data="pay_card")])
+            keyboard.append([InlineKeyboardButton("💵 Cash on delivery", callback_data="pay_cod")])
+            keyboard.append([InlineKeyboardButton("💳 Card (Online Payment)", callback_data="pay_online")])
+        else:
+            keyboard.append([InlineKeyboardButton("💳 Card / Apple Pay (Stripe)", callback_data="pay_online")])
 
-        kb.append([InlineKeyboardButton("🏦 Bank transfer (Prepayment)", callback_data="pay_bank")])
-        kb.append([InlineKeyboardButton("🔙 Back", callback_data="confirm_details_back")])
-        kb.append([InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")])
+        keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="confirm_details_back")])
+        keyboard.append([InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")])
 
-        text = "💳 <b>Final Step: Payment Method</b>\n\nPlease select how you would like to pay:"
-        m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(kb),
+        text = "💳 <b>Final Step: Payment Method</b>\n\nChoose how you want to pay for your order."
+        m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
                                            parse_mode="HTML")
         self.user_states[user_id]['msg_id'] = m.message_id
 
@@ -1999,78 +2004,74 @@ class OnlineShopBot:
         data = query.data
         user_id = query.from_user.id
         state = self.user_states.get(user_id)
+        if not state: return
 
-        if not state or state.get('step') != 'waiting_payment':
-            await query.answer("❌ Payment step invalid")
-            return
-
-        payment_map = {
-            "pay_cod": "Cash on delivery",
-            "pay_card": "Card to courier",
-            "pay_bank": "Bank transfer"
-        }
-        payment = payment_map.get(data)
-        if not payment: return await query.answer("❌ Invalid payment method")
-
-        if payment == "Cash on delivery" and not state.get("phone"):
-            self.user_states[user_id]['payment'] = payment
-            self.user_states[user_id]['step'] = 'waiting_phone'
-
-            keyboard = [
-                [InlineKeyboardButton("🔙 Back", callback_data="back_to_payment")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-            ]
-            msg = await query.edit_message_text(
-                "📞 **Phone required for Cash on Delivery:**\n"
-                "Please enter your phone number (+380...):",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
-            )
-            self.user_states[user_id]['msg_id'] = msg.message_id
-            return
-
-        self.user_states[user_id]['payment'] = payment
-
+        # Розрахунок суми замовлення
         cursor = self.conn.cursor()
         cursor.execute(
             'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
             (user_id,))
         cart_items = cursor.fetchall()
-        if not cart_items:
-            await query.edit_message_text("❌ The cart is empty!")
-            self.user_states.pop(user_id, None)
-            return
+        total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_items)
 
-        total_amount = 0
-        for base_price, quantity, variants_json, opts_json in cart_items:
+        if data == "pay_online":
+            # Запуск процесу оплати через Stripe або LiqPay
+            await self.send_invoice(update, context, total_amount)
+        else:
+            # Створення замовлення без передоплати (тільки для України)
+            await self.finalize_order(update, context, "Cash on delivery", total_amount)
 
-            price = base_price
-            try:
-                price = self.calculate_item_price(base_price, variants_json, opts_json)
-            except:
-                pass
-            total_amount += price * quantity
+    async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
+        # Використовуємо твій новий токен Portmone
+        from dom import STRIPE_TOKEN, PORTMONE_TOKEN
+        user_id = update.effective_user.id
 
-        if payment == "Bank transfer":
-            order_text = (
-                f"🏦 *Bank transfer selected*\n\n"
-                f"To pay for your order, transfer the amount to the following details:\n\n"
-                f"*IBAN:* `UA123456789012345678901234567`\n"
-                f"*Recipient:* Example Shop LLC\n"
-                f"*Purpose:* Order Payment\n"
-                f"*Amount:* {total_amount}$\n\n"
-                f"_After payment, click Confirm below._"
-            )
-            keyboard = [
-                [InlineKeyboardButton("✅ Confirm Order", callback_data="confirm_bank_order")],
-                [InlineKeyboardButton("🔙 Back", callback_data="back_to_payment")],
-                [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-            ]
-            await query.edit_message_text(order_text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                          parse_mode=ParseMode.MARKDOWN)
-            return
+        # Вибір токена та валюти
+        token = PORTMONE_TOKEN if SHIPPING_MODE == 'UKRAINE' else STRIPE_TOKEN
+        currency = "UAH" if SHIPPING_MODE == 'UKRAINE' else "USD"
 
-        await self.finalize_order(update, context, payment, total_amount)
+        await context.bot.send_invoice(
+            chat_id=update.effective_chat.id,
+            title="Оплата замовлення #QuickShop",
+            description="Оплата товарів у вашому кошику",
+            payload=f"order_{user_id}",
+            provider_token=token,
+            currency=currency,
+            prices=[LabeledPrice("До сплати", int(total_amount * 100))],
+            start_parameter="shop-payment",
+            # Вимикаємо запит даних, які ми вже зібрали в профілі, щоб вікно було чистим
+            need_name=False,
+            need_phone_number=False,
+            need_email=False,
+            need_shipping_address=False,
+            is_flexible=False  # Якщо ціна доставки фіксована або вже в сумі
+        )
+
+    async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.pre_checkout_query
+        user_id = query.from_user.id
+        # Важливо: фінальна перевірка складу перед списанням грошей
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT c.quantity, p.name, p.stock FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?",
+            (user_id,))
+        for qty, name, stock in cursor.fetchall():
+            if stock < qty:
+                return await query.answer(ok=False, error_message=f"Sorry, {name} is already sold out!")
+        await query.answer(ok=True)
+
+    async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        # Отримуємо суму з самого об'єкта платежу (в копійках, тому ділимо на 100)
+        payment_info = update.message.successful_payment
+        total_amount = payment_info.total_amount / 100
+
+        # Викликаємо твою функцію завершення замовлення
+        await self.finalize_order(update, context, "Online Card Payment", total_amount)
+
+        # Можна додати привітання
+        await update.message.reply_text("✨ Дякуємо! Оплата пройшла успішно. Ваше замовлення вже готується!")
+
+
 
     async def handle_checkout_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -4460,6 +4461,8 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.handle_add_to_cart_click, pattern=r'^add_to_cart_'))
     application.add_handler(CallbackQueryHandler(bot.remove_from_cart, pattern=r'^remove_from_cart_'))
     application.add_handler(CallbackQueryHandler(bot.handle_cart_actions, pattern=r'^cart_item_'))
+    application.add_handler(PreCheckoutQueryHandler(bot.precheckout_callback))
+    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, bot.successful_payment_callback))
 
     # Логіка замовлення (Checkout flow)
     application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
