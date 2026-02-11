@@ -3611,16 +3611,14 @@ class OnlineShopBot:
         if query.data not in field_map: return await query.answer("❌ Invalid request")
 
         field, msg_text = field_map[query.data]
-
-        # ОНОВЛЕННЯ СТАНУ: встановлюємо правильний крок та поле
         self.user_states[user_id]['editing_field'] = field
         self.user_states[user_id]['step'] = 'edit_product_field'
-
         product_id = self.user_states[user_id].get('product_id')
 
         if field == "category":
             keyboard = self.get_existing_categories_keyboard()
         else:
+            # ВИПРАВЛЕНО: кнопка Cancel веде до admin_prod_
             keyboard = InlineKeyboardMarkup(
                 [[InlineKeyboardButton("❌ Cancel", callback_data=f"admin_prod_{product_id}")]])
 
@@ -3629,7 +3627,7 @@ class OnlineShopBot:
         except:
             pass
 
-        # Спеціальна логіка для варіантів
+        # Спеціальна логіка для варіантів (ПРИКЛАДИ ЗБЕРЕЖЕНО)
         if field == "variants":
             cursor = self.conn.cursor()
             cursor.execute("SELECT variants FROM products WHERE id = ?", (product_id,))
@@ -4019,11 +4017,10 @@ class OnlineShopBot:
                 try:
                     variants_dict = {}
                     current_calc_stock = 0
-                    # Розбиваємо різні типи варіантів через ";" (якщо їх декілька)
+                    # Розбиваємо різні типи варіантів через ";"
                     parts = input_value.split(";")
                     for part in parts:
                         if ":" in part:
-                            # Формат "Тип: Опція=К-сть"
                             k, vals_str = part.split(":")
                             parsed_vals = {}
 
@@ -4039,12 +4036,10 @@ class OnlineShopBot:
                                         price = float(sub_parts[2])
                                         parsed_vals[opt_name] = {"qty": qty, "price": price}
                                     else:
-                                        # Для сумісності з простим форматом
                                         parsed_vals[opt_name] = qty
 
                                     current_calc_stock += qty
                                 else:
-                                    # Якщо це просто список без кількості (старий формат)
                                     parsed_vals[v] = 0
 
                             variants_dict[k.strip()] = parsed_vals
@@ -4057,7 +4052,8 @@ class OnlineShopBot:
                     error_text = "❌ Format error.\nUse: <code>Size: S=10, M=5=1200</code>"
 
         if error_text:
-            kb = [[InlineKeyboardButton("🔙 Back", callback_data=f"admin_edit_product_{product_id}")]]
+            # ВИПРАВЛЕНО: повернення до admin_prod_ при помилці
+            kb = [[InlineKeyboardButton("🔙 Back", callback_data=f"admin_prod_{product_id}")]]
             m = await context.bot.send_message(chat_id=msg.chat_id, text=error_text,
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
             state['msg_id'] = m.message_id
@@ -4065,23 +4061,19 @@ class OnlineShopBot:
 
         # Оновлення в базі даних
         cursor = self.conn.cursor()
-
         if field_to_edit == "variants" and new_calculated_stock is not None:
-            # Оновлюємо і варіанти, і загальний сток
             cursor.execute(f"UPDATE products SET variants = ?, stock = ? WHERE id = ?",
                            (value, new_calculated_stock, product_id))
             msg_confirm = f"✅ **Variants** updated!\n📦 New Total Stock: {new_calculated_stock}"
         else:
-            # Оновлюємо просте поле
             cursor.execute(f"UPDATE products SET {field_to_edit} = ? WHERE id = ?", (value, product_id))
             msg_confirm = f"✅ **{field_to_edit}** updated!"
 
         self.conn.commit()
-
-        # Очищаємо стан і повертаємось до товару
         self.user_states.pop(update.effective_user.id, None)
 
-        kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_edit_product_{product_id}")]]
+        # ВИПРАВЛЕНО: повернення до admin_prod_ після успіху
+        kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_prod_{product_id}")]]
         await context.bot.send_message(chat_id=msg.chat_id, text=msg_confirm, reply_markup=InlineKeyboardMarkup(kb),
                                        parse_mode=ParseMode.MARKDOWN)
 
