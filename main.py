@@ -3611,9 +3611,12 @@ class OnlineShopBot:
         if query.data not in field_map: return await query.answer("❌ Invalid request")
 
         field, msg_text = field_map[query.data]
-        self.user_states[user_id]['editing_field'] = field
-        product_id = self.user_states[user_id].get('product_id')
 
+        # ОНОВЛЕННЯ СТАНУ: встановлюємо правильний крок та поле
+        self.user_states[user_id]['editing_field'] = field
+        self.user_states[user_id]['step'] = 'edit_product_field'
+
+        product_id = self.user_states[user_id].get('product_id')
 
         if field == "category":
             keyboard = self.get_existing_categories_keyboard()
@@ -3626,7 +3629,7 @@ class OnlineShopBot:
         except:
             pass
 
-
+        # Спеціальна логіка для варіантів
         if field == "variants":
             cursor = self.conn.cursor()
             cursor.execute("SELECT variants FROM products WHERE id = ?", (product_id,))
@@ -4093,20 +4096,20 @@ class OnlineShopBot:
         msg = update.message
         chat_id = msg.chat_id
 
-        # 1. "Пилосос": видаляємо повідомлення користувача
+        # 1. Видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
             pass
 
-        # 2. Видаляємо попереднє системне повідомлення (якщо є збережене ID)
+        # 2. Видаляємо попереднє повідомлення бота
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
-        # 3. Отримуємо вхідні дані (текст або фото)
+        # 3. Отримуємо вхідні дані
         if update.message.photo:
             input_value = update.message.photo[-1].file_id
             is_photo = True
@@ -4116,22 +4119,38 @@ class OnlineShopBot:
 
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
 
-        # ==============================================================================
-        # 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ: Обробка редагування (Edit)
-        # Цей блок має бути ПЕРШИМ, щоб перехопити ввід варіантів/ціни/назви
-        # ==============================================================================
+        # ОБРОБКА РЕДАГУВАННЯ ПОЛІВ
         if step == 'edit_product_field':
-            # Викликаємо функцію обробки редагування
             await self.handle_edit_field_input(update, context, state, input_value, msg)
             return
-        # ==============================================================================
 
-        # --- ДАЛІ ЙДЕ ЛОГІКА СТВОРЕННЯ НОВОГО ТОВАРУ (ADD PRODUCT) ---
+        # ОБРОБКА ОНОВЛЕННЯ ФОТО (ДЛЯ ІСНУЮЧОГО ТОВАРУ)
+        if step == 'waiting_product_image':
+            product_id = state.get('product_id')
+            img_to_set = input_value if (is_photo or input_value.startswith('http')) else None
 
+            if img_to_set or input_value == '-':
+                cursor = self.conn.cursor()
+                cursor.execute("UPDATE products SET image_url = ? WHERE id = ?",
+                               (None if input_value == '-' else img_to_set, product_id))
+                self.conn.commit()
+                self.user_states.pop(user_id, None)
+
+                kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_prod_{product_id}")]]
+                await context.bot.send_message(chat_id=chat_id, text="✅ Image updated successfully!",
+                                               reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+            else:
+                text = "⚠️ **Error: Photo required!**\n\nPlease attach a file or send a link."
+                m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
+                                                   parse_mode="HTML")
+                state['msg_id'] = m.message_id
+            return
+
+        # --- ЛОГІКА СТВОРЕННЯ НОВОГО ТОВАРУ (WIZARD) ---
         if step == 'add_product_name':
             state['product_data'] = {'name': input_value}
             state['step'] = 'add_product_description'
-            text = "📝 <b>Enter product description:</b>\n\n<b>Example:</b> <i>Premium 100% cotton, oversized fit.</i>"
+            text = "📝 <b>Enter product description:</b>"
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -4145,17 +4164,16 @@ class OnlineShopBot:
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
             state['msg_id'] = m.message_id
 
-        # --- ГІЛКА ПРОСТОГО ТОВАРУ (SIMPLE PRODUCT) ---
         elif step == 'waiting_simple_price':
             try:
                 state['product_data']['price'] = float(input_value.replace(",", "."))
                 state['step'] = 'waiting_simple_stock'
-                text = "🔢 <b>Enter Stock:</b>\n\n<b>Example:</b> 50"
+                text = "🔢 <b>Enter Stock:</b>"
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
             except:
-                text = "⚠️ <b>Invalid Price!</b>\n\nEnter a number.\n<b>Example:</b> 1250.50"
+                text = "⚠️ <b>Invalid Price!</b>"
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
@@ -4164,12 +4182,12 @@ class OnlineShopBot:
             try:
                 state['product_data']['stock'] = int(input_value)
                 state['step'] = 'waiting_simple_category'
-                text = "📂 <b>Enter Category:</b>\n\n<b>Example:</b> <i>T-shirts</i>"
+                text = "📂 <b>Enter Category:</b>"
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
             except:
-                text = "⚠️ <b>Invalid quantity!</b>\n\nEnter a whole number.\n<b>Example:</b> 10"
+                text = "⚠️ <b>Invalid quantity!</b>"
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
@@ -4177,25 +4195,18 @@ class OnlineShopBot:
         elif step == 'waiting_simple_category':
             state['product_data']['category'] = input_value
             state['step'] = 'waiting_simple_emoji'
-            m = await context.bot.send_message(chat_id=chat_id, text="✨ <b>Enter Emoji:</b>\n\n<b>Example:</b> 👕",
-                                               reply_markup=cancel_kb, parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id, text="✨ <b>Enter Emoji:</b>", reply_markup=cancel_kb,
+                                               parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_emoji':
             state['product_data']['emoji'] = input_value
             state['step'] = 'waiting_simple_image'
-            text = "📸 <b>Send Photo:</b>\n\n<i>Please attach a photo or send URL. Use '-' to skip.</i>"
+            text = "📸 <b>Send Photo:</b>"
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_image':
-            if not is_photo and not input_value.startswith('http') and input_value != '-':
-                text = "⚠️ <b>Error: Photo required!</b>\n\nPlease <b>attach a file</b>. I can't accept text here."
-                m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
-                                                   parse_mode="HTML")
-                state['msg_id'] = m.message_id
-                return
-
             img = input_value if (is_photo or input_value.startswith('http')) else None
             p = state['product_data']
             cursor = self.conn.cursor()
@@ -4209,26 +4220,18 @@ class OnlineShopBot:
                                                [[InlineKeyboardButton("🔙 Back", callback_data="admin_products")]]),
                                            parse_mode="HTML")
 
-        # --- ГІЛКА ТОВАРУ З ВАРІАНТАМИ (VARIANT PRODUCT) ---
         elif step == 'waiting_var_image':
-            if not is_photo and not input_value.startswith('http') and input_value != '-':
-                text = "⚠️ <b>Error: Photo required!</b>\n\nPlease attach a file or '-'."
-                m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
-                                                   parse_mode="HTML")
-                state['msg_id'] = m.message_id
-                return
             state['product_data']['image_url'] = input_value if (is_photo or input_value.startswith('http')) else None
             state['step'] = 'waiting_var_category'
-            m = await context.bot.send_message(chat_id=chat_id,
-                                               text="📂 <b>Enter Category:</b>\n\n<b>Example:</b> <i>Shoes</i>",
-                                               reply_markup=cancel_kb, parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id, text="📂 <b>Enter Category:</b>", reply_markup=cancel_kb,
+                                               parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_category':
             state['product_data']['category'] = input_value
             state['step'] = 'waiting_var_emoji'
-            m = await context.bot.send_message(chat_id=chat_id, text="✨ <b>Enter Emoji:</b>\n\n<b>Example:</b> 👟",
-                                               reply_markup=cancel_kb, parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id, text="✨ <b>Enter Emoji:</b>", reply_markup=cancel_kb,
+                                               parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_emoji':
