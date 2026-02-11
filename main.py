@@ -1981,21 +1981,32 @@ class OnlineShopBot:
         self.user_states[user_id]['step'] = 'waiting_payment'
         keyboard = []
 
-        # Логіка для України: Готівка + Карта кур'єру + Онлайн
+        # Логіка кнопок та текстів залежно від регіону
         if SHIPPING_MODE == 'UKRAINE':
             keyboard.append([InlineKeyboardButton("💵 Готівка при отриманні", callback_data="pay_cod")])
             keyboard.append([InlineKeyboardButton("💳 Картою кур'єру", callback_data="pay_card")])
             keyboard.append([InlineKeyboardButton("📱 Оплатити онлайн (Apple Pay)", callback_data="pay_online")])
+
+            back_text = "🔙 Назад"
+            cancel_text = "❌ Скасувати замовлення"
+            main_text = "💳 <b>Останній крок: Спосіб оплати</b>\n\nОберіть, як вам зручно оплатити замовлення:"
         else:
-            # Для всього світу тільки онлайн через Stripe
+            # Міжнародна версія
             keyboard.append([InlineKeyboardButton("💳 Card / Apple Pay (Stripe)", callback_data="pay_online")])
 
-        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="confirm_details_back")])
-        keyboard.append([InlineKeyboardButton("❌ Скасувати замовлення", callback_data="cancel_order")])
+            back_text = "🔙 Back"
+            cancel_text = "❌ Cancel Order"
+            main_text = "💳 <b>Final Step: Payment Method</b>\n\nChoose how you want to pay for your order:"
 
-        text = "💳 <b>Останній крок: Спосіб оплати</b>\n\nОберіть, як вам зручно оплатити замовлення:"
-        m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                           parse_mode="HTML")
+        keyboard.append([InlineKeyboardButton(back_text, callback_data="confirm_details_back")])
+        keyboard.append([InlineKeyboardButton(cancel_text, callback_data="cancel_order")])
+
+        m = await context.bot.send_message(
+            chat_id=chat_id,
+            text=main_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="HTML"
+        )
         self.user_states[user_id]['msg_id'] = m.message_id
 
     async def choose_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2012,13 +2023,16 @@ class OnlineShopBot:
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
         if data == "pay_online":
-            # ВИДАЛЯЄМО повідомлення з вибором оплати, щоб не "смітити"
             await query.message.delete()
             await self.send_invoice(update, context, total_amount)
         elif data == "pay_card":
-            await self.finalize_order(update, context, "Картою кур'єру", total_amount)
+            # Переклад для бази/адміна
+            method_name = "Card to courier" if SHIPPING_MODE != 'UKRAINE' else "Картою кур'єру"
+            await self.finalize_order(update, context, method_name, total_amount)
         else:
-            await self.finalize_order(update, context, "Готівка (накладений платіж)", total_amount)
+            # Переклад для бази/адміна
+            method_name = "Cash on delivery" if SHIPPING_MODE != 'UKRAINE' else "Готівка (накладений платіж)"
+            await self.finalize_order(update, context, method_name, total_amount)
 
     async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
         from dom import STRIPE_TOKEN, PORTMONE_TOKEN
@@ -2151,7 +2165,7 @@ class OnlineShopBot:
             f"📧 <b>Email:</b> {self.escape_html(state['email'])}\n"
             f"📍 <b>Shipping:</b> {self.escape_html(state['address'])}\n"
             f"📱 <b>Phone:</b> {self.escape_html(state['phone'])}\n\n"
-            "─────────────────────────\n"
+            "<code>────────────────────</code>\n"
             "Click <b>✏️ Edit</b> next to a field to change it, or ✅ to proceed."
         )
 
