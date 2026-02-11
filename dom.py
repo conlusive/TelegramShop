@@ -5,5 +5,5 @@ SHIPPING_MODE = 'INTERNATIONAL'
 # РЕЖИМ ДОСТАВКИ:
 # Обери 'UKRAINE' (місто + відділення)
 # або 'INTERNATIONAL' (місто/індекс + вулиця/будинок)
-AMMER_TOKEN = "6073714100:TEST:TG_wW87qmooSdy7Qroz4MS1v4MA" # Для світу
+REDSYS_TOKEN = "2051251535:TEST:OTk5MDA4ODgxLTAwNQ"
 PORTMONE_TOKEN = "1661751239:TEST:VGM9-X6gR-IUtB-Djc5" # Для України
