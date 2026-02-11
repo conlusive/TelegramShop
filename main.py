@@ -4161,99 +4161,7 @@ class OnlineShopBot:
                                            parse_mode="HTML")
         state['msg_id'] = m.message_id
 
-    async def handle_edit_field_input(self, update, context, state, input_value, msg):
-        field_to_edit = state['editing_field']
-        product_id = state['product_id']
-        value = input_value
-        error_text = None
-        new_calculated_stock = None
 
-        # Обробка числових полів
-        if field_to_edit == "price":
-            try:
-                value = float(input_value.replace(",", "."))
-            except:
-                error_text = "❌ Invalid number. Enter format: 10.50"
-        elif field_to_edit == "stock":
-            try:
-                value = int(input_value)
-            except:
-                error_text = "❌ Invalid integer. Enter format: 100"
-
-        # Обробка варіантів (Складний парсинг)
-        elif field_to_edit == "variants":
-            if input_value.strip() == "-":
-                value = None
-                new_calculated_stock = 0
-            else:
-                try:
-                    variants_dict = {}
-                    current_calc_stock = 0
-                    # Розбиваємо різні типи варіантів через ";" (якщо їх декілька)
-                    parts = input_value.split(";")
-                    for part in parts:
-                        if ":" in part:
-                            # Формат "Тип: Опція=К-сть"
-                            k, vals_str = part.split(":")
-                            parsed_vals = {}
-
-                            for v in vals_str.split(","):
-                                v = v.strip()
-                                # Формат "Опція=К-сть=Ціна" або "Опція=К-сть"
-                                if "=" in v:
-                                    sub_parts = v.split("=")
-                                    opt_name = sub_parts[0].strip()
-                                    qty = int(sub_parts[1])
-
-                                    if len(sub_parts) == 3:
-                                        price = float(sub_parts[2])
-                                        parsed_vals[opt_name] = {"qty": qty, "price": price}
-                                    else:
-                                        # Для сумісності з простим форматом
-                                        parsed_vals[opt_name] = qty
-
-                                    current_calc_stock += qty
-                                else:
-                                    # Якщо це просто список без кількості (старий формат)
-                                    parsed_vals[v] = 0
-
-                            variants_dict[k.strip()] = parsed_vals
-
-                    if not variants_dict: raise ValueError()
-                    value = json.dumps(variants_dict, ensure_ascii=False)
-                    new_calculated_stock = current_calc_stock
-                except Exception as e:
-                    print(f"Edit parsing error: {e}")
-                    error_text = "❌ Format error.\nUse: <code>Size: S=10, M=5=1200</code>"
-
-        if error_text:
-            kb = [[InlineKeyboardButton("🔙 Back", callback_data=f"admin_edit_product_{product_id}")]]
-            m = await context.bot.send_message(chat_id=msg.chat_id, text=error_text,
-                                               reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
-            state['msg_id'] = m.message_id
-            return
-
-        # Оновлення в базі даних
-        cursor = self.conn.cursor()
-
-        if field_to_edit == "variants" and new_calculated_stock is not None:
-            # Оновлюємо і варіанти, і загальний сток
-            cursor.execute(f"UPDATE products SET variants = ?, stock = ? WHERE id = ?",
-                           (value, new_calculated_stock, product_id))
-            msg_confirm = f"✅ **Variants** updated!\n📦 New Total Stock: {new_calculated_stock}"
-        else:
-            # Оновлюємо просте поле
-            cursor.execute(f"UPDATE products SET {field_to_edit} = ? WHERE id = ?", (value, product_id))
-            msg_confirm = f"✅ **{field_to_edit}** updated!"
-
-        self.conn.commit()
-
-        # Очищаємо стан і повертаємось до товару
-        self.user_states.pop(update.effective_user.id, None)
-
-        kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_edit_product_{product_id}")]]
-        await context.bot.send_message(chat_id=msg.chat_id, text=msg_confirm, reply_markup=InlineKeyboardMarkup(kb),
-                                       parse_mode=ParseMode.MARKDOWN)
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f'Update {update} caused error {context.error}')
@@ -4573,6 +4481,100 @@ class OnlineShopBot:
             kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_step_variants_init")]])
             m = await context.bot.send_message(chat_id=chat_id, text=text_err, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
+
+    async def handle_edit_field_input(self, update, context, state, input_value, msg):
+        field_to_edit = state['editing_field']
+        product_id = state['product_id']
+        value = input_value
+        error_text = None
+        new_calculated_stock = None
+
+        # Обробка числових полів
+        if field_to_edit == "price":
+            try:
+                value = float(input_value.replace(",", "."))
+            except:
+                error_text = "❌ Invalid number. Enter format: 10.50"
+        elif field_to_edit == "stock":
+            try:
+                value = int(input_value)
+            except:
+                error_text = "❌ Invalid integer. Enter format: 100"
+
+        # Обробка варіантів (Складний парсинг)
+        elif field_to_edit == "variants":
+            if input_value.strip() == "-":
+                value = None
+                new_calculated_stock = 0
+            else:
+                try:
+                    variants_dict = {}
+                    current_calc_stock = 0
+                    # Розбиваємо різні типи варіантів через ";" (якщо їх декілька)
+                    parts = input_value.split(";")
+                    for part in parts:
+                        if ":" in part:
+                            # Формат "Тип: Опція=К-сть"
+                            k, vals_str = part.split(":")
+                            parsed_vals = {}
+
+                            for v in vals_str.split(","):
+                                v = v.strip()
+                                # Формат "Опція=К-сть=Ціна" або "Опція=К-сть"
+                                if "=" in v:
+                                    sub_parts = v.split("=")
+                                    opt_name = sub_parts[0].strip()
+                                    qty = int(sub_parts[1])
+
+                                    if len(sub_parts) == 3:
+                                        price = float(sub_parts[2])
+                                        parsed_vals[opt_name] = {"qty": qty, "price": price}
+                                    else:
+                                        # Для сумісності з простим форматом
+                                        parsed_vals[opt_name] = qty
+
+                                    current_calc_stock += qty
+                                else:
+                                    # Якщо це просто список без кількості (старий формат)
+                                    parsed_vals[v] = 0
+
+                            variants_dict[k.strip()] = parsed_vals
+
+                    if not variants_dict: raise ValueError()
+                    value = json.dumps(variants_dict, ensure_ascii=False)
+                    new_calculated_stock = current_calc_stock
+                except Exception as e:
+                    print(f"Edit parsing error: {e}")
+                    error_text = "❌ Format error.\nUse: <code>Size: S=10, M=5=1200</code>"
+
+        if error_text:
+            kb = [[InlineKeyboardButton("🔙 Back", callback_data=f"admin_edit_product_{product_id}")]]
+            m = await context.bot.send_message(chat_id=msg.chat_id, text=error_text,
+                                               reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
+            state['msg_id'] = m.message_id
+            return
+
+        # Оновлення в базі даних
+        cursor = self.conn.cursor()
+
+        if field_to_edit == "variants" and new_calculated_stock is not None:
+            # Оновлюємо і варіанти, і загальний сток
+            cursor.execute(f"UPDATE products SET variants = ?, stock = ? WHERE id = ?",
+                           (value, new_calculated_stock, product_id))
+            msg_confirm = f"✅ **Variants** updated!\n📦 New Total Stock: {new_calculated_stock}"
+        else:
+            # Оновлюємо просте поле
+            cursor.execute(f"UPDATE products SET {field_to_edit} = ? WHERE id = ?", (value, product_id))
+            msg_confirm = f"✅ **{field_to_edit}** updated!"
+
+        self.conn.commit()
+
+        # Очищаємо стан і повертаємось до товару
+        self.user_states.pop(update.effective_user.id, None)
+
+        kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_edit_product_{product_id}")]]
+        await context.bot.send_message(chat_id=msg.chat_id, text=msg_confirm, reply_markup=InlineKeyboardMarkup(kb),
+                                       parse_mode=ParseMode.MARKDOWN)
 
 # -------------------- MAIN --------------------
 def main():
