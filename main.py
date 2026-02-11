@@ -830,7 +830,7 @@ class OnlineShopBot:
         if SHIPPING_MODE == 'UKRAINE':
             prompt = "📍 <b>Enter City, Delivery Service, and Branch #:</b>\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
         else:
-            prompt = "📍 <b>Enter Full Address:</b>\n\n<b>Format:</b> Country, City, Street/House, ZIP\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+            prompt = "📍 <b>Enter Full Address:</b>\n\n<b>Format:</b> Country, City, Street/House, ZIP\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
         await self._edit_user_profile_attribute(update, context, "address", prompt)
 
     async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1797,7 +1797,7 @@ class OnlineShopBot:
             if SHIPPING_MODE == 'UKRAINE':
                 text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter City and Nova Poshta Branch:\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
             else:
-                text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter Full Address (Country, City, ZIP):\n\n<b>Example:</b> <i>USA, New York, 10001</i>"
+                text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter Full Address (Country, City, ZIP):\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
             back_callback = "back_to_email"
         elif not state.get('phone'):
             state['step'] = 'waiting_phone'
@@ -1958,7 +1958,7 @@ class OnlineShopBot:
                 if address.count(',') < 2: is_valid = False
 
             if not is_valid:
-                ex = "<i>Kyiv, Nova Poshta #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>USA, New York, 10001</i>"
+                ex = "<i>Kyiv, Nova Poshta #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
                 back = "confirm_details_back" if is_edit else "back_to_email"
                 await send_error("Invalid Address Format", ex, back)
                 return
@@ -1970,7 +1970,7 @@ class OnlineShopBot:
             phone = msg.text.strip()
             valid = (re.fullmatch(r"^\+380\d{9}$", phone) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", phone))
             if not valid:
-                ex = "<i>+380501234567</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+441234567890</i>"
+                ex = "<i>+380501234567</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>"
                 back = "confirm_details_back" if is_edit else "back_to_shipping"
                 await send_error("Invalid Phone Format", ex, back)
                 return
@@ -2099,7 +2099,7 @@ class OnlineShopBot:
             "edit_check_name": ("full_name", "Full Name", "waiting_full_name", "<i>John Doe</i>"),
             "edit_check_email": ("email", "Email Address", "waiting_email", "<i>user@gmail.com</i>"),
             "edit_check_address": ("address", "Shipping Info", "waiting_shipping", "<i>Kyiv, NP #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"),
-            "edit_check_phone": ("phone", "Phone Number", "waiting_phone", "<i>+380...</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1...</i>")
+            "edit_check_phone": ("phone", "Phone Number", "waiting_phone", "<i>+380...</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>")
         }
 
         if data in edit_map:
@@ -3779,7 +3779,7 @@ class OnlineShopBot:
         # --- ПІБ ---
         if state['step'] == 'waiting_full_name_profile':
             if len(text.split()) < 2:
-                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Name</b>\n\nEnter First and Last name.", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Name\n\nEnter First and Last name</b>\n\n<b>Example:</b> <i>John Doe</i>", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
@@ -3787,7 +3787,7 @@ class OnlineShopBot:
         # --- Email ---
         elif state['step'] == 'waiting_email_profile':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
-                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Email Format</b>", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Email Format\n\nExample:</b> <i>user@example.com</i>", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
@@ -3797,7 +3797,7 @@ class OnlineShopBot:
             is_valid = (re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", text))
             if not is_valid:
                 example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+441234567890"
-                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Invalid Phone</b>\n\nExample: {example}", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Invalid Phone\n\nExample:</b> <i>+1234567890</i>", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
@@ -3812,7 +3812,7 @@ class OnlineShopBot:
 
             if not is_valid:
                 example = "Kyiv, Nova Poshta #15" if SHIPPING_MODE == 'UKRAINE' else "Germany, Berlin, Hauptstraße 10, 10115"
-                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Address too short</b>\n\nExample: <i>{example}</i>", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Address too short\n\nFormat:</b> Country, City, Street/House, ZIP\n\n<b>Example:</b> <i>{example}</i>", reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
