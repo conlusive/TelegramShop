@@ -1809,7 +1809,7 @@ class OnlineShopBot:
             if SHIPPING_MODE == 'UKRAINE':
                 text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter City and Nova Poshta Branch:\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
             else:
-                text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter Full Address (Country, City, ZIP):\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+                text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter Full Address (Country, City, Street, ZIP):\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
             back_callback = "back_to_email"
         elif not state.get('phone'):
             state['step'] = 'waiting_phone'
@@ -1917,25 +1917,40 @@ class OnlineShopBot:
         msg = update.message
         chat_id = msg.chat_id
 
-        # Логіка пилососа: видаляємо ввід юзера та попереднє повідомлення бота
-        try: await msg.delete()
-        except: pass
+        # "Пилосос": видаляємо повідомлення юзера та попереднє повідомлення бота
+        try:
+            await msg.delete()
+        except:
+            pass
         if 'msg_id' in state:
-            try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except: pass
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except:
+                pass
 
-        # Внутрішній метод для гарних повідомлень про помилки
-        async def send_error(error_title, example_text, back_callback):
-            text = (
-                f"❌ <b>{error_title}</b>\n\n"
-                f"<b>Example:</b> {example_text}\n\n"
-                f"Please try again and enter the correct value:"
-            )
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Back", callback_data=back_callback)],
-                [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
-            ])
-            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
+        # Функція відправки помилки (адаптується під мову/режим)
+        async def send_error(title, example, back_cb):
+            # Тексти для помилки
+            if SHIPPING_MODE == 'UKRAINE':
+                err_text = (f"❌ <b>{title}</b>\n\n"
+                            f"<b>Приклад:</b> {example}\n\n"
+                            f"Будь ласка, введіть коректні дані:")
+                btns = [
+                    [InlineKeyboardButton("🔙 Назад", callback_data=back_cb)],
+                    [InlineKeyboardButton("❌ Скасувати", callback_data="cancel_order")]
+                ]
+            else:
+                err_text = (f"❌ <b>{title}</b>\n\n"
+                            f"<b>Required format:</b> +1234567890\n\n"
+                            f"<b>Example:</b> {example}\n\n"
+                            f"Please try again:")
+                btns = [
+                    [InlineKeyboardButton("🔙 Back", callback_data=back_cb)],
+                    [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
+                ]
+
+            m = await context.bot.send_message(chat_id=chat_id, text=err_text,
+                                               reply_markup=InlineKeyboardMarkup(btns), parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         is_edit = state.get('is_editing_single', False)
@@ -1945,7 +1960,9 @@ class OnlineShopBot:
             name = msg.text.strip()
             if len(name.split()) < 2:
                 back = "confirm_details_back" if is_edit else "cart"
-                await send_error("Invalid Name", "<i>John Doe</i>", back)
+                t = "Некоректне ім'я" if SHIPPING_MODE == 'UKRAINE' else "Invalid Name"
+                ex = "<i>Іван Іванов</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>John Doe</i>"
+                await send_error(t, ex, back)
                 return
             state['full_name'] = name
             await self.continue_checkout_flow(update, context)
@@ -1955,36 +1972,60 @@ class OnlineShopBot:
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 back = "confirm_details_back" if is_edit else "back_to_name"
-                await send_error("Invalid Email", "<i>user@gmail.com</i>", back)
+                t = "Некоректний Email" if SHIPPING_MODE == 'UKRAINE' else "Invalid Email"
+                await send_error(t, "<i>user@gmail.com</i>", back)
                 return
             state['email'] = email
             await self.continue_checkout_flow(update, context)
 
-        # --- Крок 3: Адреса ---
+        # --- Крок 3: АДРЕСА (Оновлена перевірка) ---
         elif state['step'] == 'waiting_shipping':
             address = msg.text.strip()
             is_valid = True
+            error_msg = ""
+            example_msg = ""
+
             if SHIPPING_MODE == 'UKRAINE':
-                if len(address.split()) < 2: is_valid = False
+                # Україна: мінімум 2 слова (Місто + Відділення)
+                if len(address.split()) < 2:
+                    is_valid = False
+                    error_msg = "Неповна адреса"
+                    example_msg = "<i>Київ, Нова Пошта #15</i>"
             else:
-                if address.count(',') < 2: is_valid = False
+                # МІЖНАРОДНА: Жорстка перевірка на 4 частини
+                parts = [p.strip() for p in address.split(',')]
+
+                # 1. Перевіряємо, чи є мінімум 3 коми (4 частини)
+                if len(parts) < 4:
+                    is_valid = False
+                    error_msg = "Incomplete Address"
+                    example_msg = "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+
+                # 2. Перевіряємо, чи є цифри в останній частині (ZIP-код)
+                elif not any(char.isdigit() for char in parts[-1]):
+                    is_valid = False
+                    error_msg = "Missing ZIP Code"
+                    example_msg = "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
 
             if not is_valid:
-                ex = "<i>Kyiv, Nova Poshta #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
                 back = "confirm_details_back" if is_edit else "back_to_email"
-                await send_error("Invalid Address Format", ex, back)
+                await send_error(error_msg, example_msg, back)
                 return
+
             state['address'] = address
             await self.continue_checkout_flow(update, context)
 
         # --- Крок 4: Телефон ---
         elif state['step'] == 'waiting_phone':
             phone = msg.text.strip()
-            valid = (re.fullmatch(r"^\+380\d{9}$", phone) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", phone))
+            valid = (
+                re.fullmatch(r"^\+380\d{9}$", phone) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$",
+                                                                                                     phone))
             if not valid:
-                ex = "<i>+380501234567</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>"
                 back = "confirm_details_back" if is_edit else "back_to_shipping"
-                await send_error("Invalid Phone Format", ex, back)
+                t = "Некоректний номер" if SHIPPING_MODE == 'UKRAINE' else "Invalid Phone Number"
+                ex = "<i>+380501234567</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>"
+                await send_error(t, ex, back)
                 return
             state['phone'] = phone
             await self.show_order_summary(context, chat_id, user_id)
@@ -2004,7 +2045,7 @@ class OnlineShopBot:
             main_text = "💳 <b>Останній крок: Спосіб оплати</b>\n\nОберіть, як вам зручно оплатити замовлення:"
         else:
             # Міжнародна версія
-            keyboard.append([InlineKeyboardButton("💳 Card / Apple Pay (Stripe)", callback_data="pay_online")])
+            keyboard.append([InlineKeyboardButton("💳 Card / Apple Pay", callback_data="pay_online")])
 
             back_text = "🔙 Back"
             cancel_text = "❌ Cancel Order"
@@ -2329,7 +2370,35 @@ class OnlineShopBot:
                     'selected_options': selected_opts, 'product_id': prod_id
                 })
                 products_text_list.append(f"{emoji or '📦'} {name}{opts_str} x{qty}")
-                cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (max(0, current_stock - qty), prod_id))
+
+                # --- ВИПРАВЛЕННЯ: Списання кількості конкретного варіанту ---
+                new_variants_json = variants_json
+                if variants_json and selected_opts:
+                    try:
+                        v_data = json.loads(variants_json)
+                        changed = False
+                        for key, val in selected_opts.items():
+                            if key in v_data:
+                                group = v_data[key]
+                                # Якщо формат: Варіант: {qty: 10, price: 100}
+                                if isinstance(group, dict) and val in group:
+                                    target = group[val]
+                                    if isinstance(target, dict) and 'qty' in target:
+                                        target['qty'] = max(0, int(target['qty']) - qty)
+                                        changed = True
+                                    elif isinstance(target, int):  # Якщо формат: Варіант: 10 (старий формат)
+                                        group[val] = max(0, target - qty)
+                                        changed = True
+
+                        if changed:
+                            new_variants_json = json.dumps(v_data, ensure_ascii=False)
+                    except Exception as e:
+                        print(f"Error updating variant stock: {e}")
+
+                # Оновлюємо і загальний сток, і JSON з варіантами
+                cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
+                               (max(0, current_stock - qty), new_variants_json, prod_id))
+                # -------------------------------------------------------------
 
         full_name = state.get('full_name', '')
         phone = state.get('phone', '')
@@ -2348,29 +2417,30 @@ class OnlineShopBot:
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
-        # --- СПОВІЩЕННЯ АДМІНІСТРАТОРІВ (АНГЛІЙСЬКОЮ) ---
+        # --- СПОВІЩЕННЯ АДМІНІСТРАТОРІВ ---
         if send_message:
             items_str = "\n".join([f"▫️ {item}" for item in products_text_list])
 
             if SHIPPING_MODE == 'UKRAINE':
-                region_header = "🇺🇦 NEW ORDER - UKRAINE"
-                address_label = "📍 Shipping (City/Branch):"
+                region_header = "🇺🇦 НОВЕ ЗАМОВЛЕННЯ"
+                address_label = "📍 Доставка:"
+                pay_label = "💳 Оплата:"
             else:
-                region_header = "🌎 NEW ORDER - INTERNATIONAL"
-                address_label = "📍 Shipping (City/ZIP):"
+                region_header = "🌎 NEW ORDER"
+                address_label = "📍 Shipping:"
+                pay_label = "💳 Payment:"
 
             admin_text = (
                 f"🔔 <b>{region_header} #{order_id}</b>\n\n"
-                f"👤 <b>Customer:</b> {self.escape_html(full_name)}\n\n"
-                f"📧 <b>Email:</b> {self.escape_html(email)}\n\n"
-                f"📞 <b>Phone:</b> {self.escape_html(str(phone))}\n\n"
-                f"<b>{address_label}</b>\n{self.escape_html(address)}\n\n"
-                f"💳 <b>Payment Method:</b> {payment_method}\n\n"
+                f"👤 <b>Customer:</b> {self.escape_html(full_name)}\n"
+                f"📧 <b>Email:</b> {self.escape_html(email)}\n"
+                f"📞 <b>Phone:</b> {self.escape_html(str(phone))}\n"
+                f"<b>{address_label}</b> {self.escape_html(address)}\n\n"
+                f"{pay_label} {payment_method}\n\n"
                 f"📦 <b>Products:</b>\n{items_str}\n\n"
                 f"💰 <b>Total Amount: {total_amount}$</b>"
             )
 
-            # Обробка ADMIN_ID як списку або одного числа
             admins = ADMIN_ID if isinstance(ADMIN_ID, list) else [ADMIN_ID]
             for admin in admins:
                 try:
@@ -3098,20 +3168,27 @@ class OnlineShopBot:
         }
         new_status = status_map.get(action)
 
+        # --- ВИПРАВЛЕННЯ: Повертаємо сток, якщо адмін скасовує замовлення ---
+        if new_status == 'cancelled':
+            # Перевіряємо поточний статус, щоб не повернути сток двічі
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT status FROM orders WHERE id = ?", (order_id,))
+            row = cursor.fetchone()
+            if row and row[0] != 'cancelled':
+                self.restore_stock(order_id)
+        # --------------------------------------------------------------------
+
         cursor = self.conn.cursor()
         cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
         self.conn.commit()
 
         await query.answer(f"✅ Status updated: {new_status}")
 
-
         try:
-
             cursor.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
             row = cursor.fetchone()
             if row:
                 buyer_id = row[0]
-
                 status_text_map = {
                     'confirmed': '🔵 Confirmed',
                     'shipped': '🟠 Sent',
@@ -3120,16 +3197,19 @@ class OnlineShopBot:
                 }
                 display_status = status_text_map.get(new_status, new_status)
 
-                await context.bot.send_message(
-                    chat_id=buyer_id,
-                    text=f"📦 <b>Order #{order_id} update</b>\n\n"
-                         f"🆕 New status: <b>{display_status}</b>\n\n"
-                         f"Thank you for shopping with us! ❤️",
-                    parse_mode="HTML"
-                )
+                # Тексти сповіщень залежно від режиму
+                if SHIPPING_MODE == 'UKRAINE':
+                    msg_text = (f"📦 <b>Замовлення #{order_id} оновлено</b>\n\n"
+                                f"🆕 Новий статус: <b>{display_status}</b>\n\n"
+                                f"Дякуємо за покупку! ❤️")
+                else:
+                    msg_text = (f"📦 <b>Order #{order_id} update</b>\n\n"
+                                f"🆕 New status: <b>{display_status}</b>\n\n"
+                                f"Thank you for shopping with us! ❤️")
+
+                await context.bot.send_message(chat_id=buyer_id, text=msg_text, parse_mode="HTML")
         except Exception as e:
             print(f"⚠️ Failed to notify user: {e}")
-
 
         await self.show_order_details(update, context, order_id=order_id, origin_page=origin_page)
 
@@ -3910,24 +3990,29 @@ class OnlineShopBot:
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        if user_id != ADMIN_ID or user_id not in self.user_states: return
+        # Перевірка прав адміна
+        if user_id != ADMIN_ID or user_id not in self.user_states:
+            return
 
         state = self.user_states[user_id]
         step = state.get("step")
         msg = update.message
         chat_id = msg.chat_id
 
-        # "Пилосос"
+        # 1. "Пилосос": видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
             pass
+
+        # 2. Видаляємо попереднє системне повідомлення (якщо є збережене ID)
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
+        # 3. Отримуємо вхідні дані (текст або фото)
         if update.message.photo:
             input_value = update.message.photo[-1].file_id
             is_photo = True
@@ -3937,7 +4022,18 @@ class OnlineShopBot:
 
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
 
-        # --- КРОКИ СТВОРЕННЯ ---
+        # ==============================================================================
+        # 🔥 ГОЛОВНЕ ВИПРАВЛЕННЯ: Обробка редагування (Edit)
+        # Цей блок має бути ПЕРШИМ, щоб перехопити ввід варіантів/ціни/назви
+        # ==============================================================================
+        if step == 'edit_product_field':
+            # Викликаємо функцію обробки редагування
+            await self.handle_edit_field_input(update, context, state, input_value, msg)
+            return
+        # ==============================================================================
+
+        # --- ДАЛІ ЙДЕ ЛОГІКА СТВОРЕННЯ НОВОГО ТОВАРУ (ADD PRODUCT) ---
+
         if step == 'add_product_name':
             state['product_data'] = {'name': input_value}
             state['step'] = 'add_product_description'
@@ -3955,7 +4051,7 @@ class OnlineShopBot:
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
             state['msg_id'] = m.message_id
 
-        # --- SIMPLE PRODUCT BRANCH ---
+        # --- ГІЛКА ПРОСТОГО ТОВАРУ (SIMPLE PRODUCT) ---
         elif step == 'waiting_simple_price':
             try:
                 state['product_data']['price'] = float(input_value.replace(",", "."))
@@ -4019,7 +4115,7 @@ class OnlineShopBot:
                                                [[InlineKeyboardButton("🔙 Back", callback_data="admin_products")]]),
                                            parse_mode="HTML")
 
-        # --- VARIANT PRODUCT BRANCH ---
+        # --- ГІЛКА ТОВАРУ З ВАРІАНТАМИ (VARIANT PRODUCT) ---
         elif step == 'waiting_var_image':
             if not is_photo and not input_value.startswith('http') and input_value != '-':
                 text = "⚠️ <b>Error: Photo required!</b>\n\nPlease attach a file or '-'."
@@ -4072,17 +4168,19 @@ class OnlineShopBot:
         error_text = None
         new_calculated_stock = None
 
+        # Обробка числових полів
         if field_to_edit == "price":
             try:
-                value = float(input_value)
+                value = float(input_value.replace(",", "."))
             except:
-                error_text = "❌ Invalid number."
+                error_text = "❌ Invalid number. Enter format: 10.50"
         elif field_to_edit == "stock":
             try:
                 value = int(input_value)
             except:
-                error_text = "❌ Invalid integer."
+                error_text = "❌ Invalid integer. Enter format: 100"
 
+        # Обробка варіантів (Складний парсинг)
         elif field_to_edit == "variants":
             if input_value.strip() == "-":
                 value = None
@@ -4091,57 +4189,66 @@ class OnlineShopBot:
                 try:
                     variants_dict = {}
                     current_calc_stock = 0
+                    # Розбиваємо різні типи варіантів через ";" (якщо їх декілька)
                     parts = input_value.split(";")
                     for part in parts:
                         if ":" in part:
+                            # Формат "Тип: Опція=К-сть"
                             k, vals_str = part.split(":")
                             parsed_vals = {}
-                            simple_list = []
-                            is_stock = False
+
                             for v in vals_str.split(","):
                                 v = v.strip()
+                                # Формат "Опція=К-сть=Ціна" або "Опція=К-сть"
                                 if "=" in v:
-                                    is_stock = True
                                     sub_parts = v.split("=")
+                                    opt_name = sub_parts[0].strip()
+                                    qty = int(sub_parts[1])
+
                                     if len(sub_parts) == 3:
-                                        qty = int(sub_parts[1])
-                                        parsed_vals[sub_parts[0].strip()] = {"qty": qty, "price": float(sub_parts[2])}
-                                        current_calc_stock += qty
+                                        price = float(sub_parts[2])
+                                        parsed_vals[opt_name] = {"qty": qty, "price": price}
                                     else:
-                                        qty = int(sub_parts[1])
-                                        parsed_vals[sub_parts[0].strip()] = qty
-                                        current_calc_stock += qty
+                                        # Для сумісності з простим форматом
+                                        parsed_vals[opt_name] = qty
+
+                                    current_calc_stock += qty
                                 else:
-                                    simple_list.append(v)
-                            if is_stock:
-                                variants_dict[k.strip()] = parsed_vals
-                            else:
-                                variants_dict[k.strip()] = simple_list
+                                    # Якщо це просто список без кількості (старий формат)
+                                    parsed_vals[v] = 0
+
+                            variants_dict[k.strip()] = parsed_vals
 
                     if not variants_dict: raise ValueError()
                     value = json.dumps(variants_dict, ensure_ascii=False)
                     new_calculated_stock = current_calc_stock
-                except:
-                    error_text = "❌ Format error."
+                except Exception as e:
+                    print(f"Edit parsing error: {e}")
+                    error_text = "❌ Format error.\nUse: <code>Size: S=10, M=5=1200</code>"
 
         if error_text:
             kb = [[InlineKeyboardButton("🔙 Back", callback_data=f"admin_edit_product_{product_id}")]]
             m = await context.bot.send_message(chat_id=msg.chat_id, text=error_text,
-                                               reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
+                                               reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.HTML)
             state['msg_id'] = m.message_id
             return
 
+        # Оновлення в базі даних
         cursor = self.conn.cursor()
 
         if field_to_edit == "variants" and new_calculated_stock is not None:
+            # Оновлюємо і варіанти, і загальний сток
             cursor.execute(f"UPDATE products SET variants = ?, stock = ? WHERE id = ?",
                            (value, new_calculated_stock, product_id))
             msg_confirm = f"✅ **Variants** updated!\n📦 New Total Stock: {new_calculated_stock}"
         else:
+            # Оновлюємо просте поле
             cursor.execute(f"UPDATE products SET {field_to_edit} = ? WHERE id = ?", (value, product_id))
             msg_confirm = f"✅ **{field_to_edit}** updated!"
 
         self.conn.commit()
+
+        # Очищаємо стан і повертаємось до товару
         self.user_states.pop(update.effective_user.id, None)
 
         kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_edit_product_{product_id}")]]
