@@ -1882,12 +1882,8 @@ class OnlineShopBot:
             except:
                 pass
 
-        # Функція відправки помилки (адаптується під мову/режим)
-        async def send_error(title_key, example, back_cb):
-            title = self.get_text(title_key)
-            err_text = (f"❌ <b>{title}</b>\n\n"
-                        f"<b>{self.get_text('example_label')}</b> {example}\n\n"
-                        f"{self.get_text('enter_new_value_prompt')}")
+        async def send_error(error_key, back_cb):
+            err_text = self.get_text(error_key)
             btns = [
                 [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
                 [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
@@ -1903,8 +1899,7 @@ class OnlineShopBot:
             name = msg.text.strip()
             if len(name.split()) < 2:
                 back = "confirm_details_back" if is_edit else "cart"
-                ex = "<i>Іван Іванов</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>John Doe</i>"
-                await send_error('err_invalid_name', ex, back)
+                await send_error('err_invalid_name', back)
                 return
             state['full_name'] = name
             await self.continue_checkout_flow(update, context)
@@ -1914,7 +1909,7 @@ class OnlineShopBot:
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 back = "confirm_details_back" if is_edit else "back_to_name"
-                await send_error('err_invalid_email', "<i>user@gmail.com</i>", back)
+                await send_error('err_invalid_email', back)
                 return
             state['email'] = email
             await self.continue_checkout_flow(update, context)
@@ -1923,28 +1918,18 @@ class OnlineShopBot:
         elif state['step'] == 'waiting_shipping':
             address = msg.text.strip()
             is_valid = True
-            error_key = ""
-            example_msg = ""
-
+            
             if SHIPPING_MODE == 'UKRAINE':
                 if len(address.split()) < 2:
                     is_valid = False
-                    error_key = 'err_invalid_address'
-                    example_msg = "<i>Київ, Нова Пошта #15</i>"
             else:
                 parts = [p.strip() for p in address.split(',')]
-                if len(parts) < 4:
+                if len(parts) < 4 or not any(char.isdigit() for char in parts[-1]):
                     is_valid = False
-                    error_key = 'err_invalid_address'
-                    example_msg = "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
-                elif not any(char.isdigit() for char in parts[-1]):
-                    is_valid = False
-                    error_key = 'err_invalid_address' # Or a more specific key like 'err_missing_zip'
-                    example_msg = "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
 
             if not is_valid:
                 back = "confirm_details_back" if is_edit else "back_to_email"
-                await send_error(error_key, example_msg, back)
+                await send_error('err_invalid_address', back)
                 return
 
             state['address'] = address
@@ -1958,8 +1943,7 @@ class OnlineShopBot:
                                                                                                      phone))
             if not valid:
                 back = "confirm_details_back" if is_edit else "back_to_shipping"
-                ex = "<i>+380501234567</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>"
-                await send_error('err_invalid_phone', ex, back)
+                await send_error('err_invalid_phone', back)
                 return
             state['phone'] = phone
             await self.show_order_summary(context, chat_id, user_id)
@@ -3831,7 +3815,7 @@ class OnlineShopBot:
         # --- ПІБ ---
         if state['step'] == 'waiting_full_name_profile':
             if len(text.split()) < 2:
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_name_msg'), reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_name'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
@@ -3839,7 +3823,7 @@ class OnlineShopBot:
         # --- Email ---
         elif state['step'] == 'waiting_email_profile':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_email_msg'), reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_email'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
@@ -3848,7 +3832,7 @@ class OnlineShopBot:
         elif state['step'] == 'waiting_phone_profile':
             is_valid = (re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", text))
             if not is_valid:
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_phone_msg'), reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_phone'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
@@ -3862,7 +3846,7 @@ class OnlineShopBot:
                 if text.count(',') < 3: is_valid = False
 
             if not is_valid:
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_address_msg'), reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_address'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))

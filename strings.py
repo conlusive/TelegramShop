@@ -324,10 +324,10 @@ STRINGS = {
         'summary_phone_label': "📱 Телефон",
 
         # Profile/Checkout validation errors
-        'err_profile_name_msg': "❌ <b>Некоректне ім'я</b>\n\n<b>Приклад:</b> <i>Іван Іванов</i>\n\nБудь ласка, спробуйте ще раз:",
-        'err_profile_email_msg': "❌ <b>Некоректний формат email</b>\n\n<b>Приклад:</b> <i>user@example.com</i>\n\nБудь ласка, спробуйте ще раз:",
-        'err_profile_phone_msg': "❌ <b>Некоректний номер телефону</b>\n\n<b>Приклад:</b> <i>+380501234567</i>\n\nБудь ласка, спробуйте ще раз:",
-        'err_profile_address_msg': "❌ <b>Адреса надто коротка</b>\n\n<b>Приклад:</b> <i>Київ, Нова Пошта #15</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_invalid_name': "❌ <b>Некоректне ім'я</b>\n\n<b>Приклад:</b> <i>Іван Іванов</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_invalid_email': "❌ <b>Некоректний формат email</b>\n\n<b>Приклад:</b> <i>user@example.com</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_invalid_phone': "❌ <b>Некоректний номер телефону</b>\n\n<b>Приклад:</b> <i>+380501234567</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_invalid_address': "❌ <b>Адреса надто коротка</b>\n\n<b>Приклад:</b> <i>Київ, Нова Пошта #15</i>\n\nБудь ласка, спробуйте ще раз:",
 
         # Edit field screen (checkout)
         'edit_field_title': "✏️ Редагування: {field}",
@@ -660,10 +660,10 @@ STRINGS = {
         'summary_phone_label': "📱 Phone",
 
         # Profile/Checkout validation errors
-        'err_profile_name_msg': "❌ <b>Invalid Name</b>\n\n<b>Example:</b> <i>John Doe</i>\n\nPlease try again:",
-        'err_profile_email_msg': "❌ <b>Invalid Email Format</b>\n\n<b>Example:</b> <i>user@example.com</i>\n\nPlease try again:",
-        'err_profile_phone_msg': "❌ <b>Invalid Phone Number</b>\n\n<b>Example:</b> <i>+1234567890</i>\n\nPlease try again:",
-        'err_profile_address_msg': "❌ <b>Address too short</b>\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>\n\nPlease try again:",
+        'err_invalid_name': "❌ <b>Invalid Name</b>\n\n<b>Example:</b> <i>John Doe</i>\n\nPlease try again:",
+        'err_invalid_email': "❌ <b>Invalid Email Format</b>\n\n<b>Example:</b> <i>user@example.com</i>\n\nPlease try again:",
+        'err_invalid_phone': "❌ <b>Invalid Phone Number</b>\n\n<b>Example:</b> <i>+1234567890</i>\n\nPlease try again:",
+        'err_invalid_address': "❌ <b>Address too short</b>\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>\n\nPlease try again:",
 
         # Edit field screen (checkout)
         'edit_field_title': "✏️ Editing: {field}",
