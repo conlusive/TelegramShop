@@ -565,28 +565,34 @@ class OnlineShopBot:
         if product['variants']:
             try:
                 v_data = json.loads(product['variants'])
-
-                for v_type, options in v_data.items():
-                    opt_list = list(options.keys()) if isinstance(options, dict) else options
-                    variants_display += self.get_text('variant_display', v_type=v_type, opt_list=', '.join(map(str, opt_list)))
-
                 all_prices = []
+
+                # Collect all variant prices
                 for v_type, options in v_data.items():
                     if isinstance(options, dict):
                         for opt, info in options.items():
-
                             if isinstance(info, dict) and 'price' in info:
                                 all_prices.append(float(info['price']))
-                            else:
-                                all_prices.append(float(base_price))
 
+                # If there are variant prices, calculate min/max
                 if all_prices:
-                    min_p = min(all_prices)
-                    max_p = max(all_prices)
-                    if min_p != max_p:
-                        display_price = self.get_text('price_from', min_p=min_p)
-                    else:
-                        display_price = f"{min_p}$"
+                    # If base_price is also set and > 0, consider it in min/max calculation
+                    if base_price > 0:
+                        all_prices.append(float(base_price))
+
+                    if all_prices: # Check if there are any prices to process
+                        min_p = min(all_prices)
+                        max_p = max(all_prices)
+
+                        if min_p != max_p:
+                            display_price = self.get_text('price_from', price=min_p)
+                        else:
+                            display_price = f"{min_p}$"
+                
+                # This part handles the display of the variants themselves, not the price.
+                for v_type, options in v_data.items():
+                    opt_list = list(options.keys()) if isinstance(options, dict) else options
+                    variants_display += self.get_text('variant_display', v_type=v_type, opt_list=', '.join(map(str, opt_list)))
 
             except Exception as e:
                 print(f"Price calc error: {e}")
@@ -1877,26 +1883,15 @@ class OnlineShopBot:
                 pass
 
         # Функція відправки помилки (адаптується під мову/режим)
-        async def send_error(title, example, back_cb):
-            # Тексти для помилки
-            if SHIPPING_MODE == 'UKRAINE':
-                err_text = (f"❌ <b>{title}</b>\n\n"
-                            f"<b>Приклад:</b> {example}\n\n"
-                            f"Будь ласка, введіть коректні дані:")
-                btns = [
-                    [InlineKeyboardButton("🔙 Назад", callback_data=back_cb)],
-                    [InlineKeyboardButton("❌ Скасувати", callback_data="cancel_order")]
-                ]
-            else:
-                err_text = (f"❌ <b>{title}</b>\n\n"
-                            f"<b>Required format:</b> +1234567890\n\n"
-                            f"<b>Example:</b> {example}\n\n"
-                            f"Please try again:")
-                btns = [
-                    [InlineKeyboardButton("🔙 Back", callback_data=back_cb)],
-                    [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
-                ]
-
+        async def send_error(title_key, example, back_cb):
+            title = self.get_text(title_key)
+            err_text = (f"❌ <b>{title}</b>\n\n"
+                        f"<b>{self.get_text('example_label')}</b> {example}\n\n"
+                        f"{self.get_text('enter_new_value_prompt')}")
+            btns = [
+                [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
+                [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
+            ]
             m = await context.bot.send_message(chat_id=chat_id, text=err_text,
                                                reply_markup=InlineKeyboardMarkup(btns), parse_mode="HTML")
             state['msg_id'] = m.message_id
@@ -1908,9 +1903,8 @@ class OnlineShopBot:
             name = msg.text.strip()
             if len(name.split()) < 2:
                 back = "confirm_details_back" if is_edit else "cart"
-                t = "Некоректне ім'я" if SHIPPING_MODE == 'UKRAINE' else "Invalid Name"
                 ex = "<i>Іван Іванов</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>John Doe</i>"
-                await send_error(t, ex, back)
+                await send_error('err_invalid_name', ex, back)
                 return
             state['full_name'] = name
             await self.continue_checkout_flow(update, context)
@@ -1920,8 +1914,7 @@ class OnlineShopBot:
             email = msg.text.strip()
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                 back = "confirm_details_back" if is_edit else "back_to_name"
-                t = "Некоректний Email" if SHIPPING_MODE == 'UKRAINE' else "Invalid Email"
-                await send_error(t, "<i>user@gmail.com</i>", back)
+                await send_error('err_invalid_email', "<i>user@gmail.com</i>", back)
                 return
             state['email'] = email
             await self.continue_checkout_flow(update, context)
@@ -1930,34 +1923,28 @@ class OnlineShopBot:
         elif state['step'] == 'waiting_shipping':
             address = msg.text.strip()
             is_valid = True
-            error_msg = ""
+            error_key = ""
             example_msg = ""
 
             if SHIPPING_MODE == 'UKRAINE':
-                # Україна: мінімум 2 слова (Місто + Відділення)
                 if len(address.split()) < 2:
                     is_valid = False
-                    error_msg = "Неповна адреса"
+                    error_key = 'err_invalid_address'
                     example_msg = "<i>Київ, Нова Пошта #15</i>"
             else:
-                # МІЖНАРОДНА: Жорстка перевірка на 4 частини
                 parts = [p.strip() for p in address.split(',')]
-
-                # 1. Перевіряємо, чи є мінімум 3 коми (4 частини)
                 if len(parts) < 4:
                     is_valid = False
-                    error_msg = "Incomplete Address"
+                    error_key = 'err_invalid_address'
                     example_msg = "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
-
-                # 2. Перевіряємо, чи є цифри в останній частині (ZIP-код)
                 elif not any(char.isdigit() for char in parts[-1]):
                     is_valid = False
-                    error_msg = "Missing ZIP Code"
+                    error_key = 'err_invalid_address' # Or a more specific key like 'err_missing_zip'
                     example_msg = "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"
 
             if not is_valid:
                 back = "confirm_details_back" if is_edit else "back_to_email"
-                await send_error(error_msg, example_msg, back)
+                await send_error(error_key, example_msg, back)
                 return
 
             state['address'] = address
@@ -1971,9 +1958,8 @@ class OnlineShopBot:
                                                                                                      phone))
             if not valid:
                 back = "confirm_details_back" if is_edit else "back_to_shipping"
-                t = "Некоректний номер" if SHIPPING_MODE == 'UKRAINE' else "Invalid Phone Number"
                 ex = "<i>+380501234567</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>"
-                await send_error(t, ex, back)
+                await send_error('err_invalid_phone', ex, back)
                 return
             state['phone'] = phone
             await self.show_order_summary(context, chat_id, user_id)
@@ -2122,26 +2108,26 @@ class OnlineShopBot:
 
         # Мапа для швидкого редагування: (state_key, назва, наступний крок, приклад)
         edit_map = {
-            "edit_check_name": ("full_name", "Full Name", "waiting_full_name", "<i>John Doe</i>"),
-            "edit_check_email": ("email", "Email Address", "waiting_email", "<i>user@gmail.com</i>"),
-            "edit_check_address": ("address", "Shipping Info", "waiting_shipping", "<i>Kyiv, NP #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"),
-            "edit_check_phone": ("phone", "Phone Number", "waiting_phone", "<i>+380...</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>")
+            "edit_check_name": ("full_name", self.get_text('summary_name_label'), "waiting_full_name", "<i>John Doe</i>"),
+            "edit_check_email": ("email", self.get_text('summary_email_label'), "waiting_email", "<i>user@gmail.com</i>"),
+            "edit_check_address": ("address", self.get_text('summary_address_label'), "waiting_shipping", "<i>Kyiv, NP #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>Germany, Berlin, Hauptstraße 10, 10115</i>"),
+            "edit_check_phone": ("phone", self.get_text('summary_phone_label'), "waiting_phone", "<i>+380...</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+1234567890</i>")
         }
 
         if data in edit_map:
             field_key, display_name, next_step, example = edit_map[data]
-            current_val = state.get(field_key, "Not set")
+            current_val = state.get(field_key, self.get_text('not_set'))
             state['step'] = next_step
             state['is_editing_single'] = True # Мітка для повернення в Summary після вводу
 
             text = (
-                f"✏️ <b>Editing {display_name}</b>\n\n"
-                f"<b>Current value:</b> <code>{self.escape_html(current_val)}</code>\n\n"
-                f"<b>Example:</b> {example}\n\n"
-                f"Please enter the new value below:"
+                f"<b>{self.get_text('edit_field_title', field=display_name)}</b>\n\n"
+                f"<b>{self.get_text('current_value_label')}</b> <code>{self.escape_html(current_val)}</code>\n\n"
+                f"<b>{self.get_text('example_label')}</b> {example}\n\n"
+                f"{self.get_text('enter_new_value_prompt')}"
             )
             # Кнопка веде назад до підсумку замовлення, а не в профіль!
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Summary", callback_data="confirm_details_back")]])
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_to_summary_btn'), callback_data="confirm_details_back")]])
             await query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
             return
 
@@ -2171,21 +2157,25 @@ class OnlineShopBot:
         state['step'] = 'waiting_confirmation'
         state['is_editing_single'] = False # Скидаємо режим редагування
 
-        summary_text = self.get_text('confirm_details', full_name=self.escape_html(state['full_name']), email=self.escape_html(state['email']), address=self.escape_html(state['address']), phone=self.escape_html(state['phone']))
+        full_name = self.escape_html(state.get('full_name'))
+        email = self.escape_html(state.get('email'))
+        address = self.escape_html(state.get('address'))
+        phone = self.escape_html(state.get('phone'))
+
+        summary_text = self.get_text('confirm_details', full_name=full_name, email=email, address=address, phone=phone)
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(self.get_text('edit_name_button_2'), callback_data="edit_check_name"),
-             InlineKeyboardButton(self.get_text('edit_email_button_2'), callback_data="edit_check_email")],
-            [InlineKeyboardButton(self.get_text('edit_shipping_button'), callback_data="edit_check_address"),
-             InlineKeyboardButton(self.get_text('edit_phone_button_2'), callback_data="edit_check_phone")],
-            [InlineKeyboardButton(self.get_text('everything_is_correct_button'), callback_data="confirm_details")],
+            [
+                InlineKeyboardButton(self.get_text('summary_edit_name_btn'), callback_data="edit_check_name"),
+                InlineKeyboardButton(self.get_text('summary_edit_email_btn'), callback_data="edit_check_email"),
+            ],
+            [
+                InlineKeyboardButton(self.get_text('summary_edit_address_btn'), callback_data="edit_check_address"),
+                InlineKeyboardButton(self.get_text('summary_edit_phone_btn'), callback_data="edit_check_phone"),
+            ],
+            [InlineKeyboardButton(self.get_text('summary_confirm_btn'), callback_data="confirm_details")],
             [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
         ])
-
-        # "Пилосос": видаляємо попереднє повідомлення вводу телефону
-        if 'msg_id' in state:
-            try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except: pass
 
         m = await context.bot.send_message(chat_id=chat_id, text=summary_text, reply_markup=keyboard, parse_mode="HTML")
         state['msg_id'] = m.message_id
@@ -2234,27 +2224,39 @@ class OnlineShopBot:
 
         for p_id, name, base_price, emoji, variants_json in products:
             emo = emoji if emoji else "📦"
+            display_price = f"{base_price}$"
 
-            all_prices = []
             if variants_json:
                 try:
                     v_data = json.loads(variants_json)
-                    for key, val in v_data.items():
-                        if isinstance(val, dict):
-                            for opt, info in val.items():
+                    all_prices = []
+
+                    # Collect all variant prices
+                    for v_type, options in v_data.items():
+                        if isinstance(options, dict):
+                            for opt, info in options.items():
                                 if isinstance(info, dict) and 'price' in info:
                                     all_prices.append(float(info['price']))
-                                else:
-                                    if base_price > 0: all_prices.append(base_price)
-                except:
-                    pass
 
-            if not all_prices: all_prices.append(base_price)
-            min_p = min(all_prices)
-            max_p = max(all_prices)
-            price_str = self.get_text('price_from', min_p=min_p) if min_p != max_p else f"{min_p}$"
+                    # If there are variant prices, calculate min/max
+                    if all_prices:
+                        # If base_price is also set and > 0, consider it in min/max calculation
+                        if base_price > 0:
+                            all_prices.append(float(base_price))
+                        
+                        if all_prices:
+                            min_p = min(all_prices)
+                            max_p = max(all_prices)
 
-            keyboard.append([InlineKeyboardButton(f"{emo} {name} - {price_str}",
+                            if min_p != max_p:
+                                display_price = self.get_text('price_from', price=min_p)
+                            else:
+                                display_price = f"{min_p}$"
+
+                except Exception as e:
+                    print(f"Price calc error in category view: {e}")
+            
+            keyboard.append([InlineKeyboardButton(f"{emo} {name} - {display_price}",
                                                   callback_data=f"product_{p_id}_{prod_page}_{cat_page}")])
 
         nav = []
@@ -3824,12 +3826,12 @@ class OnlineShopBot:
 
         cursor = self.conn.cursor()
         cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
-        error_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]])
+        error_kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="my_profile")]])
 
         # --- ПІБ ---
         if state['step'] == 'waiting_full_name_profile':
             if len(text.split()) < 2:
-                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Name\n\nEnter First and Last name</b>\n\n<b>Example:</b> <i>John Doe</i>", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_name_msg'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
@@ -3837,7 +3839,7 @@ class OnlineShopBot:
         # --- Email ---
         elif state['step'] == 'waiting_email_profile':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
-                m = await context.bot.send_message(chat_id=chat_id, text="❌ <b>Invalid Email Format\n\nExample:</b> <i>user@example.com</i>", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_email_msg'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
@@ -3846,8 +3848,7 @@ class OnlineShopBot:
         elif state['step'] == 'waiting_phone_profile':
             is_valid = (re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", text))
             if not is_valid:
-                example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+441234567890"
-                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Invalid Phone\n\nExample:</b> <i>+1234567890</i>", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_phone_msg'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
@@ -3861,8 +3862,7 @@ class OnlineShopBot:
                 if text.count(',') < 3: is_valid = False
 
             if not is_valid:
-                example = "Kyiv, Nova Poshta #15" if SHIPPING_MODE == 'UKRAINE' else "Germany, Berlin, Hauptstraße 10, 10115"
-                m = await context.bot.send_message(chat_id=chat_id, text=f"❌ <b>Address too short\n\nFormat:</b> Country, City, Street/House, ZIP\n\n<b>Example:</b> <i>{example}</i>", reply_markup=error_kb, parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_profile_address_msg'), reply_markup=error_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
             cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))

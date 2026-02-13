@@ -68,7 +68,7 @@ STRINGS = {
         'low_stock': "⚠️ <b>Мало товару</b> ({stock})",
         'out_of_stock': "❌ <b>Немає в наявності</b>",
         'variant_display': "\n🔹 <b>{v_type}:</b> {', '.join(map(str, opt_list))}",
-        'price_from': "від {min_p}$",
+        'price_from': "від {price}$",
         'no_description': "Немає опису.",
         'product_details': "💰 Ціна: <b>{display_price}</b>\n📦 Статус: {stock_status}\n🛒 В кошику: <b>{in_cart}</b>",
         'minus_button': "➖",
@@ -310,6 +310,31 @@ STRINGS = {
         'error_handler': "❌ Сталася помилка. Будь ласка, спробуйте ще раз або використайте /start",
         'add_variants_before_finishing': "⚠️ Додайте варіанти перед завершенням!",
         'product_created_2': "✅ <b>{name}</b> створено!",
+
+        # Summary screen
+        'summary_title': "🔍 Перевірте ваші дані",
+        'summary_confirm_btn': "✅ Все вірно",
+        'summary_edit_name_btn': "✏️ Ім'я",
+        'summary_edit_email_btn': "✏️ Email",
+        'summary_edit_address_btn': "✏️ Доставка",
+        'summary_edit_phone_btn': "✏️ Телефон",
+        'summary_name_label': "👤 Ім'я",
+        'summary_email_label': "📧 Email",
+        'summary_address_label': "📍 Доставка",
+        'summary_phone_label': "📱 Телефон",
+
+        # Profile/Checkout validation errors
+        'err_profile_name_msg': "❌ <b>Некоректне ім'я</b>\n\n<b>Приклад:</b> <i>Іван Іванов</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_profile_email_msg': "❌ <b>Некоректний формат email</b>\n\n<b>Приклад:</b> <i>user@example.com</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_profile_phone_msg': "❌ <b>Некоректний номер телефону</b>\n\n<b>Приклад:</b> <i>+380501234567</i>\n\nБудь ласка, спробуйте ще раз:",
+        'err_profile_address_msg': "❌ <b>Адреса надто коротка</b>\n\n<b>Приклад:</b> <i>Київ, Нова Пошта #15</i>\n\nБудь ласка, спробуйте ще раз:",
+
+        # Edit field screen (checkout)
+        'edit_field_title': "✏️ Редагування: {field}",
+        'current_value_label': "Поточне значення:",
+        'example_label': "Приклад:",
+        'back_to_summary_btn': "🔙 Повернутись до перевірки",
+        'enter_new_value_prompt': "Будь ласка, введіть нове значення нижче:",
     },
     'INTERNATIONAL': {
         'column_added': "✅ Column '{column_name}' added to table '{table_name}'!",
@@ -379,7 +404,7 @@ STRINGS = {
         'low_stock': "⚠️ <b>Low Stock</b> ({stock})",
         'out_of_stock': "❌ <b>Out of Stock</b>",
         'variant_display': "\n🔹 <b>{v_type}:</b> {', '.join(map(str, opt_list))}",
-        'price_from': "from {min_p}$",
+        'price_from': "from {price}$",
         'no_description': "No description.",
         'product_details': "💰 Price: <b>{display_price}</b>\n📦 Status: {stock_status}\n🛒 In Cart: <b>{in_cart}</b>",
         'minus_button': "➖",
@@ -621,5 +646,30 @@ STRINGS = {
         'error_handler': "❌ An error has occurred. Please try again or use /start",
         'add_variants_before_finishing': "⚠️ Add variants before finishing!",
         'product_created_2': "✅ <b>{name}</b> created!",
+
+        # Summary screen
+        'summary_title': "🔍 Confirm Your Details",
+        'summary_confirm_btn': "✅ All Correct",
+        'summary_edit_name_btn': "✏️ Name",
+        'summary_edit_email_btn': "✏️ Email",
+        'summary_edit_address_btn': "✏️ Shipping",
+        'summary_edit_phone_btn': "✏️ Phone",
+        'summary_name_label': "👤 Name",
+        'summary_email_label': "📧 Email",
+        'summary_address_label': "📍 Shipping",
+        'summary_phone_label': "📱 Phone",
+
+        # Profile/Checkout validation errors
+        'err_profile_name_msg': "❌ <b>Invalid Name</b>\n\n<b>Example:</b> <i>John Doe</i>\n\nPlease try again:",
+        'err_profile_email_msg': "❌ <b>Invalid Email Format</b>\n\n<b>Example:</b> <i>user@example.com</i>\n\nPlease try again:",
+        'err_profile_phone_msg': "❌ <b>Invalid Phone Number</b>\n\n<b>Example:</b> <i>+1234567890</i>\n\nPlease try again:",
+        'err_profile_address_msg': "❌ <b>Address too short</b>\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>\n\nPlease try again:",
+
+        # Edit field screen (checkout)
+        'edit_field_title': "✏️ Editing: {field}",
+        'current_value_label': "Current value:",
+        'example_label': "Example:",
+        'back_to_summary_btn': "🔙 Back to Summary",
+        'enter_new_value_prompt': "Please enter the new value below:",
     }
 }
