@@ -10,6 +10,7 @@ from telegram.constants import ParseMode
 from dom import BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE, PORTMONE_TOKEN, REDSYS_TOKEN
 from telegram import LabeledPrice
 from telegram.ext import PreCheckoutQueryHandler
+from strings import STRINGS
 
 
 # -------------------- LOGGING --------------------
@@ -34,6 +35,10 @@ class OnlineShopBot:
         self.init_database()
         self.user_states = {}
 
+    def get_text(self, key, **kwargs):
+        lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
+        return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
+
     # -------------------- DATABASE --------------------
     def _add_column_if_not_exists(self, cursor, table_name: str, column_name: str, column_type: str):
         cursor.execute(f"PRAGMA table_info({table_name})")
@@ -41,9 +46,9 @@ class OnlineShopBot:
         if column_name not in columns:
             try:
                 cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
-                print(f"✅ Column '{column_name}' added to table '{table_name}'!")
+                print(self.get_text('column_added', column_name=column_name, table_name=table_name))
             except Exception as e:
-                print(f"⚠️ Error adding column {column_name} to {table_name}: {e}")
+                print(self.get_text('error_adding_column', column_name=column_name, table_name=table_name, e=e))
 
     def init_database(self):
         self.conn = sqlite3.connect('shop.db', check_same_thread=False)
@@ -102,9 +107,9 @@ class OnlineShopBot:
     def generate_receipt(self, order_id, user_name, email, phone, address, payment, products_list, total, date, receipt_format='html'):
         # Автоматичне визначення заголовка адреси на основі SHIPPING_MODE
         if SHIPPING_MODE == 'UKRAINE':
-            shipping_label = "📍 Shipping (City/Branch):"
+            shipping_label = self.get_text('shipping_label_ukraine')
         else:
-            shipping_label = "📍 Shipping (City/ZIP):"
+            shipping_label = self.get_text('shipping_label_international')
 
         if receipt_format == 'html':
             bold_start, bold_end = "<b>", "</b>"
@@ -125,26 +130,27 @@ class OnlineShopBot:
 
             products_text += product_line_format.format(
                 emoji=item.get('emoji', '📦'),
-                name=escaper(item.get('name', 'Product')),
+                name=escaper(item.get('name', self.get_text('product'))),
                 opts=escaper(opts_str),
                 quantity=item.get('quantity', 1),
                 price=item.get('price', 0),
                 total=item.get('total', 0)
             )
 
-        # Формуємо фінальний текст із подвійними відступами
-        return (
-            f"✅ {bold_start}Order #{order_id} has been successfully placed!{bold_end}\n\n"
-            f"👤 {bold_start}Customer:{bold_end} {escaper(user_name)}\n\n"
-            f"📧 {bold_start}Email:{bold_end} {escaper(email)}\n\n"
-            f"📞 {bold_start}Phone:{bold_end} {escaper(str(phone))}\n\n"
-            f"{bold_start}{shipping_label}{bold_end}\n{escaper(address)}\n\n"
-            f"💳 {bold_start}Payment Method:{bold_end} {payment}\n\n"
-            f"📦 {bold_start}Products:{bold_end}\n{products_text}\n"
-            f"💰 {bold_start}Total Amount: {total}${bold_end}\n\n"
-            f"📋 {bold_start}Status:{bold_end} In progress\n\n"
-            f"🕐 {bold_start}Date:{bold_end} {date}\n\n"
-            f"Thank you for shopping with us! 🛍️"
+        return self.get_text(
+            'receipt',
+            bold_start=bold_start,
+            bold_end=bold_end,
+            order_id=order_id,
+            user_name=escaper(user_name),
+            email=escaper(email),
+            phone=escaper(str(phone)),
+            shipping_label=shipping_label,
+            address=escaper(address),
+            payment=payment,
+            products_text=products_text,
+            total=total,
+            date=date
         )
 
 
@@ -175,19 +181,19 @@ class OnlineShopBot:
 
                             final_price = float(option_data['price'])
         except Exception as e:
-            print(f"Error calculating price: {e}")
+            print(self.get_text('price_calculation_error', e=e))
 
         return float(final_price)
 
     def get_variant_type_keyboard(self):
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("📏 Size (S, M, L)", callback_data="vartype_Size"),
-             InlineKeyboardButton("🎨 Color", callback_data="vartype_Color")],
-            [InlineKeyboardButton("💾 Memory (GB)", callback_data="vartype_Memory"),
-             InlineKeyboardButton("🥛 Volume (L, ml)", callback_data="vartype_Volume")],
-            [InlineKeyboardButton("⚖️ Weight (kg, g)", callback_data="vartype_Weight"),
-             InlineKeyboardButton("👟 Shoe Size", callback_data="vartype_ShoeSize")],
-            [InlineKeyboardButton("✅ Finish / Skip", callback_data="vartype_DONE")]
+            [InlineKeyboardButton(self.get_text('size_variant'), callback_data="vartype_Size"),
+             InlineKeyboardButton(self.get_text('color_variant'), callback_data="vartype_Color")],
+            [InlineKeyboardButton(self.get_text('memory_variant'), callback_data="vartype_Memory"),
+             InlineKeyboardButton(self.get_text('volume_variant'), callback_data="vartype_Volume")],
+            [InlineKeyboardButton(self.get_text('weight_variant'), callback_data="vartype_Weight"),
+             InlineKeyboardButton(self.get_text('shoe_size_variant'), callback_data="vartype_ShoeSize")],
+            [InlineKeyboardButton(self.get_text('finish_skip_variant'), callback_data="vartype_DONE")]
         ])
 
 
@@ -223,9 +229,9 @@ class OnlineShopBot:
     async def check_user_blocked(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         if self.is_user_blocked(update.effective_user.id):
             if update.callback_query:
-                await update.callback_query.answer("You are blocked from using this bot.", show_alert=True)
+                await update.callback_query.answer(self.get_text('user_blocked_inline'), show_alert=True)
             elif update.message:
-                await update.message.reply_text("You are blocked from using this bot.")
+                await update.message.reply_text(self.get_text('user_blocked'))
             return True
         return False
 
@@ -297,7 +303,7 @@ class OnlineShopBot:
         query = update.callback_query
         match = re.match(r"user_cancel_(\d+)", query.data)
         if not match:
-            await query.answer("❌ Invalid request")
+            await query.answer(self.get_text('invalid_request'))
             return
         order_id = int(match.group(1))
         uid = query.from_user.id
@@ -307,12 +313,12 @@ class OnlineShopBot:
         row = cursor.fetchone()
 
         if not row:
-            await query.answer("❌ Invalid request")
+            await query.answer(self.get_text('invalid_request'))
             return
 
         status = row[0]
         if status in ('cancelled', 'delivered'):
-            await query.answer("❌ Order has already been delivered or canceled")
+            await query.answer(self.get_text('order_already_delivered_or_canceled'))
             return
 
 
@@ -322,12 +328,12 @@ class OnlineShopBot:
         self.conn.commit()
 
         try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"🔴 The customer canceled the order. #{order_id}",
+            await context.bot.send_message(chat_id=ADMIN_ID, text=self.get_text('customer_canceled_order', order_id=order_id),
                                            parse_mode=ParseMode.MARKDOWN)
         except Exception:
             pass
 
-        await query.answer("✅ Order canceled")
+        await query.answer(self.get_text('order_canceled'))
 
 
         await self.show_my_orders(update, context)
@@ -350,25 +356,25 @@ class OnlineShopBot:
             print(f"Error counting cart: {e}")
             cart_count = 0
 
-        cart_text = f"🛒 My cart ({cart_count})" if cart_count > 0 else "🛒 My cart"
+        cart_text = self.get_text('my_cart_count', cart_count=cart_count) if cart_count > 0 else self.get_text('my_cart')
 
         if int(user_id) == int(ADMIN_ID):
             keyboard = [
-                [InlineKeyboardButton("👑 Admin Panel", callback_data="admin_panel")],
-                [InlineKeyboardButton("🛍️ Product catalog", callback_data="catalog")],
+                [InlineKeyboardButton(self.get_text('admin_panel_button'), callback_data="admin_panel")],
+                [InlineKeyboardButton(self.get_text('product_catalog_button'), callback_data="catalog")],
                 [
                     InlineKeyboardButton(cart_text, callback_data="cart"),
-                    InlineKeyboardButton("👤 My profile", callback_data="my_profile")
+                    InlineKeyboardButton(self.get_text('my_profile_button'), callback_data="my_profile")
                 ]
             ]
             return InlineKeyboardMarkup(keyboard)
 
         keyboard = [
-            [InlineKeyboardButton("🛍️ Product catalog", callback_data="catalog")],
-            [InlineKeyboardButton(cart_text, callback_data="cart")],  # <-- ОНОВЛЕНА КНОПКА
-            [InlineKeyboardButton("📋 My orders", callback_data="my_orders")],
-            [InlineKeyboardButton("👤 My profile", callback_data="my_profile")],
-            [InlineKeyboardButton("ℹ️ Help", callback_data="help")]
+            [InlineKeyboardButton(self.get_text('product_catalog_button'), callback_data="catalog")],
+            [InlineKeyboardButton(cart_text, callback_data="cart")],
+            [InlineKeyboardButton(self.get_text('my_orders_button'), callback_data="my_orders")],
+            [InlineKeyboardButton(self.get_text('my_profile_button'), callback_data="my_profile")],
+            [InlineKeyboardButton(self.get_text('help_button'), callback_data="help")]
         ]
         return InlineKeyboardMarkup(keyboard)
 
@@ -381,7 +387,7 @@ class OnlineShopBot:
         cursor.execute("SELECT blocked FROM users WHERE user_id = ?", (user_id,))
         result = cursor.fetchone()
         if result and result[0] == 1:
-            await update.message.reply_text("You are blocked from using this bot.")
+            await update.message.reply_text(self.get_text('user_blocked'))
             return
         await self.show_main_menu(update, context)
 
@@ -397,49 +403,31 @@ class OnlineShopBot:
         registration_promo = ""
 
         if missing and int(user_id) != int(ADMIN_ID):
-            # Оновлюємо словник для підтримки 4-х полів
             promo_messages = {
-                4: "✨ **Welcome!**\nComplete your profile setup once for instant checkouts! 🚀",
-                3: "✨ **Unlock the full experience!**\nComplete your profile details to enjoy one-click orders later. 🚀",
-                2: "🔄 **Speed up your shopping!**\nJust two small details left to make your next order instant.",
-                1: "🎯 **Almost a Pro!**\nAdd your last detail to finish your setup and save time on every order.",
+                4: self.get_text('welcome_promo_4'),
+                3: self.get_text('welcome_promo_3'),
+                2: self.get_text('welcome_promo_2'),
+                1: self.get_text('welcome_promo_1'),
             }
 
             missing_labels = []
-            if "full_name" in missing: missing_labels.append("👤 Name")
-            if "email" in missing: missing_labels.append("📧 Email")
+            if "full_name" in missing: missing_labels.append(self.get_text('missing_name'))
+            if "email" in missing: missing_labels.append(self.get_text('missing_email'))
 
             if "address" in missing:
-                # Динамічна мітка адреси залежно від регіону
-                label = "📍 Shipping (City/Branch)" if SHIPPING_MODE == 'UKRAINE' else "📍 Shipping (City/ZIP)"
+                label = self.get_text('missing_address_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('missing_address_international')
                 missing_labels.append(label)
 
-            if "phone" in missing: missing_labels.append("📞 Phone")
+            if "phone" in missing: missing_labels.append(self.get_text('missing_phone'))
 
             registration_promo = f"\n{promo_messages.get(len(missing), '')}\n"
-            registration_promo += f"Missing: *{', '.join(missing_labels)}*\n"
+            registration_promo += self.get_text('missing_fields', missing_labels=', '.join(missing_labels))
             registration_promo += "────────────────────\n"
 
-        # ... (решта коду welcome_text та відправки повідомлення залишається без змін)
         if int(user_id) == int(ADMIN_ID):
-            welcome_text = (
-                f"👑 **Admin Dashboard**\n\n"
-                f"Welcome back, **{safe_name}**! ⚡️\n"
-                f"Everything is under control. What's the plan for today?\n\n"
-                f"👇 **Control Center:**"
-            )
+            welcome_text = self.get_text('admin_welcome', safe_name=safe_name)
         else:
-            welcome_text = (
-                f"👋 **Hi, {safe_name}! Glad to see you!**\n"
-                f"{registration_promo}"
-                f"Discover our latest deals and premium products! 💎\n\n"
-                f"🚀 **What's inside:**\n"
-                f"• 🛍️ **Catalog** — Browse and find your favorites\n"
-                f"• 🛒 **Cart** — Review and manage your picks\n"
-                f"• 📋 **My Orders** — Track your delivery status\n"
-                f"• 👤 **Profile** — Manage your fast-checkout data\n\n"
-                f"👇 **Where should we start?**"
-            )
+            welcome_text = self.get_text('user_welcome', safe_name=safe_name, registration_promo=registration_promo)
 
         reply_markup = self.build_main_keyboard(user_id)
 
@@ -458,45 +446,15 @@ class OnlineShopBot:
 
         # Визначаємо умови залежно від регіону
         if SHIPPING_MODE == 'UKRAINE':
-            delivery_info = (
-                "• Kyiv: 100₴\n"
-                "• Ukraine: 150₴\n"
-                "• Free delivery for orders over 1000₴"
-            )
-            payment_info = (
-                "• Cash on delivery\n"
-                "• Card payment to courier\n"
-                "• Bank transfer"
-            )
+            delivery_info = self.get_text('delivery_info_ukraine')
+            payment_info = self.get_text('payment_info_ukraine')
         else:
-            delivery_info = (
-                "• Worldwide International Shipping\n"
-                "• Carriers: DHL / FedEx / UPS\n"
-                "• Rates calculated after order placement"
-            )
-            payment_info = (
-                "• Bank transfer (Full Prepayment required)"
-            )
+            delivery_info = self.get_text('delivery_info_international')
+            payment_info = self.get_text('payment_info_international')
 
-        text = (
-            "ℹ️ **HELP & INFORMATION**\n\n"
-            "🛍️ **How to shop:**\n"
-            "1. Browse our **Catalog**\n"
-            "2. Select product and options (Size/Color)\n"
-            "3. Add items to **Cart**\n"
-            "4. Complete checkout (4 steps)\n\n"
-            "📞 **Contact Support:**\n"
-            "• Email: shop@example.com\n"
-            "• Mon-Fri: 9:00 AM - 6:00 PM\n\n"
-            f"🚚 **Delivery ({SHIPPING_MODE}):**\n"
-            f"{delivery_info}\n\n"
-            "💳 **Payment:**\n"
-            f"{payment_info}\n\n"
-            "❓ **Questions?**\n"
-            "Feel free to message our support for any assistance!"
-        )
+        text = self.get_text('help_text', SHIPPING_MODE=SHIPPING_MODE, delivery_info=delivery_info, payment_info=payment_info)
 
-        keyboard = [[InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]
 
         await update.callback_query.edit_message_text(
             text,
@@ -521,8 +479,8 @@ class OnlineShopBot:
 
         if total_items == 0:
             try:
-                await query.edit_message_text("📂 <b>Catalog is empty!</b>", reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]), parse_mode="HTML")
+                await query.edit_message_text(self.get_text('catalog_empty'), reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]), parse_mode="HTML")
             except:
                 pass
             return
@@ -538,9 +496,9 @@ class OnlineShopBot:
                        (CATS_PER_PAGE, offset))
         categories = cursor.fetchall()
 
-        text = f"📂 <b>Product Catalog</b>"
-        if total_pages > 1: text += f" (Page {page}/{total_pages})"
-        text += "\n\nSelect a category 👇"
+        text = self.get_text('product_catalog')
+        if total_pages > 1: text += self.get_text('page_indicator', page=page, total_pages=total_pages)
+        text += self.get_text('select_category')
 
         keyboard = []
         for (cat_name,) in categories:
@@ -551,11 +509,11 @@ class OnlineShopBot:
             keyboard.append([InlineKeyboardButton(f"{emo} {cat_name}", callback_data=f"category_{cat_name}_1_{page}")])
 
         nav = []
-        if page > 1: nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"catalog_page_{page - 1}"))
-        if page < total_pages: nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"catalog_page_{page + 1}"))
+        if page > 1: nav.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"catalog_page_{page - 1}"))
+        if page < total_pages: nav.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"catalog_page_{page + 1}"))
         if nav: keyboard.append(nav)
 
-        keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")])
 
 
         try:
@@ -597,8 +555,8 @@ class OnlineShopBot:
         if not product: return
 
         stock = product['stock']
-        stock_status = "✅ <b>In Stock</b>" if stock > 5 else (
-            f"⚠️ <b>Low Stock</b> ({stock})" if stock > 0 else "❌ <b>Out of Stock</b>")
+        stock_status = self.get_text('in_stock') if stock > 5 else (
+            self.get_text('low_stock', stock=stock) if stock > 0 else self.get_text('out_of_stock'))
 
         variants_display = ""
         base_price = product['price']
@@ -610,7 +568,7 @@ class OnlineShopBot:
 
                 for v_type, options in v_data.items():
                     opt_list = list(options.keys()) if isinstance(options, dict) else options
-                    variants_display += f"\n🔹 <b>{v_type}:</b> {', '.join(map(str, opt_list))}"
+                    variants_display += self.get_text('variant_display', v_type=v_type, opt_list=', '.join(map(str, opt_list)))
 
                 all_prices = []
                 for v_type, options in v_data.items():
@@ -626,7 +584,7 @@ class OnlineShopBot:
                     min_p = min(all_prices)
                     max_p = max(all_prices)
                     if min_p != max_p:
-                        display_price = f"from {min_p}$"
+                        display_price = self.get_text('price_from', min_p=min_p)
                     else:
                         display_price = f"{min_p}$"
 
@@ -638,23 +596,21 @@ class OnlineShopBot:
 
         text = (
             f"{product['emoji'] or '📦'} <b>{self.escape_html(product['name'])}</b>\n\n"
-            f"{self.escape_html(product['description'] or 'No description.')}\n"
+            f"{self.escape_html(product['description'] or self.get_text('no_description'))}\n"
             f"{variants_display}\n\n"
-            f"💰 Price: <b>{display_price}</b>\n"
-            f"📦 Status: {stock_status}\n"
-            f"🛒 In Cart: <b>{in_cart}</b>"
+            f"{self.get_text('product_details', display_price=display_price, stock_status=stock_status, in_cart=in_cart)}"
         )
 
         keyboard = []
         keyboard.append([
-            InlineKeyboardButton("➖", callback_data=f"prod_minus_{product_id}_{prod_page}_{cat_page}"),
-            InlineKeyboardButton("➕", callback_data=f"prod_plus_{product_id}_{prod_page}_{cat_page}")
+            InlineKeyboardButton(self.get_text('minus_button'), callback_data=f"prod_minus_{product_id}_{prod_page}_{cat_page}"),
+            InlineKeyboardButton(self.get_text('plus_button'), callback_data=f"prod_plus_{product_id}_{prod_page}_{cat_page}")
         ])
 
-        cart_btn_text = f"🛒 Cart ({in_cart})" if in_cart > 0 else "🛒 Cart"
+        cart_btn_text = self.get_text('cart_button_count', in_cart=in_cart) if in_cart > 0 else self.get_text('cart_button')
         keyboard.append([
             InlineKeyboardButton(cart_btn_text, callback_data="cart"),
-            InlineKeyboardButton("🔙 Back", callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")
+            InlineKeyboardButton(self.get_text('back_button'), callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")
         ])
 
         try:
@@ -674,7 +630,7 @@ class OnlineShopBot:
         try:
             product_id = int(query.data.replace("add_to_cart_", ""))
         except:
-            await query.answer("❌ Error")
+            await query.answer(self.get_text('error'))
             return
 
         self.conn.row_factory = sqlite3.Row
@@ -693,7 +649,12 @@ class OnlineShopBot:
             await self.add_item_to_cart_db(update, context, product_id, None)
             return
 
-        priority_keys = ["color", "colour", "колір", "цвєт", "size", "розмір", "размер"]
+        priority_keys = [
+            self.get_text('color_variant_key'), self.get_text('colour_variant_key'),
+            self.get_text('color_variant_key_uk'), self.get_text('color_variant_key_ru'),
+            self.get_text('size_variant_key'), self.get_text('size_variant_key_uk'),
+            self.get_text('size_variant_key_ru')
+        ]
 
         def sort_key(k):
             k_lower = k.lower()
@@ -722,28 +683,22 @@ class OnlineShopBot:
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
-        name = user_data[0] if user_data and user_data[0] else "Not set"
-        email = user_data[1] if user_data and user_data[1] else "Not set"
-        address = user_data[2] if user_data and user_data[2] else "Not set"
-        phone = user_data[3] if user_data and user_data[3] else "Not set"
+        name = user_data[0] if user_data and user_data[0] else self.get_text('not_set')
+        email = user_data[1] if user_data and user_data[1] else self.get_text('not_set')
+        address = user_data[2] if user_data and user_data[2] else self.get_text('not_set')
+        phone = user_data[3] if user_data and user_data[3] else self.get_text('not_set')
 
-        shipping_label = "Shipping (City/Branch):" if SHIPPING_MODE == 'UKRAINE' else "Shipping (City/ZIP):"
+        shipping_label = self.get_text('shipping_label_profile_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('shipping_label_profile_international')
 
-        text = (
-            "👤 <b>My Profile</b>\n\n"
-            f"<b>Name:</b> {self.escape_html(name)}\n\n"
-            f"<b>Email:</b> {self.escape_html(email)}\n\n"
-            f"<b>{shipping_label}</b>\n{self.escape_html(address)}\n\n"
-            f"<b>Phone:</b> {self.escape_html(phone)}"
-        )
+        text = self.get_text('profile_details', name=self.escape_html(name), email=self.escape_html(email), shipping_label=shipping_label, address=self.escape_html(address), phone=self.escape_html(phone))
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✏️ Edit Name", callback_data="edit_full_name")],
-            [InlineKeyboardButton("✏️ Edit Email", callback_data="edit_email")],
-            [InlineKeyboardButton("✏️ Edit Shipping Info", callback_data="edit_address")],
-            [InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_phone")],
-            [InlineKeyboardButton("🗑️ Delete Data", callback_data="profile_delete_menu")],
-            [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+            [InlineKeyboardButton(self.get_text('edit_name_button'), callback_data="edit_full_name")],
+            [InlineKeyboardButton(self.get_text('edit_email_button'), callback_data="edit_email")],
+            [InlineKeyboardButton(self.get_text('edit_shipping_info_button'), callback_data="edit_address")],
+            [InlineKeyboardButton(self.get_text('edit_phone_button'), callback_data="edit_phone")],
+            [InlineKeyboardButton(self.get_text('delete_data_button'), callback_data="profile_delete_menu")],
+            [InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]
         ])
 
         # ВИПРАВЛЕНО: Якщо викликано текстом, надсилаємо НОВЕ повідомлення
@@ -780,16 +735,15 @@ class OnlineShopBot:
         data = query.data
         user_id = query.from_user.id
 
-        # Розширений список полів для видалення
         field_map = {
-            "delete_profile_full_name": ("full_name", "Full Name"),
-            "delete_profile_phone": ("phone", "Phone number"),
-            "delete_profile_address": ("address", "Address"),
-            "delete_profile_email": ("email", "Email")
+            "delete_profile_full_name": ("full_name", self.get_text('missing_name')),
+            "delete_profile_phone": ("phone", self.get_text('missing_phone')),
+            "delete_profile_address": ("address", self.get_text('missing_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'missing_address_international')),
+            "delete_profile_email": ("email", self.get_text('missing_email'))
         }
 
         if data not in field_map:
-            await query.answer("Invalid action")
+            await query.answer(self.get_text('invalid_action'))
             return
 
         db_field, display_name = field_map[data]
@@ -799,7 +753,7 @@ class OnlineShopBot:
         cursor.execute(f"UPDATE users SET {db_field} = NULL WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
-        await query.answer(f"✅ {display_name} deleted!")
+        await query.answer(self.get_text('data_deleted', display_name=display_name))
 
         # ПЕРЕВАЖЛИВО: Оновлюємо меню видалення, щоб кнопка зникла
         await self.profile_delete_menu(update, context)
@@ -815,7 +769,7 @@ class OnlineShopBot:
             'msg_id': query.message.message_id
         }
 
-        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="my_profile")]]
+        keyboard = [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="my_profile")]]
 
         # Використовуємо HTML для підтримки жирного тексту та курсиву
         await query.edit_message_text(
@@ -827,30 +781,27 @@ class OnlineShopBot:
     async def edit_full_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._edit_user_profile_attribute(
             update, context, "full_name",
-            "👤 <b>Enter your Full Name:</b>\n\n"
-            "<b>Example:</b> <i>John Doe</i>"
+            self.get_text('enter_full_name')
         )
 
     async def edit_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await self._edit_user_profile_attribute(
             update, context, "email",
-            "📧 <b>Enter your email:</b>\n\n"
-            "<b>Example:</b> <i>user@example.com</i>"
+            self.get_text('enter_email')
         )
 
     async def edit_address(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if SHIPPING_MODE == 'UKRAINE':
-            prompt = "📍 <b>Enter City, Delivery Service, and Branch #:</b>\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
+            prompt = self.get_text('enter_address_ukraine')
         else:
-            prompt = "📍 <b>Enter Full Address:</b>\n\n<b>Format:</b> Country, City, Street/House, ZIP\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+            prompt = self.get_text('enter_address_international')
         await self._edit_user_profile_attribute(update, context, "address", prompt)
 
     async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
         await self._edit_user_profile_attribute(
             update, context, "phone",
-            f"📞 <b>Enter your phone number:</b>\n\n"
-            f"<b>Example:</b> <i>{example}</i>"
+            self.get_text('enter_phone', example=example)
         )
 
     # -------------------- CART LOGIC --------------------
@@ -868,15 +819,11 @@ class OnlineShopBot:
         cart_items = cursor.fetchall()
 
         if not cart_items:
-            text = (
-                "🛒 **Your cart is empty!**\n\n"
-                "Looks like you haven't added anything yet.\n"
-                "Check out our catalog to find something cool! 👇"
-            )
+            text = self.get_text('cart_empty')
             keyboard = [
-                [InlineKeyboardButton("📂 Go to Catalog", callback_data="catalog")],
-                [InlineKeyboardButton("📜 My Orders", callback_data="my_orders")],
-                [InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]
+                [InlineKeyboardButton(self.get_text('go_to_catalog_button'), callback_data="catalog")],
+                [InlineKeyboardButton(self.get_text('my_orders_button_2'), callback_data="my_orders")],
+                [InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]
             ]
 
             if query.message.photo:
@@ -890,7 +837,7 @@ class OnlineShopBot:
             return
 
         total_amount = 0
-        text = "🛒 **Your Cart:**\n\n"
+        text = self.get_text('cart_header')
         keyboard = []
 
         for row in cart_items:
@@ -933,16 +880,16 @@ class OnlineShopBot:
             ]
             keyboard.append(row_btns)
 
-        text += f"\n💰 **Total: {total_amount}$**"
+        text += self.get_text('cart_total', total_amount=total_amount)
 
-        keyboard.append([InlineKeyboardButton("✅ Checkout", callback_data="checkout")])
+        keyboard.append([InlineKeyboardButton(self.get_text('checkout_button'), callback_data="checkout")])
 
         keyboard.append([
-            InlineKeyboardButton("🗑 Clear Cart", callback_data="clear_cart"),
-            InlineKeyboardButton("📂 Back to Catalog", callback_data="catalog")
+            InlineKeyboardButton(self.get_text('clear_cart_button'), callback_data="clear_cart"),
+            InlineKeyboardButton(self.get_text('back_to_catalog_button'), callback_data="catalog")
         ])
 
-        keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")])
 
         if query.message.photo:
             await query.message.delete()
@@ -969,7 +916,7 @@ class OnlineShopBot:
         product = cursor.fetchone()
 
         if not product:
-            await query.answer("❌ Product not found")
+            await query.answer(self.get_text('product_not_found'))
             return
 
         emo = product['emoji'] if product['emoji'] else "📦"
@@ -982,8 +929,8 @@ class OnlineShopBot:
         )
 
         keyboard = [
-            [InlineKeyboardButton("🛒 Add One More", callback_data=f"add_to_cart_options_{product['id']}")],
-            [InlineKeyboardButton("🔙 Back to Cart", callback_data="my_cart")]
+            [InlineKeyboardButton(self.get_text('add_one_more_button'), callback_data=f"add_to_cart_options_{product['id']}")],
+            [InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="my_cart")]
         ]
 
         try:
@@ -1004,7 +951,7 @@ class OnlineShopBot:
 
                 await context.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text=text + "\n⚠️ (Image unavailable)",
+                    text=text + self.get_text('image_unavailable'),
                     reply_markup=InlineKeyboardMarkup(keyboard),
                     parse_mode=ParseMode.MARKDOWN
                 )
@@ -1071,7 +1018,7 @@ class OnlineShopBot:
                 await self.show_cart(update, context)
             else:
 
-                await query.answer(f"❌ Only {max_stock} items left in stock!", show_alert=True)
+                await query.answer(self.get_text('stock_limit', max_stock=max_stock), show_alert=True)
                 return
 
         elif "minus" in action:
@@ -1104,13 +1051,13 @@ class OnlineShopBot:
                 self.user_states[user_id]['cat_page'] = cat_page
 
         except Exception:
-            await query.answer("❌ Error parsing data")
+            await query.answer(self.get_text('error_parsing_data'))
             return
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT stock, variants FROM products WHERE id = ?", (product_id,))
         row = cursor.fetchone()
-        if not row: return await query.answer("Product not found")
+        if not row: return await query.answer(self.get_text('product_not_found'))
 
         stock, variants_json = row
         has_variants = False
@@ -1137,7 +1084,7 @@ class OnlineShopBot:
                     cursor.execute("UPDATE cart SET quantity = quantity + 1 WHERE user_id = ? AND product_id = ?",
                                    (user_id, product_id))
             else:
-                await query.answer(f"❌ Only {stock} left!", show_alert=True)
+                await query.answer(self.get_text('stock_limit', stock=stock), show_alert=True)
                 return
 
         elif action_type == "minus":
@@ -1151,7 +1098,7 @@ class OnlineShopBot:
                 else:
                     cursor.execute("DELETE FROM cart WHERE id = ?", (cart_id,))
             else:
-                await query.answer("Cart empty")
+                await query.answer(self.get_text('cart_empty_2'))
                 return
 
         self.conn.commit()
@@ -1180,7 +1127,12 @@ class OnlineShopBot:
                 return
 
 
-            priority_keys = ["color", "colour", "колір", "цвєт", "size", "розмір", "размер"]
+            priority_keys = [
+                self.get_text('color_variant_key'), self.get_text('colour_variant_key'),
+                self.get_text('color_variant_key_uk'), self.get_text('color_variant_key_ru'),
+                self.get_text('size_variant_key'), self.get_text('size_variant_key_uk'),
+                self.get_text('size_variant_key_ru')
+            ]
 
             def sort_key(k):
                 k_lower = k.lower()
@@ -1212,7 +1164,7 @@ class OnlineShopBot:
             cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
             product = cursor.fetchone()
 
-            if not product: return await query.answer("❌ Product not found")
+            if not product: return await query.answer(self.get_text('product_not_found'))
 
             variants = json.loads(product['variants']) if product['variants'] else {}
 
@@ -1240,7 +1192,7 @@ class OnlineShopBot:
 
         if not state or 'variant_keys' not in state:
             try:
-                await update.callback_query.answer("❌ Session expired")
+                await update.callback_query.answer(self.get_text('session_expired'))
             except:
                 pass
             return
@@ -1301,9 +1253,9 @@ class OnlineShopBot:
                 temp_row = []
         if temp_row: final_keyboard.append(temp_row)
 
-        final_keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_selection")])
+        final_keyboard.append([InlineKeyboardButton(self.get_text('cancel_button'), callback_data="cancel_selection")])
 
-        text = f"👇 Select **{current_key}**:"
+        text = self.get_text('select_variant', current_key=current_key)
 
         # Відправка
         query = update.callback_query
@@ -1358,12 +1310,12 @@ class OnlineShopBot:
             idx = int(parts[2])
             value = "_".join(parts[3:])
         except:
-            await query.answer("❌ Error processing data")
+            await query.answer(self.get_text('error_parsing_data'))
             return
 
         state = self.user_states.get(user_id)
         if not state or state.get('step') != 'selecting_variant':
-            await query.answer("❌ Session expired")
+            await query.answer(self.get_text('session_expired'))
             try:
                 await query.message.delete()
             except:
@@ -1420,7 +1372,7 @@ class OnlineShopBot:
 
         if action == "plus":
             if current_qty + 1 > limit:
-                await query.answer(f"❌ Only {limit} items available!", show_alert=True)
+                await query.answer(self.get_text('stock_limit', limit=limit), show_alert=True)
                 return
 
             cursor.execute("UPDATE cart SET quantity = quantity + 1 WHERE id = ?", (cart_id,))
@@ -1446,7 +1398,7 @@ class OnlineShopBot:
 
 
         if not prod_row:
-            if update.callback_query: await update.callback_query.answer("❌ Error: Product not found")
+            if update.callback_query: await update.callback_query.answer(self.get_text('product_not_found'))
             return
 
         real_stock = prod_row[0]
@@ -1492,7 +1444,7 @@ class OnlineShopBot:
 
         if current_in_cart + 1 > limit:
             if update.callback_query:
-                await update.callback_query.answer(f"❌ Limit reached! Only {limit} available.", show_alert=True)
+                await update.callback_query.answer(self.get_text('limit_reached', limit=limit), show_alert=True)
 
             await self.show_product(update, context, product_id_override=product_id)
             return
@@ -1507,7 +1459,7 @@ class OnlineShopBot:
         self.conn.commit()
 
         if update.callback_query:
-            await update.callback_query.answer("✅ Added to cart!", show_alert=False)
+            await update.callback_query.answer(self.get_text('added_to_cart'), show_alert=False)
 
         await self.show_product(update, context, product_id_override=product_id)
 
@@ -1516,7 +1468,7 @@ class OnlineShopBot:
         if await self.check_user_blocked(update, context):
             return
         query = update.callback_query
-        await query.answer("➖ Removed from cart")
+        await query.answer(self.get_text('removed_from_cart'))
         product_id = int(query.data.replace("remove_from_cart_", ""))
         user_id = query.from_user.id
         cursor = self.conn.cursor()
@@ -1547,11 +1499,11 @@ class OnlineShopBot:
         cursor.execute("SELECT quantity FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
         current_qty = cursor.fetchone()[0]
         if current_qty >= stock:
-            await update.callback_query.answer("❌ Maximum amount reached", show_alert=True)
+            await update.callback_query.answer(self.get_text('maximum_amount_reached'), show_alert=True)
             return
         cursor.execute("UPDATE cart SET quantity = quantity + 1 WHERE user_id = ? AND product_id = ?", (user_id, product_id))
         self.conn.commit()
-        await update.callback_query.answer(f"➕ {product_name}. Amount: {current_qty + 1}")
+        await update.callback_query.answer(self.get_text('added_amount', product_name=product_name, current_qty=current_qty + 1))
         await self.show_cart(update, context)
 
     async def remove_from_cart_from_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id: int):
@@ -1565,10 +1517,10 @@ class OnlineShopBot:
         product_name = cursor.fetchone()[0]
         if current_qty > 1:
             cursor.execute("UPDATE cart SET quantity = quantity - 1 WHERE user_id = ? AND product_id = ?", (user_id, product_id))
-            msg = f"➖ {product_name}. Amount: {current_qty - 1}"
+            msg = self.get_text('removed_amount', product_name=product_name, current_qty=current_qty - 1)
         else:
             cursor.execute("DELETE FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
-            msg = f"🗑️ {product_name} removed from cart!"
+            msg = self.get_text('product_removed_from_cart', product_name=product_name)
         self.conn.commit()
         await update.callback_query.answer(msg)
         await self.show_cart(update, context)
@@ -1582,7 +1534,7 @@ class OnlineShopBot:
         items_count = cursor.fetchone()[0]
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
-        await update.callback_query.answer(f"🗑️ Cart cleared! {items_count} items removed")
+        await update.callback_query.answer(self.get_text('cart_cleared', items_count=items_count))
         await self.show_cart(update, context)
 
     async def update_product_view(self, query, product_id, context):
@@ -1604,10 +1556,10 @@ class OnlineShopBot:
             image_link_markdown = f"[\u200b]({img_source})" if (img_source and not is_file_id) else ""
 
             if stock > 0:
-                stock_text = f"📦 **In Stock:** {stock}"
-                add_btn = InlineKeyboardButton("➕ Add", callback_data=f"add_to_cart_{product_id}")
+                stock_text = self.get_text('in_stock_2', stock=stock)
+                add_btn = InlineKeyboardButton(self.get_text('add_button'), callback_data=f"add_to_cart_{product_id}")
             else:
-                stock_text = "❌ **OUT OF STOCK**"
+                stock_text = self.get_text('out_of_stock_2')
                 add_btn = None
 
             text = f"""{image_link_markdown}
@@ -1626,7 +1578,7 @@ class OnlineShopBot:
             control_row = []
 
             if cart_qty > 0:
-                control_row.append(InlineKeyboardButton("➖ Remove", callback_data=f"remove_from_cart_{product_id}"))
+                control_row.append(InlineKeyboardButton(self.get_text('remove_button'), callback_data=f"remove_from_cart_{product_id}"))
 
             if add_btn:
                 control_row.append(add_btn)
@@ -1634,8 +1586,8 @@ class OnlineShopBot:
             if control_row:
                 keyboard.append(control_row)
 
-            keyboard.append([InlineKeyboardButton(f"🛒 Go to Cart ({cart_qty})", callback_data="cart")])
-            keyboard.append([InlineKeyboardButton(f"🔙 Back to {product['category']}",
+            keyboard.append([InlineKeyboardButton(self.get_text('go_to_cart_button_count', cart_qty=cart_qty), callback_data="cart")])
+            keyboard.append([InlineKeyboardButton(self.get_text('back_to_category_button', product_category=product['category']),
                                                   callback_data=f"category_{product['category']}")])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1662,7 +1614,7 @@ class OnlineShopBot:
         cursor = self.conn.cursor()
         cursor.execute("SELECT product_id FROM cart WHERE user_id = ?", (user_id,))
         if not cursor.fetchone():
-            await query.answer("Your cart is empty")
+            await query.answer(self.get_text('cart_empty_3'))
             return
 
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
@@ -1673,15 +1625,11 @@ class OnlineShopBot:
 
         keyboard = []
         if has_data:
-            keyboard.append([InlineKeyboardButton("👤 Use my Profile Data", callback_data="use_profile_data")])
-        keyboard.append([InlineKeyboardButton("🔙 Back to Cart", callback_data="cart")])
-        keyboard.append([InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")])
+            keyboard.append([InlineKeyboardButton(self.get_text('use_profile_data_button'), callback_data="use_profile_data")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="cart")])
+        keyboard.append([InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")])
 
-        text = (
-            f"📋 <b>Step 1/4: Full Name</b>\n\n"
-            "Please enter the recipient's full name:\n\n"
-            "<b>Example:</b> <i>John Doe</i>"
-        )
+        text = self.get_text('checkout_step_1')
 
         await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
         self.user_states[user_id]['msg_id'] = query.message.message_id
@@ -1751,7 +1699,7 @@ class OnlineShopBot:
         user_id = update.effective_user.id
         chat_id = query.message.chat_id
 
-        await query.answer("Loading profile data...")
+        await query.answer(self.get_text('loading_profile_data'))
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
@@ -1794,35 +1742,35 @@ class OnlineShopBot:
             return
 
         from_profile = state.get('from_profile', False)
-        header = "📋 <b>Checkout</b> (Profile data loaded)\n\n" if from_profile else "📋 <b>Order Checkout</b>\n\n"
+        header = self.get_text('checkout_profile_loaded_header') if from_profile else self.get_text('checkout_header')
 
         if not state.get('full_name'):
             state['step'] = 'waiting_full_name'
-            text = header + f"👤 <b>Step 1/{total_steps}: Full Name</b>\n\nPlease enter the recipient's full name:\n\n<b>Example:</b> <i>John Doe</i>"
+            text = header + self.get_text('checkout_step_1_of_4', total_steps=total_steps)
             back_callback = "cart"
         elif not state.get('email'):
             state['step'] = 'waiting_email'
-            text = header + f"📧 <b>Step 2/{total_steps}: Email Address</b>\n\nPlease enter your email:\n\n<b>Example:</b> <i>user@gmail.com</i>"
+            text = header + self.get_text('checkout_step_2_of_4', total_steps=total_steps)
             back_callback = "back_to_name"
         elif not state.get('address'):
             state['step'] = 'waiting_shipping'
             if SHIPPING_MODE == 'UKRAINE':
-                text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter City and Nova Poshta Branch:\n\n<b>Example:</b> <i>Kyiv, Nova Poshta #15</i>"
+                text = header + self.get_text('checkout_step_3_of_4_ukraine', total_steps=total_steps)
             else:
-                text = header + f"📍 <b>Step 3/{total_steps}: Shipping Info</b>\n\nEnter Full Address (Country, City, Street, ZIP):\n\n<b>Example:</b> <i>Germany, Berlin, Hauptstraße 10, 10115</i>"
+                text = header + self.get_text('checkout_step_3_of_4_international', total_steps=total_steps)
             back_callback = "back_to_email"
         elif not state.get('phone'):
             state['step'] = 'waiting_phone'
             example = "+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"
-            text = header + f"📱 <b>Step 4/{total_steps}: Phone Number</b>\n\nEnter phone with country code:\n\n<b>Example:</b> <i>{example}</i>"
+            text = header + self.get_text('checkout_step_4_of_4', total_steps=total_steps, example=example)
             back_callback = "back_to_shipping"
         else:
             await self.show_order_summary(context, chat_id, user_id)
             return
 
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back", callback_data=back_callback)],
-            [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
+            [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_callback)],
+            [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
         ])
 
         if update.callback_query:
@@ -2215,7 +2163,7 @@ class OnlineShopBot:
             return
         user_id = update.effective_user.id
         self.user_states.pop(user_id, None)
-        await update.callback_query.edit_message_text("❌ Order cancelled.")
+        await update.callback_query.edit_message_text(self.get_text('order_cancelled_2'))
         await self.show_cart(update, context)
 
     async def show_order_summary(self, context, chat_id, user_id):
@@ -2223,23 +2171,15 @@ class OnlineShopBot:
         state['step'] = 'waiting_confirmation'
         state['is_editing_single'] = False # Скидаємо режим редагування
 
-        summary_text = (
-            "🔍 <b>Confirm your details:</b>\n\n"
-            f"👤 <b>Name:</b> {self.escape_html(state['full_name'])}\n"
-            f"📧 <b>Email:</b> {self.escape_html(state['email'])}\n"
-            f"📍 <b>Shipping:</b> {self.escape_html(state['address'])}\n"
-            f"📱 <b>Phone:</b> {self.escape_html(state['phone'])}\n\n"
-            "<code>────────────────────</code>\n"
-            "Click <b>✏️ Edit</b> next to a field to change it, or ✅ to proceed."
-        )
+        summary_text = self.get_text('confirm_details', full_name=self.escape_html(state['full_name']), email=self.escape_html(state['email']), address=self.escape_html(state['address']), phone=self.escape_html(state['phone']))
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("✏️ Edit Name", callback_data="edit_check_name"),
-             InlineKeyboardButton("✏️ Edit Email", callback_data="edit_check_email")],
-            [InlineKeyboardButton("✏️ Edit Shipping", callback_data="edit_check_address"),
-             InlineKeyboardButton("✏️ Edit Phone", callback_data="edit_check_phone")],
-            [InlineKeyboardButton("✅ Everything is correct", callback_data="confirm_details")],
-            [InlineKeyboardButton("❌ Cancel Order", callback_data="cancel_order")]
+            [InlineKeyboardButton(self.get_text('edit_name_button_2'), callback_data="edit_check_name"),
+             InlineKeyboardButton(self.get_text('edit_email_button_2'), callback_data="edit_check_email")],
+            [InlineKeyboardButton(self.get_text('edit_shipping_button'), callback_data="edit_check_address"),
+             InlineKeyboardButton(self.get_text('edit_phone_button_2'), callback_data="edit_check_phone")],
+            [InlineKeyboardButton(self.get_text('everything_is_correct_button'), callback_data="confirm_details")],
+            [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
         ])
 
         # "Пилосос": видаляємо попереднє повідомлення вводу телефону
@@ -2278,7 +2218,7 @@ class OnlineShopBot:
         total_items = cursor.fetchone()[0]
 
         if total_items == 0:
-            await query.answer("No products here yet!")
+            await query.answer(self.get_text('no_products_yet'))
             return
 
         ITEMS_PER_PAGE = 5
@@ -2289,7 +2229,7 @@ class OnlineShopBot:
                        (category, ITEMS_PER_PAGE, offset))
         products = cursor.fetchall()
 
-        text = f"📂 <b>{self.escape_html(category)}</b>\nPage {prod_page}/{total_pages}"
+        text = self.get_text('category_header', category=self.escape_html(category), prod_page=prod_page, total_pages=total_pages)
         keyboard = []
 
         for p_id, name, base_price, emoji, variants_json in products:
@@ -2312,19 +2252,19 @@ class OnlineShopBot:
             if not all_prices: all_prices.append(base_price)
             min_p = min(all_prices)
             max_p = max(all_prices)
-            price_str = f"from {min_p}$" if min_p != max_p else f"{min_p}$"
+            price_str = self.get_text('price_from', min_p=min_p) if min_p != max_p else f"{min_p}$"
 
             keyboard.append([InlineKeyboardButton(f"{emo} {name} - {price_str}",
                                                   callback_data=f"product_{p_id}_{prod_page}_{cat_page}")])
 
         nav = []
         if prod_page > 1:
-            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"category_{category}_{prod_page - 1}_{cat_page}"))
+            nav.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"category_{category}_{prod_page - 1}_{cat_page}"))
         if prod_page < total_pages:
-            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"category_{category}_{prod_page + 1}_{cat_page}"))
+            nav.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"category_{category}_{prod_page + 1}_{cat_page}"))
         if nav: keyboard.append(nav)
 
-        keyboard.append([InlineKeyboardButton("🔙 Back to Catalog", callback_data=f"catalog_page_{cat_page}")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_catalog_button_2'), callback_data=f"catalog_page_{cat_page}")])
 
         try:
             await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -2404,7 +2344,7 @@ class OnlineShopBot:
         phone = state.get('phone', '')
         address = state.get('address', '')
         email = state.get('email', '')
-        payment_method = state.get('payment', 'Unknown')
+        payment_method = state.get('payment', self.get_text('unknown'))
 
         cursor.execute('''
                        INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address,
@@ -2422,23 +2362,27 @@ class OnlineShopBot:
             items_str = "\n".join([f"▫️ {item}" for item in products_text_list])
 
             if SHIPPING_MODE == 'UKRAINE':
-                region_header = "🇺🇦 НОВЕ ЗАМОВЛЕННЯ"
-                address_label = "📍 Доставка:"
-                pay_label = "💳 Оплата:"
+                region_header = self.get_text('new_order_notification_ukraine')
+                address_label = self.get_text('delivery_notification_ukraine')
+                pay_label = self.get_text('payment_notification_ukraine')
             else:
-                region_header = "🌎 NEW ORDER"
-                address_label = "📍 Shipping:"
-                pay_label = "💳 Payment:"
+                region_header = self.get_text('new_order_notification_international')
+                address_label = self.get_text('delivery_notification_international')
+                pay_label = self.get_text('payment_notification_international')
 
-            admin_text = (
-                f"🔔 <b>{region_header} #{order_id}</b>\n\n"
-                f"👤 <b>Customer:</b> {self.escape_html(full_name)}\n"
-                f"📧 <b>Email:</b> {self.escape_html(email)}\n"
-                f"📞 <b>Phone:</b> {self.escape_html(str(phone))}\n"
-                f"<b>{address_label}</b> {self.escape_html(address)}\n\n"
-                f"{pay_label} {payment_method}\n\n"
-                f"📦 <b>Products:</b>\n{items_str}\n\n"
-                f"💰 <b>Total Amount: {total_amount}$</b>"
+            admin_text = self.get_text(
+                'admin_new_order_notification',
+                region_header=region_header,
+                order_id=order_id,
+                full_name=self.escape_html(full_name),
+                email=self.escape_html(email),
+                phone=self.escape_html(str(phone)),
+                address_label=address_label,
+                address=self.escape_html(address),
+                pay_label=pay_label,
+                payment_method=payment_method,
+                items_str=items_str,
+                total_amount=total_amount
             )
 
             admins = ADMIN_ID if isinstance(ADMIN_ID, list) else [ADMIN_ID]
@@ -2446,7 +2390,7 @@ class OnlineShopBot:
                 try:
                     await context.bot.send_message(chat_id=admin, text=admin_text, parse_mode="HTML")
                 except Exception as e:
-                    logger.error(f"Failed to notify admin {admin}: {e}")
+                    logger.error(self.get_text('failed_to_notify_admin', admin=admin, e=e))
 
         return order_id, products_details, total_amount
 
@@ -2467,7 +2411,7 @@ class OnlineShopBot:
         result = await self.create_order(update, context, send_message=True)
 
         if not result:
-            msg = "⚠️ Error: Order failed. Cart might be empty."
+            msg = self.get_text('order_failed_cart_empty')
             if update.callback_query:
                 await update.callback_query.answer(msg)
             else:
@@ -2513,9 +2457,9 @@ class OnlineShopBot:
         total_orders = cursor.fetchone()["total"]
 
         if total_orders == 0:
-            keyboard = [[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]
             await query.edit_message_text(
-                "🛒 <b>You have no orders yet.</b>",
+                self.get_text('no_orders_yet'),
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode="HTML"
             )
@@ -2530,16 +2474,15 @@ class OnlineShopBot:
             (user_id, per_page, offset))
         orders = cursor.fetchall()
 
-        text = f"📋 <b>Your orders</b> (Page {page + 1}/{total_pages}):\n"
-        text += "➖➖➖➖➖➖➖➖➖➖➖➖➖➖\n\n"
+        text = self.get_text('your_orders_header', page=page + 1, total_pages=total_pages)
 
         keyboard = []
         status_emoji_map = {
-            'pending': '🟡 Processing',
-            'confirmed': '🔵 Confirmed',
-            'shipped': '🟠 Sent',
-            'delivered': '🟢 Delivered',
-            'cancelled': '🔴 Cancelled'
+            'pending': self.get_text('status_pending'),
+            'confirmed': self.get_text('status_confirmed'),
+            'shipped': self.get_text('status_shipped'),
+            'delivered': self.get_text('status_delivered'),
+            'cancelled': self.get_text('status_cancelled')
         }
 
         for order in orders:
@@ -2549,10 +2492,10 @@ class OnlineShopBot:
                 products_data = json.loads(raw_products)
                 for p in products_data:
                     p_emoji = p.get('emoji', '📦')
-                    p_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', 'Product')))
+                    p_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', self.get_text('product'))))
                     product_display_list.append(f"{p_emoji} {p_name}")
             except:
-                product_display_list.append("📦 Order Items")
+                product_display_list.append(self.get_text('order_items'))
 
             products_str = ", ".join(product_display_list)
             if len(products_str) > 35: products_str = products_str[:32] + "..."
@@ -2560,25 +2503,21 @@ class OnlineShopBot:
             status_text = status_emoji_map.get(order['status'], order['status'])
             fmt_date = self.format_date(order['created_at'])
 
-            text += f"📋 <b>Order #{order['id']}</b>\n"
-            text += f"   {self.escape_html(products_str)}\n"
-            text += f"💰 <b>{order['total_amount']}$</b> | {status_text}\n"
-            text += f"🗓 {fmt_date}\n"
-            text += "➖➖➖➖➖➖➖➖➖➖➖➖➖➖\n\n"
+            text += self.get_text('order_summary_line', order_id=order['id'], products_str=self.escape_html(products_str), total_amount=order['total_amount'], status_text=status_text, date=fmt_date)
 
-            keyboard.append([InlineKeyboardButton(f"📄 Details #{order['id']}",
+            keyboard.append([InlineKeyboardButton(self.get_text('details_button', order_id=order['id']),
                                                   callback_data=f"order_details_{order['id']}_{page}")])
 
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"my_orders_page_{page - 1}"))
+            nav.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"my_orders_page_{page - 1}"))
         if page + 1 < total_pages:
-            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"my_orders_page_{page + 1}"))
+            nav.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"my_orders_page_{page + 1}"))
 
         if nav:
             keyboard.append(nav)
 
-        keyboard.append([InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")])
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
@@ -2622,7 +2561,7 @@ class OnlineShopBot:
 
         order = cursor.fetchone()
         if not order:
-            if query: await query.answer("❌ Order not found")
+            if query: await query.answer(self.get_text('order_not_found'))
             return
 
         products_text = ""
@@ -2632,7 +2571,7 @@ class OnlineShopBot:
                 if isinstance(p, str): raise ValueError()
 
 
-                name = p.get('name', 'Unknown')
+                name = p.get('name', self.get_text('unknown'))
 
                 name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(name))
 
@@ -2652,26 +2591,32 @@ class OnlineShopBot:
                     if line.strip():
                         products_text += f"📦 {self.escape_html(line)}\n"
             else:
-                products_text = "📦 Items info unavailable\n"
+                products_text = self.get_text('items_info_unavailable')
 
 
-        status_map = {'pending': '🟡 Processing', 'confirmed': '🔵 Confirmed', 'shipped': '🟠 Sent',
-                      'delivered': '🟢 Delivered', 'cancelled': '🔴 Cancelled'}
+        status_map = {
+            'pending': self.get_text('status_pending'),
+            'confirmed': self.get_text('status_confirmed'),
+            'shipped': self.get_text('status_shipped'),
+            'delivered': self.get_text('status_delivered'),
+            'cancelled': self.get_text('status_cancelled')
+        }
         status_display = status_map.get(order['status'], order['status'])
         fmt_date = self.format_date(order['created_at'])
         pay_method = order['payment_method'] or '—'
 
-        text = (
-            f"📋 <b>Order #{order['id']}</b>\n\n"
-            f"👤 <b>Customer:</b> {self.escape_html(order['user_name'])}\n"
-            f"📧 <b>Email:</b> {self.escape_html(order['email'] or '—')}\n"
-            f"📞 <b>Phone:</b> {self.escape_html(order['phone'] or '—')}\n"
-            f"📍 <b>Address:</b> {self.escape_html(order['address'])}\n"
-            f"💳 <b>Payment:</b> {self.escape_html(pay_method)}\n\n"
-            f"📦 <b>Products:</b>\n{products_text}\n"
-            f"💰 <b>Total: {order['total_amount']}$</b>\n\n"
-            f"📊 <b>Status:</b> {status_display}\n"
-            f"🕐 <b>Date:</b> {fmt_date}"
+        text = self.get_text(
+            'order_details_text',
+            order_id=order['id'],
+            user_name=self.escape_html(order['user_name']),
+            email=self.escape_html(order['email'] or '—'),
+            phone=self.escape_html(order['phone'] or '—'),
+            address=self.escape_html(order['address']),
+            payment_method=self.escape_html(pay_method),
+            products_text=products_text,
+            total_amount=order['total_amount'],
+            status_display=status_display,
+            date=fmt_date
         )
 
         keyboard = []
@@ -2681,21 +2626,21 @@ class OnlineShopBot:
 
             if not is_final:
                 keyboard.append([
-                    InlineKeyboardButton("🔵 Confirm", callback_data=f"admin_confirm_{order_id}_{origin_page}"),
-                    InlineKeyboardButton("🟠 Sent", callback_data=f"admin_ship_{order_id}_{origin_page}")
+                    InlineKeyboardButton(self.get_text('confirm_button'), callback_data=f"admin_confirm_{order['id']}_{origin_page}"),
+                    InlineKeyboardButton(self.get_text('sent_button'), callback_data=f"admin_ship_{order['id']}_{origin_page}")
                 ])
                 keyboard.append([
-                    InlineKeyboardButton("🟢 Delivered", callback_data=f"admin_deliver_{order_id}_{origin_page}"),
-                    InlineKeyboardButton("🔴 Cancel", callback_data=f"admin_cancel_{order_id}_{origin_page}")
+                    InlineKeyboardButton(self.get_text('delivered_button'), callback_data=f"admin_deliver_{order['id']}_{origin_page}"),
+                    InlineKeyboardButton(self.get_text('cancel_button_2'), callback_data=f"admin_cancel_{order['id']}_{origin_page}")
                 ])
 
             keyboard.append(
-                [InlineKeyboardButton("🔙 Back to All Orders", callback_data=f"admin_all_orders_page_{origin_page}")])
+                [InlineKeyboardButton(self.get_text('back_to_all_orders_button'), callback_data=f"admin_all_orders_page_{origin_page}")])
         else:
 
             if not is_final:
-                keyboard.append([InlineKeyboardButton("❌ Cancel Order", callback_data=f"user_cancel_{order_id}")])
-            keyboard.append([InlineKeyboardButton("🔙 Back to list", callback_data=f"my_orders_page_{origin_page}")])
+                keyboard.append([InlineKeyboardButton(self.get_text('cancel_order_button_3'), callback_data=f"user_cancel_{order['id']}")])
+            keyboard.append([InlineKeyboardButton(self.get_text('back_to_list_button'), callback_data=f"my_orders_page_{origin_page}")])
 
         if query:
             try:
@@ -2712,18 +2657,18 @@ class OnlineShopBot:
     # -------------------- ADMIN PANEL --------------------
     async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID:
-            await update.callback_query.answer("❌ Access denied")
+            await update.callback_query.answer(self.get_text('access_denied'))
             return
 
-        text = "👑 **ADMIN PANEL**\n\n👇 **Dashboard:**"
+        text = self.get_text('admin_panel_header')
 
         keyboard = [
-            [InlineKeyboardButton("📋 ALL ORDERS", callback_data="admin_all_orders")],
-            [InlineKeyboardButton("📦 Products", callback_data="admin_products")],
-            [InlineKeyboardButton("📊 Stats", callback_data="admin_statistics"),
-             InlineKeyboardButton("📈 Revenue", callback_data="admin_revenue_chart")],
-            [InlineKeyboardButton("👥 Users", callback_data="admin_user_management")],
-            [InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]
+            [InlineKeyboardButton(self.get_text('all_orders_button'), callback_data="admin_all_orders")],
+            [InlineKeyboardButton(self.get_text('products_button'), callback_data="admin_products")],
+            [InlineKeyboardButton(self.get_text('stats_button'), callback_data="admin_statistics"),
+             InlineKeyboardButton(self.get_text('revenue_button'), callback_data="admin_revenue_chart")],
+            [InlineKeyboardButton(self.get_text('users_button'), callback_data="admin_user_management")],
+            [InlineKeyboardButton(self.get_text('main_menu_button_3'), callback_data="main_menu")]
         ]
 
         await update.callback_query.edit_message_text(
@@ -2735,7 +2680,7 @@ class OnlineShopBot:
     # -------------------- ADMIN: STATISTICS --------------------
     async def admin_statistics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if int(update.effective_user.id) != int(ADMIN_ID):
-            await update.callback_query.answer("❌ Access denied")
+            await update.callback_query.answer(self.get_text('access_denied'))
             return
 
         cursor = self.conn.cursor()
@@ -2757,7 +2702,7 @@ class OnlineShopBot:
                 products_list = json.loads(products_json)
                 for item in products_list:
 
-                    name = item.get('name', 'Unknown')
+                    name = item.get('name', self.get_text('unknown'))
                     qty = item.get('quantity', 0)
                     product_sales[name] = product_sales.get(name, 0) + qty
             except:
@@ -2767,26 +2712,27 @@ class OnlineShopBot:
         sorted_sales = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)
 
         top_5 = sorted_sales[:5]
-        top_text = "\n".join([f"🔥 {name}: {qty} pcs" for name, qty in top_5]) if top_5 else "No data"
+        top_text = "\n".join([f"🔥 {name}: {qty} pcs" for name, qty in top_5]) if top_5 else self.get_text('no_data')
 
         bottom_5 = sorted_sales[-5:] if len(sorted_sales) > 0 else []
-        bottom_text = "\n".join([f"🧊 {name}: {qty} pcs" for name, qty in bottom_5]) if bottom_5 else "No data"
+        bottom_text = "\n".join([f"🧊 {name}: {qty} pcs" for name, qty in bottom_5]) if bottom_5 else self.get_text('no_data')
 
 
         cursor.execute("SELECT COUNT(DISTINCT user_id) FROM orders")
         active_buyers = cursor.fetchone()[0]
 
-        text = (
-            f"👑 <b>ADMIN STATISTICS</b>\n\n"
-            f"💰 <b>Total Revenue:</b> {total_revenue}$\n"
-            f"📦 <b>Total Orders:</b> {total_orders} (🟡 {pending_orders} new)\n"
-            f"👥 <b>Users:</b> {total_users} ({active_buyers} active buyers)\n\n"
-            f"🏆 <b>Top 5 Best Sellers:</b>\n{top_text}\n\n"
-            f"📉 <b>Bottom 5 Sellers:</b>\n{bottom_text}\n\n"
-            f"<i>*Statistics based on confirmed/delivered orders</i>"
+        text = self.get_text(
+            'admin_stats_text',
+            total_revenue=total_revenue,
+            total_orders=total_orders,
+            pending_orders=pending_orders,
+            total_users=total_users,
+            active_buyers=active_buyers,
+            top_text=top_text,
+            bottom_text=bottom_text
         )
 
-        keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")]]
+        keyboard = [[InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]]
 
         await update.callback_query.edit_message_text(
             text,
@@ -2822,10 +2768,10 @@ class OnlineShopBot:
         )
         categories = cursor.fetchall()
 
-        text = f"🛠 **Product Management**"
+        text = self.get_text('product_management_header')
         if total_pages > 1:
-            text += f" (Page {page}/{total_pages})"
-        text += "\nSelect a category to edit items:"
+            text += self.get_text('page_indicator_2', page=page, total_pages=total_pages)
+        text += self.get_text('select_category_to_edit')
 
         keyboard = []
 
@@ -2833,21 +2779,21 @@ class OnlineShopBot:
             cursor.execute("SELECT COUNT(*) FROM products WHERE category = ?", (cat_name,))
             count = cursor.fetchone()[0]
             keyboard.append(
-                [InlineKeyboardButton(f"📂 {cat_name} ({count})", callback_data=f"admin_list_cat_{cat_name}_1")])
+                [InlineKeyboardButton(self.get_text('category_button_count', cat_name=cat_name, count=count), callback_data=f"admin_list_cat_{cat_name}_1")])
 
         nav_row = []
         if page > 1:
-            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_cat_page_{page - 1}"))
+            nav_row.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"admin_cat_page_{page - 1}"))
 
         if page < total_pages:
-            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"admin_cat_page_{page + 1}"))
+            nav_row.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"admin_cat_page_{page + 1}"))
 
         if nav_row:
             keyboard.append(nav_row)
 
-        keyboard.append([InlineKeyboardButton("➕ Add Product", callback_data="admin_add_product")])
+        keyboard.append([InlineKeyboardButton(self.get_text('add_product_button'), callback_data="admin_add_product")])
 
-        keyboard.append([InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")])
 
         if query:
             try:
@@ -2878,7 +2824,7 @@ class OnlineShopBot:
                 page = int(parts[-1])
                 category = "_".join(parts[3:-1])
             except:
-                await query.answer("Error parsing category")
+                await query.answer(self.get_text('error_parsing_category'))
                 return
 
         cursor = self.conn.cursor()
@@ -2896,7 +2842,7 @@ class OnlineShopBot:
                        (category, ITEMS_PER_PAGE, offset))
         products = cursor.fetchall()
 
-        text = f"📂 Category: **{category}**\nPage {page}/{total_pages}\n\nSelect a product to edit:"
+        text = self.get_text('category_header_2', category=category, page=page, total_pages=total_pages)
         keyboard = []
 
         for p_id, p_name, p_stock in products:
@@ -2906,15 +2852,15 @@ class OnlineShopBot:
 
         nav_row = []
         if page > 1:
-            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_list_cat_{category}_{page - 1}"))
+            nav_row.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"admin_list_cat_{category}_{page - 1}"))
 
         if page < total_pages:
-            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"admin_list_cat_{category}_{page + 1}"))
+            nav_row.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"admin_list_cat_{category}_{page + 1}"))
 
         if nav_row:
             keyboard.append(nav_row)
 
-        keyboard.append([InlineKeyboardButton("🔙 Back to Categories", callback_data="admin_products")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_categories_button'), callback_data="admin_products")])
 
         try:
             await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
@@ -2930,7 +2876,7 @@ class OnlineShopBot:
     # -------------------- ADMIN: USER MANAGEMENT --------------------
     async def admin_user_management(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
         if update.effective_user.id != ADMIN_ID:
-            await update.callback_query.answer("❌ Access denied")
+            await update.callback_query.answer(self.get_text('access_denied'))
             return
 
 
@@ -2948,7 +2894,7 @@ class OnlineShopBot:
 
         keyboard = []
         for user_id, blocked in users:
-            action_text = "✅ Unblock" if blocked else "⛔ Block"
+            action_text = self.get_text('unblock_button') if blocked else self.get_text('block_button')
             callback_action = 0 if blocked else 1
 
             try:
@@ -2958,28 +2904,28 @@ class OnlineShopBot:
                 elif chat.first_name:
                     user_display = chat.first_name
                 else:
-                    user_display = f"ID: {user_id}"
+                    user_display = self.get_text('user_id', user_id=user_id)
             except Exception:
-                user_display = f"ID: {user_id}"
+                user_display = self.get_text('user_id', user_id=user_id)
 
             keyboard.append([
 
-                InlineKeyboardButton(f"👤 {user_display}", callback_data="noop"),
+                InlineKeyboardButton(self.get_text('user_display', user_display=user_display), callback_data="noop"),
                 InlineKeyboardButton(action_text, callback_data=f"admin_user_block_{user_id}_{callback_action}")
             ])
 
         nav_buttons = []
         if page > 0:
-            nav_buttons.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_user_page_{page - 1}"))
+            nav_buttons.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"admin_user_page_{page - 1}"))
         if page + 1 < total_pages:
-            nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"admin_user_page_{page + 1}"))
+            nav_buttons.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"admin_user_page_{page + 1}"))
 
         if nav_buttons:
             keyboard.append(nav_buttons)
 
-        keyboard.append([InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")])
+        keyboard.append([InlineKeyboardButton(self.get_text('admin_panel_button_2'), callback_data="admin_panel")])
 
-        text = f"👥 **User Management**\nPage {page + 1} of {total_pages}\nTotal users: {total_users}"
+        text = self.get_text('user_management_header', page=page + 1, total_pages=total_pages, total_users=total_users)
 
         try:
             await update.callback_query.edit_message_text(
@@ -2992,7 +2938,7 @@ class OnlineShopBot:
 
     async def admin_user_block(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID:
-            await update.callback_query.answer("❌ Access denied")
+            await update.callback_query.answer(self.get_text('access_denied'))
             return
 
         _, _, _, user_id, block_status = update.callback_query.data.split("_")
@@ -3023,23 +2969,23 @@ class OnlineShopBot:
     # -------------------- ADMIN: REVENUE CHART --------------------
     async def admin_revenue(self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str = "all"):
         if int(update.effective_user.id) != int(ADMIN_ID):
-            await update.callback_query.answer("❌ Access denied")
+            await update.callback_query.answer(self.get_text('access_denied'))
             return
 
         query = update.callback_query
 
         period_sql = ""
-        label = "all time"
+        label = self.get_text('all_time')
 
         if period == "today":
             period_sql = " AND created_at >= date('now', 'localtime')"
-            label = "today"
+            label = self.get_text('today')
         elif period == "week":
             period_sql = " AND created_at >= date('now', '-7 days')"
-            label = "last 7 days"
+            label = self.get_text('last_7_days')
         elif period == "month":
             period_sql = " AND created_at >= date('now', '-30 days')"
-            label = "last 30 days"
+            label = self.get_text('last_30_days')
 
         cursor = self.conn.cursor()
 
@@ -3053,23 +2999,23 @@ class OnlineShopBot:
         cursor.execute(f"SELECT SUM(total_amount) FROM orders WHERE status = 'pending'{period_sql}")
         pending_rev = cursor.fetchone()[0] or 0
 
-        text = (
-            f"💰 <b>FINANCIAL REPORT</b> ({label.upper()})\n\n"
-            f"💵 <b>Total Revenue:</b> {total_rev}$\n"
-            f"💳 <b>Average Check:</b> {avg_check}$\n"
-            f"📦 <b>Sales Count:</b> {total_orders}\n\n"
-            f"⏳ <b>Pending Revenue:</b> {pending_rev}$\n"
-            f"<i>*Only confirmed/delivered orders are included</i>"
+        text = self.get_text(
+            'financial_report',
+            label=label.upper(),
+            total_rev=total_rev,
+            avg_check=avg_check,
+            total_orders=total_orders,
+            pending_rev=pending_rev
         )
 
         keyboard = [
             [
-                InlineKeyboardButton("📅 Today", callback_data="rev_today"),
-                InlineKeyboardButton("📅 Week", callback_data="rev_week"),
-                InlineKeyboardButton("📅 Month", callback_data="rev_month")
+                InlineKeyboardButton(self.get_text('today_button'), callback_data="rev_today"),
+                InlineKeyboardButton(self.get_text('week_button'), callback_data="rev_week"),
+                InlineKeyboardButton(self.get_text('month_button'), callback_data="rev_month")
             ],
-            [InlineKeyboardButton("📊 All Time", callback_data="rev_all")],
-            [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")]
+            [InlineKeyboardButton(self.get_text('all_time_button'), callback_data="rev_all")],
+            [InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]
         ]
 
         try:
@@ -3090,7 +3036,7 @@ class OnlineShopBot:
 
         admins = ADMIN_ID if isinstance(ADMIN_ID, list) else [ADMIN_ID]
         if int(user_id) not in [int(aid) for aid in admins]:
-            await query.answer("Access denied: You are not an admin.", show_alert=True)
+            await query.answer(self.get_text('access_denied_not_admin'), show_alert=True)
             return
 
         self.conn.row_factory = sqlite3.Row
@@ -3109,11 +3055,11 @@ class OnlineShopBot:
         orders = cursor.fetchall()
 
         if not orders:
-            keyboard = [[InlineKeyboardButton("🔙 Back", callback_data="admin_panel")]]
-            await query.edit_message_text("No orders found in database.", reply_markup=InlineKeyboardMarkup(keyboard))
+            keyboard = [[InlineKeyboardButton(self.get_text('back_button_2'), callback_data="admin_panel")]]
+            await query.edit_message_text(self.get_text('no_orders_in_db'), reply_markup=InlineKeyboardMarkup(keyboard))
             return
 
-        text = f"<b>📦 All Orders (Page {page + 1}/{total_pages}):</b>\n\n"
+        text = self.get_text('all_orders_header', page=page + 1, total_pages=total_pages)
         keyboard = []
         status_emoji = {'pending': '🟡', 'confirmed': '🔵', 'shipped': '🟠', 'delivered': '🟢', 'cancelled': '🔴'}
 
@@ -3122,16 +3068,16 @@ class OnlineShopBot:
             fmt_date = self.format_date(order['created_at'])
             text += f"{emoji} <code>#{order['id']}</code> | {order['user_name']} | {order['total_amount']}$ | {fmt_date}\n"
             keyboard.append(
-                [InlineKeyboardButton(f"Details #{order['id']}", callback_data=f"order_details_{order['id']}_{page}")])
+                [InlineKeyboardButton(self.get_text('details_button_2', order_id=order['id']), callback_data=f"order_details_{order['id']}_{page}")])
 
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"admin_all_orders_page_{page - 1}"))
+            nav.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"admin_all_orders_page_{page - 1}"))
         if page + 1 < total_pages:
-            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"admin_all_orders_page_{page + 1}"))
+            nav.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"admin_all_orders_page_{page + 1}"))
 
         if nav: keyboard.append(nav)
-        keyboard.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_panel")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_admin_button'), callback_data="admin_panel")])
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
         await query.answer()
@@ -3148,12 +3094,12 @@ class OnlineShopBot:
         query = update.callback_query
 
         if int(update.effective_user.id) != int(ADMIN_ID):
-            await query.answer("❌ Access denied")
+            await query.answer(self.get_text('access_denied'))
             return
 
         match = re.search(r'admin_(confirm|ship|deliver|cancel)_(\d+)(?:_(\d+))?', query.data)
         if not match:
-            await query.answer("❌ Error parsing data")
+            await query.answer(self.get_text('error_parsing_data'))
             return
 
         action = match.group(1)
@@ -3182,7 +3128,7 @@ class OnlineShopBot:
         cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
         self.conn.commit()
 
-        await query.answer(f"✅ Status updated: {new_status}")
+        await query.answer(self.get_text('status_updated', new_status=new_status))
 
         try:
             cursor.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
@@ -3190,26 +3136,22 @@ class OnlineShopBot:
             if row:
                 buyer_id = row[0]
                 status_text_map = {
-                    'confirmed': '🔵 Confirmed',
-                    'shipped': '🟠 Sent',
-                    'delivered': '🟢 Delivered',
-                    'cancelled': '🔴 Cancelled'
+                    'confirmed': self.get_text('status_confirmed'),
+                    'shipped': self.get_text('status_shipped'),
+                    'delivered': self.get_text('status_delivered'),
+                    'cancelled': self.get_text('status_cancelled')
                 }
                 display_status = status_text_map.get(new_status, new_status)
 
                 # Тексти сповіщень залежно від режиму
                 if SHIPPING_MODE == 'UKRAINE':
-                    msg_text = (f"📦 <b>Замовлення #{order_id} оновлено</b>\n\n"
-                                f"🆕 Новий статус: <b>{display_status}</b>\n\n"
-                                f"Дякуємо за покупку! ❤️")
+                    msg_text = self.get_text('order_update_notification_ukraine', order_id=order_id, display_status=display_status)
                 else:
-                    msg_text = (f"📦 <b>Order #{order_id} update</b>\n\n"
-                                f"🆕 New status: <b>{display_status}</b>\n\n"
-                                f"Thank you for shopping with us! ❤️")
+                    msg_text = self.get_text('order_update_notification_international', order_id=order_id, display_status=display_status)
 
                 await context.bot.send_message(chat_id=buyer_id, text=msg_text, parse_mode="HTML")
         except Exception as e:
-            print(f"⚠️ Failed to notify user: {e}")
+            print(self.get_text('failed_to_notify_user', e=e))
 
         await self.show_order_details(update, context, order_id=order_id, origin_page=origin_page)
 
@@ -3219,7 +3161,7 @@ class OnlineShopBot:
         cursor = self.conn.cursor()
         cursor.execute("SELECT id, name, price, stock, emoji FROM products ORDER BY name")
         products = cursor.fetchall()
-        text = "📦 **Product management:**\n\n"
+        text = self.get_text('product_management_header_2')
         keyboard = []
         for pid, name, price, stock, emoji in products[:20]:
             stock_status = "✅" if stock > 0 else "❌"
@@ -3228,11 +3170,11 @@ class OnlineShopBot:
             text += text_line
             keyboard.append([
                 InlineKeyboardButton(f"{emoji or '📦'} {name}", callback_data=f"admin_view_product_{pid}"),
-                InlineKeyboardButton("✏️", callback_data=f"admin_edit_product_{pid}"),
-                InlineKeyboardButton("🗑️", callback_data=f"admin_delete_product_{pid}")
+                InlineKeyboardButton(self.get_text('edit_button'), callback_data=f"admin_edit_product_{pid}"),
+                InlineKeyboardButton(self.get_text('delete_button'), callback_data=f"admin_delete_product_{pid}")
             ])
-        keyboard.append([InlineKeyboardButton("➕ Add product", callback_data="admin_add_product")])
-        keyboard.append([InlineKeyboardButton("🔙 Admin panel", callback_data="admin_panel")])
+        keyboard.append([InlineKeyboardButton(self.get_text('add_product_button_2'), callback_data="admin_add_product")])
+        keyboard.append([InlineKeyboardButton(self.get_text('admin_panel_button_3'), callback_data="admin_panel")])
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     async def admin_handle_order_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3251,7 +3193,7 @@ class OnlineShopBot:
         row = cursor.fetchone()
 
         if not row:
-            await query.answer("Order not found")
+            await query.answer(self.get_text('order_not_found_2'))
             return
 
         products_json = row[0]
@@ -3259,7 +3201,7 @@ class OnlineShopBot:
         buyer_id = row[2]
 
         if current_status != 'pending':
-            await query.answer(f"Order is already {current_status}")
+            await query.answer(self.get_text('order_already_status', current_status=current_status))
             return
 
         if action == "accept":
@@ -3267,9 +3209,9 @@ class OnlineShopBot:
             cursor.execute("UPDATE orders SET status = 'accepted' WHERE id = ?", (order_id,))
             self.conn.commit()
 
-            await query.edit_message_text(f"✅ Order #{order_id} ACCEPTED!")
+            await query.edit_message_text(self.get_text('order_accepted', order_id=order_id))
             try:
-                await context.bot.send_message(chat_id=buyer_id, text=f"✅ Your Order #{order_id} has been accepted!")
+                await context.bot.send_message(chat_id=buyer_id, text=self.get_text('your_order_accepted', order_id=order_id))
             except:
                 pass
 
@@ -3321,15 +3263,15 @@ class OnlineShopBot:
                 cursor.execute("UPDATE orders SET status = 'canceled' WHERE id = ?", (order_id,))
                 self.conn.commit()
 
-                await query.edit_message_text(f"❌ Order #{order_id} REJECTED. Stock restored.")
+                await query.edit_message_text(self.get_text('order_rejected', order_id=order_id))
                 try:
-                    await context.bot.send_message(chat_id=buyer_id, text=f"❌ Your Order #{order_id} was canceled.")
+                    await context.bot.send_message(chat_id=buyer_id, text=self.get_text('your_order_canceled', order_id=order_id))
                 except:
                     pass
 
             except Exception as e:
                 print(f"Refund error: {e}")
-                await query.answer("Error restoring stock")
+                await query.answer(self.get_text('error_restoring_stock'))
 
     async def admin_product_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id_override=None):
         query = update.callback_query
@@ -3360,7 +3302,7 @@ class OnlineShopBot:
         product = cursor.fetchone()
 
         if not product:
-            if query: await query.answer("Product not found")
+            if query: await query.answer(self.get_text('product_not_found_2'))
             return
 
         self.user_states[update.effective_user.id] = {
@@ -3410,44 +3352,43 @@ class OnlineShopBot:
         max_p = max(all_prices)
 
         if min_p != max_p:
-            display_price = f"from {min_p}$"
+            display_price = self.get_text('price_from', min_p=min_p)
         else:
             display_price = f"{min_p}$"
 
 
-        text = (
-            f"🛠 **Product Management**\n\n"
-            f"📌 ID: `{product['id']}`\n"
-            f"📦 Total Stock: {product['stock']}\n"
-            f"{stock_details}\n"
-            f"📝 Name: {product['name']}\n"
-            f"📄 Desc: {product['description']}\n"
-            f"💰 Price: {display_price}\n"
-            f"📂 Category: {product['category']}\n"
-            f"😀 Emoji: {product['emoji']}\n\n"
-            f"Select an action:"
+        text = self.get_text(
+            'product_management_details',
+            product_id=product['id'],
+            stock=product['stock'],
+            stock_details=stock_details,
+            name=product['name'],
+            description=product['description'],
+            display_price=display_price,
+            category=product['category'],
+            emoji=product['emoji']
         )
 
         keyboard = [
-            [InlineKeyboardButton("✏️ Name", callback_data="admin_edit_field_name"),
-             InlineKeyboardButton("✏️ Desc", callback_data="admin_edit_field_description")],
+            [InlineKeyboardButton(self.get_text('edit_name_button_3'), callback_data="admin_edit_field_name"),
+             InlineKeyboardButton(self.get_text('edit_desc_button'), callback_data="admin_edit_field_description")],
 
-            [InlineKeyboardButton("✏️ Price", callback_data="admin_edit_field_price"),
-             InlineKeyboardButton("✏️ Stock", callback_data="admin_edit_field_stock")],
+            [InlineKeyboardButton(self.get_text('edit_price_button'), callback_data="admin_edit_field_price"),
+             InlineKeyboardButton(self.get_text('edit_stock_button'), callback_data="admin_edit_field_stock")],
 
-            [InlineKeyboardButton("✏️ Category", callback_data="admin_edit_field_category"),
-             InlineKeyboardButton("✏️ Emoji", callback_data="admin_edit_field_emoji")],
+            [InlineKeyboardButton(self.get_text('edit_category_button'), callback_data="admin_edit_field_category"),
+             InlineKeyboardButton(self.get_text('edit_emoji_button'), callback_data="admin_edit_field_emoji")],
 
-            [InlineKeyboardButton("✏️ Image", callback_data=f"admin_image_menu_{product_id}"),
-             InlineKeyboardButton("✏️ Variants", callback_data="admin_edit_field_variants")],
+            [InlineKeyboardButton(self.get_text('edit_image_button'), callback_data=f"admin_image_menu_{product_id}"),
+             InlineKeyboardButton(self.get_text('edit_variants_button'), callback_data="admin_edit_field_variants")],
 
-            [InlineKeyboardButton("🗑️ Delete Product", callback_data=f"admin_delete_product_confirm_{product_id}")]
+            [InlineKeyboardButton(self.get_text('delete_product_button'), callback_data=f"admin_delete_product_confirm_{product_id}")]
         ]
 
         cat_back = product['category']
 
         keyboard.append(
-            [InlineKeyboardButton("🔙 Back to List", callback_data=f"admin_list_cat_{cat_back}_{origin_page}")])
+            [InlineKeyboardButton(self.get_text('back_to_list_button_2'), callback_data=f"admin_list_cat_{cat_back}_{origin_page}")])
 
         if query:
             try:
@@ -3480,18 +3421,18 @@ class OnlineShopBot:
     async def admin_view_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         match = re.match(r"admin_view_product_(\d+)", query.data)
-        if not match: return await query.answer("❌ Invalid request")
+        if not match: return await query.answer(self.get_text('invalid_request_2'))
         product_id = int(match.group(1))
 
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
         product = cursor.fetchone()
-        if not product: return await query.answer("❌ Product not found")
+        if not product: return await query.answer(self.get_text('product_not_found_2'))
 
         emoji = product['emoji'] or ''
 
-        variants_text = "❌ None"
+        variants_text = self.get_text('none')
         if 'variants' in product.keys() and product['variants']:
             try:
                 v_data = json.loads(product['variants'])
@@ -3510,9 +3451,9 @@ class OnlineShopBot:
         )
 
         keyboard = [
-            [InlineKeyboardButton("✏️ Edit", callback_data=f"admin_edit_product_{product_id}"),
-             InlineKeyboardButton("🗑️ Delete", callback_data=f"admin_delete_product_{product_id}")],
-            [InlineKeyboardButton("🔙 To products", callback_data="admin_products")]
+            [InlineKeyboardButton(self.get_text('edit_button_2'), callback_data=f"admin_edit_product_{product_id}"),
+             InlineKeyboardButton(self.get_text('delete_button_2'), callback_data=f"admin_delete_product_{product_id}")],
+            [InlineKeyboardButton(self.get_text('to_products_button'), callback_data="admin_products")]
         ]
 
         if query.message.photo:
@@ -3535,10 +3476,10 @@ class OnlineShopBot:
             'product_data': {}
         }
 
-        keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="admin_products")]]
+        keyboard = [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_products")]]
 
         msg = await update.callback_query.edit_message_text(
-            "📦 **Adding a new product**\n\nEnter the name of the product:",
+            self.get_text('adding_new_product_name'),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -3558,38 +3499,39 @@ class OnlineShopBot:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
         product = cursor.fetchone()
-        if not product: return await query.answer("❌ Product not found")
+        if not product: return await query.answer(self.get_text('product_not_found_2'))
 
         self.user_states[user_id] = {'step': 'edit_product_field', 'product_id': product_id}
 
-        has_img = "✅ Set" if product['image_url'] else "❌ Not set"
-        has_vars = "❌ None"
+        has_img = self.get_text('set') if product['image_url'] else self.get_text('not_set_2')
+        has_vars = self.get_text('none')
         if 'variants' in product.keys() and product['variants']:
-            has_vars = "✅ Set"
+            has_vars = self.get_text('set')
 
-        text = (
-            f"✏️ **Edit Product**\n\n"
-            f"{product['emoji'] or ''} **{product['name']}**\n"
-            f"Desc: {product['description']}\n"
-            f"Price: {product['price']}$\n"
-            f"Category: {product['category']}\n"
-            f"Stock: {product['stock']}\n"
-            f"Image: {has_img}\n"
-            f"Variants: {has_vars}"
+        text = self.get_text(
+            'edit_product_details',
+            emoji=product['emoji'] or '',
+            name=product['name'],
+            description=product['description'],
+            price=product['price'],
+            category=product['category'],
+            stock=product['stock'],
+            has_img=has_img,
+            has_vars=has_vars
         )
 
         keyboard = [
-            [InlineKeyboardButton("Name", callback_data="admin_edit_field_name"),
-             InlineKeyboardButton("Desc", callback_data="admin_edit_field_description")],
-            [InlineKeyboardButton("Price", callback_data="admin_edit_field_price"),
-             InlineKeyboardButton("Category", callback_data="admin_edit_field_category")],
-            [InlineKeyboardButton("Emoji", callback_data="admin_edit_field_emoji"),
-             InlineKeyboardButton("Stock", callback_data="admin_edit_field_stock")],
+            [InlineKeyboardButton(self.get_text('name'), callback_data="admin_edit_field_name"),
+             InlineKeyboardButton(self.get_text('desc'), callback_data="admin_edit_field_description")],
+            [InlineKeyboardButton(self.get_text('price'), callback_data="admin_edit_field_price"),
+             InlineKeyboardButton(self.get_text('category'), callback_data="admin_edit_field_category")],
+            [InlineKeyboardButton(self.get_text('emoji'), callback_data="admin_edit_field_emoji"),
+             InlineKeyboardButton(self.get_text('stock'), callback_data="admin_edit_field_stock")],
 
-            [InlineKeyboardButton("🎨 Variants", callback_data="admin_edit_field_variants")],
+            [InlineKeyboardButton(self.get_text('variants'), callback_data="admin_edit_field_variants")],
 
-            [InlineKeyboardButton("🖼️ Image", callback_data=f"admin_image_menu_{product_id}")],
-            [InlineKeyboardButton("🔙 Back to Products", callback_data="admin_products")]
+            [InlineKeyboardButton(self.get_text('image'), callback_data=f"admin_image_menu_{product_id}")],
+            [InlineKeyboardButton(self.get_text('back_to_products_button'), callback_data="admin_products")]
         ]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
@@ -3599,16 +3541,16 @@ class OnlineShopBot:
         query = update.callback_query
 
         field_map = {
-            "admin_edit_field_name": ("name", "✏️ Enter new name:"),
-            "admin_edit_field_description": ("description", "📝 Enter new description:"),
-            "admin_edit_field_price": ("price", "💰 Enter new price (number):"),
-            "admin_edit_field_category": ("category", "📂 Enter new category:"),
-            "admin_edit_field_emoji": ("emoji", "😀 Enter new emoji:"),
-            "admin_edit_field_stock": ("stock", "📦 Enter new stock (integer):"),
-            "admin_edit_field_variants": ("variants", "🎨 **Editing Variants**")
+            "admin_edit_field_name": ("name", self.get_text('enter_new_name')),
+            "admin_edit_field_description": ("description", self.get_text('enter_new_description')),
+            "admin_edit_field_price": ("price", self.get_text('enter_new_price')),
+            "admin_edit_field_category": ("category", self.get_text('enter_new_category')),
+            "admin_edit_field_emoji": ("emoji", self.get_text('enter_new_emoji')),
+            "admin_edit_field_stock": ("stock", self.get_text('enter_new_stock')),
+            "admin_edit_field_variants": ("variants", self.get_text('editing_variants'))
         }
 
-        if query.data not in field_map: return await query.answer("❌ Invalid request")
+        if query.data not in field_map: return await query.answer(self.get_text('invalid_request_2'))
 
         field, msg_text = field_map[query.data]
         self.user_states[user_id]['editing_field'] = field
@@ -3620,7 +3562,7 @@ class OnlineShopBot:
         else:
             # ВИПРАВЛЕНО: кнопка Cancel веде до admin_prod_
             keyboard = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("❌ Cancel", callback_data=f"admin_prod_{product_id}")]])
+                [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data=f"admin_prod_{product_id}")]])
 
         try:
             await query.message.delete()
@@ -3634,7 +3576,7 @@ class OnlineShopBot:
             row = cursor.fetchone()
             current_vars_json = row[0] if row else None
 
-            current_text = "None"
+            current_text = self.get_text('none')
             if current_vars_json:
                 try:
                     data = json.loads(current_vars_json)
@@ -3656,14 +3598,7 @@ class OnlineShopBot:
                 except:
                     pass
 
-            msg_text = (
-                f"🎨 **Editing Variants**\n\n"
-                f"👇 **Current settings:**\n{current_text}\n\n"
-                f"✍️ **To CHANGE, send a list:**\n"
-                f"`Type: Option=Qty` or `Type: Option=Qty=Price`\n\n"
-                f"Example: `Color: Red=10, Blue=5=900`\n"
-                f"🗑️ Send `-` to delete all variants."
-            )
+            msg_text = self.get_text('editing_variants_instructions', current_text=current_text)
 
         sent_msg = await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -3688,24 +3623,24 @@ class OnlineShopBot:
         cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
         product = cursor.fetchone()
 
-        if not product: return await query.answer("❌ Product not found")
+        if not product: return await query.answer(self.get_text('product_not_found_2'))
 
         has_image = bool(product['image_url'])
 
-        text = (
-            f"🖼️ **Product Image Management**\n\n"
-            f"Product: **{product['name']}**\n"
-            f"Status: {'✅ Image set' if has_image else '❌ No image'}"
+        text = self.get_text(
+            'product_image_management',
+            product_name=product['name'],
+            status='✅ Image set' if has_image else '❌ No image'
         )
 
         keyboard = []
         if not has_image:
-            keyboard.append([InlineKeyboardButton("➕ Add Photo", callback_data=f"admin_image_set_{product_id}")])
+            keyboard.append([InlineKeyboardButton(self.get_text('add_photo_button'), callback_data=f"admin_image_set_{product_id}")])
         else:
-            keyboard.append([InlineKeyboardButton("✏️ Change Photo", callback_data=f"admin_image_set_{product_id}")])
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Photo", callback_data=f"admin_image_delete_{product_id}")])
+            keyboard.append([InlineKeyboardButton(self.get_text('change_photo_button'), callback_data=f"admin_image_set_{product_id}")])
+            keyboard.append([InlineKeyboardButton(self.get_text('delete_photo_button'), callback_data=f"admin_image_delete_{product_id}")])
 
-        keyboard.append([InlineKeyboardButton("🔙 Back to Editing", callback_data=f"admin_prod_{product_id}")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_editing_button'), callback_data=f"admin_prod_{product_id}")])
 
         if query.message.photo:
             try: await query.message.delete()
@@ -3731,10 +3666,10 @@ class OnlineShopBot:
             except:
                 pass
 
-            keyboard = [[InlineKeyboardButton("🔙 Cancel", callback_data=f"admin_image_menu_{product_id}")]]
+            keyboard = [[InlineKeyboardButton(self.get_text('cancel_button_3'), callback_data=f"admin_image_menu_{product_id}")]]
             msg = await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text="📸 **Send the product image** (or a URL link):",
+                text=self.get_text('send_product_image'),
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 parse_mode=ParseMode.MARKDOWN
             )
@@ -3750,20 +3685,17 @@ class OnlineShopBot:
         cursor.execute("UPDATE products SET image_url = NULL WHERE id = ?", (product_id,))
         self.conn.commit()
 
-        await query.answer("🗑️ Image deleted!")
+        await query.answer(self.get_text('image_deleted'))
 
         try:
             await query.message.delete()
         except Exception:
             pass
 
-        text = (
-            f"🖼️ **Product Image Management**\n\n"
-            f"Status: ❌ No image"
-        )
+        text = self.get_text('product_image_management_no_image')
         keyboard = [
-            [InlineKeyboardButton("➕ Add Photo", callback_data=f"admin_image_set_{product_id}")],
-            [InlineKeyboardButton("🔙 Back to Editing", callback_data=f"admin_edit_product_{product_id}")]
+            [InlineKeyboardButton(self.get_text('add_photo_button'), callback_data=f"admin_image_set_{product_id}")],
+            [InlineKeyboardButton(self.get_text('back_to_editing_button'), callback_data=f"admin_edit_product_{product_id}")]
         ]
 
         await context.bot.send_message(
@@ -3778,19 +3710,19 @@ class OnlineShopBot:
         if user_id != ADMIN_ID: return
         query = update.callback_query
         match = re.match(r"admin_delete_product_(\d+)", query.data)
-        if not match: return await query.answer("❌ Invalid request")
+        if not match: return await query.answer(self.get_text('invalid_request_2'))
         product_id = int(match.group(1))
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT name FROM products WHERE id = ?", (product_id,))
         row = cursor.fetchone()
-        if not row: return await query.answer("❌ Product not found")
+        if not row: return await query.answer(self.get_text('product_not_found_2'))
 
         name = row[0]
 
         keyboard = [
-            [InlineKeyboardButton("❌ Yes, delete", callback_data=f"admin_delete_product_confirm_{product_id}")],
-            [InlineKeyboardButton("🔙 Cancel", callback_data="admin_products")]
+            [InlineKeyboardButton(self.get_text('yes_delete_button'), callback_data=f"admin_delete_product_confirm_{product_id}")],
+            [InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_products")]
         ]
 
         try:
@@ -3800,7 +3732,7 @@ class OnlineShopBot:
 
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text=f"🗑️ Are you sure you want to delete **{name}**?",
+            text=self.get_text('confirm_delete_product', name=name),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=ParseMode.MARKDOWN
         )
@@ -3811,7 +3743,7 @@ class OnlineShopBot:
 
         self.user_states.pop(update.effective_user.id, None)
 
-        await query.answer("🚫 Cancelled")
+        await query.answer(self.get_text('cancelled'))
 
         await self.admin_categories_menu(update, context)
 
@@ -3820,7 +3752,7 @@ class OnlineShopBot:
         if user_id != ADMIN_ID: return
         query = update.callback_query
         match = re.match(r"admin_delete_product_confirm_(\d+)", query.data)
-        if not match: return await query.answer("❌ Invalid request")
+        if not match: return await query.answer(self.get_text('invalid_request_2'))
         product_id = int(match.group(1))
 
         cursor = self.conn.cursor()
@@ -3829,7 +3761,7 @@ class OnlineShopBot:
         row = cursor.fetchone()
 
         if not row:
-            await query.answer("❌ Product already deleted")
+            await query.answer(self.get_text('product_already_deleted'))
             await self.admin_categories_menu(update, context)
             return
 
@@ -3840,7 +3772,7 @@ class OnlineShopBot:
         cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
         self.conn.commit()
 
-        await query.answer(f"🗑️ {name} deleted!")
+        await query.answer(self.get_text('product_deleted', name=name))
 
 
         await self.admin_products_list(update, context, category_override=category_to_return)
@@ -3872,7 +3804,7 @@ class OnlineShopBot:
             elif step.startswith('waiting_'):
                 await self.handle_checkout_input(update, context)
         else:
-            await update.message.reply_text("Use /start for navigating the store! 🛍️")
+            await update.message.reply_text(self.get_text('use_start'))
 
     async def handle_profile_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -4142,17 +4074,17 @@ class OnlineShopBot:
         if step == 'add_product_name':
             state['product_data'] = {'name': input_value}
             state['step'] = 'add_product_description'
-            text = "📝 <b>Enter product description:</b>"
+            text = self.get_text('enter_product_description')
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'add_product_description':
             state['product_data']['description'] = input_value
-            kb = [[InlineKeyboardButton("📦 Simple Product", callback_data="admin_decision_vars_no")],
-                  [InlineKeyboardButton("🎨 Has Variants", callback_data="admin_decision_vars_yes")],
-                  [InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]]
+            kb = [[InlineKeyboardButton(self.get_text('simple_product_button'), callback_data="admin_decision_vars_no")],
+                  [InlineKeyboardButton(self.get_text('has_variants_button'), callback_data="admin_decision_vars_yes")],
+                  [InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]]
             state['step'] = 'waiting_type_decision'
-            m = await context.bot.send_message(chat_id=chat_id, text="❓ <b>Choose Product Type:</b>",
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('choose_product_type'),
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -4160,12 +4092,12 @@ class OnlineShopBot:
             try:
                 state['product_data']['price'] = float(input_value.replace(",", "."))
                 state['step'] = 'waiting_simple_stock'
-                text = "🔢 <b>Enter Stock:</b>"
+                text = self.get_text('enter_stock')
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
             except:
-                text = "⚠️ <b>Invalid Price!</b>"
+                text = self.get_text('invalid_price')
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
@@ -4174,12 +4106,12 @@ class OnlineShopBot:
             try:
                 state['product_data']['stock'] = int(input_value)
                 state['step'] = 'waiting_simple_category'
-                text = "📂 <b>Enter Category:</b>"
+                text = self.get_text('enter_category')
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
             except:
-                text = "⚠️ <b>Invalid quantity!</b>"
+                text = self.get_text('invalid_quantity')
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
@@ -4187,14 +4119,14 @@ class OnlineShopBot:
         elif step == 'waiting_simple_category':
             state['product_data']['category'] = input_value
             state['step'] = 'waiting_simple_emoji'
-            m = await context.bot.send_message(chat_id=chat_id, text="✨ <b>Enter Emoji:</b>", reply_markup=cancel_kb,
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_emoji'), reply_markup=cancel_kb,
                                                parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_emoji':
             state['product_data']['emoji'] = input_value
             state['step'] = 'waiting_simple_image'
-            text = "📸 <b>Send Photo:</b>"
+            text = self.get_text('send_photo')
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -4207,22 +4139,22 @@ class OnlineShopBot:
                 (p['name'], p['description'], p['price'], img, p['category'], p['stock'], p['emoji']))
             self.conn.commit()
             self.user_states.pop(user_id, None)
-            await context.bot.send_message(chat_id=chat_id, text=f"✅ Product <b>{p['name']}</b> created!",
+            await context.bot.send_message(chat_id=chat_id, text=self.get_text('product_created', name=p['name']),
                                            reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton("🔙 Back", callback_data="admin_products")]]),
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]),
                                            parse_mode="HTML")
 
         elif step == 'waiting_var_image':
             state['product_data']['image_url'] = input_value if (is_photo or input_value.startswith('http')) else None
             state['step'] = 'waiting_var_category'
-            m = await context.bot.send_message(chat_id=chat_id, text="📂 <b>Enter Category:</b>", reply_markup=cancel_kb,
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_category'), reply_markup=cancel_kb,
                                                parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_category':
             state['product_data']['category'] = input_value
             state['step'] = 'waiting_var_emoji'
-            m = await context.bot.send_message(chat_id=chat_id, text="✨ <b>Enter Emoji:</b>", reply_markup=cancel_kb,
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_emoji'), reply_markup=cancel_kb,
                                                parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -4243,8 +4175,8 @@ class OnlineShopBot:
             v_type = list(variants.keys())[0]
             added_info = f"<b>📍 Active:</b> {v_type} (<i>{', '.join(variants[v_type].keys())}</i>)\n────────────────────\n\n"
 
-        header = f"✨ <b>{status_msg}</b>\n\n" if status_msg else ""
-        text = f"{header}🎨 <b>Select Variant Type:</b>\n\n{added_info}Select a category or click <b>Finish</b>."
+        header = self.get_text('status_message', status_msg=status_msg) if status_msg else ""
+        text = f"{header}{self.get_text('select_variant_type', added_info=added_info)}"
 
         m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=self.get_variant_type_keyboard(),
                                            parse_mode="HTML")
@@ -4256,7 +4188,7 @@ class OnlineShopBot:
         logger.warning(f'Update {update} caused error {context.error}')
         try:
             if hasattr(update, 'effective_message') and update.effective_message:
-                await update.effective_message.reply_text("❌ An error has occurred. Please try again or use /start")
+                await update.effective_message.reply_text(self.get_text('error_handler'))
         except Exception:
             pass
 
@@ -4272,7 +4204,7 @@ class OnlineShopBot:
             p = state.get('product_data', {})
             vars_data = p.get('variants', {})
             if not vars_data:
-                await query.answer("⚠️ Add variants before finishing!", show_alert=True)
+                await query.answer(self.get_text('add_variants_before_finishing'), show_alert=True)
                 return
 
             total_stock = 0
@@ -4290,9 +4222,9 @@ class OnlineShopBot:
             self.user_states.pop(user_id, None)
 
             await query.message.delete()
-            await context.bot.send_message(chat_id=query.message.chat_id, text=f"✅ <b>{p.get('name')}</b> created!",
+            await context.bot.send_message(chat_id=query.message.chat_id, text=self.get_text('product_created_2', name=p.get('name')),
                                            reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton("🔙 Back", callback_data="admin_products")]]),
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]),
                                            parse_mode="HTML")
             return
 
