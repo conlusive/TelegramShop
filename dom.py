@@ -16,27 +16,91 @@ PAYMENT_TOKENS = {
 # ==========================================
 # 🌍 РЕГІОНАЛЬНІ НАЛАШТУВАННЯ
 # ==========================================
-SHIPPING_MODE = 'INTERNATIONAL' # 'UKRAINE' або 'INTERNATIONAL'
+SHIPPING_MODE = 'UKRAINE' # 'UKRAINE' або 'INTERNATIONAL'
 CURRENCY_CODE = 'USD'           # 'UAH', 'USD', 'EUR'
-CURRENCY_SYMBOL = "$"
+CURRENCY_SYMBOL = "€"           # €, ₴
 
 # ==========================================
 # 🏪 БРЕНДИНГ ТА КОНТАКТИ (White Label)
 # ==========================================
+# ==========================================
+# 🏪 БРЕНДИНГ ТА КОНТАКТИ
+# ==========================================
 SHOP_NAME = "My Awesome Shop"
-SUPPORT_USER = "@your_support_account" # Тільки юзернейм
+SUPPORT_USER = "@your_support_account"  # Тільки юзернейм
 CHANNEL_LINK = "https://t.me/your_channel"
 
-# Цей контент буде автоматично підставлятися в розділ Допомога (Help/About)
-SHOP_INFO = {
+# ==========================================
+# ✍️ ПЕРСОНАЛІЗАЦІЯ ТЕКСТУ (BRAND VOICE)
+# ==========================================
+# Використовуй {shop_name}, {support}, {channel} для автоматичної підстановки значень вище.
+
+STORE_MESSAGES = {
     'UKRAINE': {
-        'delivery': "• Самовивіз: Київ\n• Нова Пошта: 1-2 дні",
-        'payment_desc': "• Оплата при отриманні\n• Онлайн на сайті",
-        'email': "support_ua@example.com"
+        # Текст на головному екрані
+        'welcome': """
+👋 <b>Вітаємо у {shop_name}!</b>
+
+Ми пропонуємо найкращі товари. Оберіть категорію нижче! 🚀
+""",
+
+        # Повний текст розділу "Допомога"
+        'help': """
+ℹ️ <b>ІНФОРМАЦІЯ ТА ПІДТРИМКА</b>
+
+📍 <b>Доставка:</b> Нова Пошта (1-2 дні)
+💳 <b>Оплата:</b> Картка / Готівка
+
+📢 <b>Наш канал:</b> {channel}
+📞 <b>Підтримка:</b> {support}
+
+<i>Будь ласка, пишіть нам з будь-яких питань!</i>
+""",
+        # Текст, коли кошик порожній
+        'cart_empty': """
+🛒 <b>Ваш кошик поки що порожній.</b>
+
+Загляньте в каталог, там багато цікавого! 👇
+""",
+
+        # Повідомлення після успішного замовлення
+        'order_success': """
+✅ <b>Дякуємо! Замовлення #{order_id} прийнято!</b>
+
+Ми вже почали його готувати. Очікуйте повідомлення! 📦
+""",
     },
+
+
+
+
     'INTERNATIONAL': {
-        'delivery': "• Worldwide Shipping via DHL/FedEx\n• Terms: 7-14 business days",
-        'payment_desc': "• Secure Card Payment / Apple Pay\n• Bank Transfer",
-        'email': "global_support@example.com"
+        'welcome': """
+👋 <b>Welcome to {shop_name}!</b>
+
+Discover our premium collection. Select a category below! 🚀
+""",
+        'help': """
+ℹ️ <b>HELP & SUPPORT</b>
+
+📍 <b>Shipping:</b> Worldwide (7-14 days)
+💳 <b>Payment:</b> Card / Apple Pay
+
+📢 <b>Our Channel:</b> {channel}
+📞 <b>Support:</b> {support}
+
+<i>Feel free to message us if you need any assistance!</i>
+""",
+        'cart_empty': """
+🛒 <b>Your cart is currently empty.</b>
+                      
+Check out our catalog to find your next favorite item! 👇
+""",
+
+        'order_success': """
+✅ <b>Success! Order #{order_id} placed!</b>
+
+We will send you a confirmation email with tracking details shortly. 📦
+""",
     }
 }

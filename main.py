@@ -7,7 +7,11 @@ import re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from telegram.constants import ParseMode
-from dom import BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE, PORTMONE_TOKEN, REDSYS_TOKEN
+from dom import (
+    BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE,
+    DB_NAME, SHOP_NAME, CURRENCY_SYMBOL, STORE_MESSAGES,
+    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS
+)
 from telegram import LabeledPrice
 from telegram.ext import PreCheckoutQueryHandler
 from strings import STRINGS
@@ -37,6 +41,7 @@ class OnlineShopBot:
 
     def get_text(self, key, **kwargs):
         lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
+        kwargs.setdefault('currency_symbol', CURRENCY_SYMBOL)
         return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
 
     # -------------------- DATABASE --------------------
@@ -51,7 +56,7 @@ class OnlineShopBot:
                 print(self.get_text('error_adding_column', column_name=column_name, table_name=table_name, e=e))
 
     def init_database(self):
-        self.conn = sqlite3.connect('shop.db', check_same_thread=False)
+        self.conn = sqlite3.connect(DB_NAME, check_same_thread=False)
         cursor = self.conn.cursor()
 
         # Таблиця товарів
@@ -114,11 +119,11 @@ class OnlineShopBot:
         if receipt_format == 'html':
             bold_start, bold_end = "<b>", "</b>"
             escaper = self.escape_html
-            product_line_format = "▫️ {emoji} {name}{opts}\n   {quantity} x {price}$ = <b>{total}$</b>\n"
+            product_line_format = "▫️ {emoji} {name}{opts}\n   {quantity} x {price}{currency_symbol} = <b>{total}{currency_symbol}</b>\n"
         else:
             bold_start, bold_end = "**", "**"
             escaper = self.escape_md
-            product_line_format = "{emoji} {name}{opts}\n   {quantity} x {price}$ = {total}$\n"
+            product_line_format = "{emoji} {name}{opts}\n   {quantity} x {price}{currency_symbol} = {total}{currency_symbol}\n"
 
         products_text = ""
         for item in products_list:
@@ -134,7 +139,8 @@ class OnlineShopBot:
                 opts=escaper(opts_str),
                 quantity=item.get('quantity', 1),
                 price=item.get('price', 0),
-                total=item.get('total', 0)
+                total=item.get('total', 0),
+                currency_symbol=CURRENCY_SYMBOL
             )
 
         return self.get_text(
@@ -397,69 +403,40 @@ class OnlineShopBot:
 
         user = update.effective_user
         user_id = user.id
-        safe_name = self.escape_md(user.first_name)
-
-        missing = self.get_profile_completion_status(user_id)
-        registration_promo = ""
-
-        if missing and int(user_id) != int(ADMIN_ID):
-            promo_messages = {
-                4: self.get_text('welcome_promo_4'),
-                3: self.get_text('welcome_promo_3'),
-                2: self.get_text('welcome_promo_2'),
-                1: self.get_text('welcome_promo_1'),
-            }
-
-            missing_labels = []
-            if "full_name" in missing: missing_labels.append(self.get_text('missing_name'))
-            if "email" in missing: missing_labels.append(self.get_text('missing_email'))
-
-            if "address" in missing:
-                label = self.get_text('missing_address_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('missing_address_international')
-                missing_labels.append(label)
-
-            if "phone" in missing: missing_labels.append(self.get_text('missing_phone'))
-
-            registration_promo = f"\n{promo_messages.get(len(missing), '')}\n"
-            registration_promo += self.get_text('missing_fields', missing_labels=', '.join(missing_labels))
-            registration_promo += "────────────────────\n"
+        safe_name = self.escape_html(user.first_name)
 
         if int(user_id) == int(ADMIN_ID):
             welcome_text = self.get_text('admin_welcome', safe_name=safe_name)
         else:
-            welcome_text = self.get_text('user_welcome', safe_name=safe_name, registration_promo=registration_promo)
+            welcome_text = STORE_MESSAGES[SHIPPING_MODE]['welcome'].format(shop_name=SHOP_NAME)
 
         reply_markup = self.build_main_keyboard(user_id)
 
         if update.callback_query:
             try:
                 await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup,
-                                                              parse_mode=ParseMode.MARKDOWN)
+                                                              parse_mode=ParseMode.HTML)
             except Exception:
                 pass
         elif update.message:
-            await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
     async def show_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
             return
 
-        # Визначаємо умови залежно від регіону
-        if SHIPPING_MODE == 'UKRAINE':
-            delivery_info = self.get_text('delivery_info_ukraine')
-            payment_info = self.get_text('payment_info_ukraine')
-        else:
-            delivery_info = self.get_text('delivery_info_international')
-            payment_info = self.get_text('payment_info_international')
-
-        text = self.get_text('help_text', SHIPPING_MODE=SHIPPING_MODE, delivery_info=delivery_info, payment_info=payment_info)
+        text = STORE_MESSAGES[SHIPPING_MODE]['help'].format(
+            shop_name=SHOP_NAME,
+            support=SUPPORT_USER,
+            channel=CHANNEL_LINK
+        )
 
         keyboard = [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]
 
         await update.callback_query.edit_message_text(
             text,
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
 
     async def show_catalog(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -560,7 +537,7 @@ class OnlineShopBot:
 
         variants_display = ""
         base_price = product['price']
-        display_price = f"{base_price}$"
+        display_price = f"{base_price}{CURRENCY_SYMBOL}"
 
         if product['variants']:
             try:
@@ -585,9 +562,9 @@ class OnlineShopBot:
                         max_p = max(all_prices)
 
                         if min_p != max_p:
-                            display_price = self.get_text('price_from', price=min_p)
+                            display_price = self.get_text('price_from', price=min_p).replace('$', CURRENCY_SYMBOL)
                         else:
-                            display_price = f"{min_p}$"
+                            display_price = f"{min_p}{CURRENCY_SYMBOL}"
                 
                 # This part handles the display of the variants themselves, not the price.
                 for v_type, options in v_data.items():
@@ -825,7 +802,7 @@ class OnlineShopBot:
         cart_items = cursor.fetchall()
 
         if not cart_items:
-            text = self.get_text('cart_empty')
+            text = STORE_MESSAGES[SHIPPING_MODE]['cart_empty']
             keyboard = [
                 [InlineKeyboardButton(self.get_text('go_to_catalog_button'), callback_data="catalog")],
                 [InlineKeyboardButton(self.get_text('my_orders_button_2'), callback_data="my_orders")],
@@ -836,10 +813,10 @@ class OnlineShopBot:
                 await query.message.delete()
                 await context.bot.send_message(chat_id=query.message.chat_id, text=text,
                                                reply_markup=InlineKeyboardMarkup(keyboard),
-                                               parse_mode=ParseMode.MARKDOWN)
+                                               parse_mode=ParseMode.HTML)
             else:
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                              parse_mode=ParseMode.MARKDOWN)
+                                              parse_mode=ParseMode.HTML)
             return
 
         total_amount = 0
@@ -875,8 +852,8 @@ class OnlineShopBot:
                     pass
 
             emo = emoji if emoji else "📦"
-            text += f"{emo} **{name}**{opts_str}\n"
-            text += f"   {quantity} x {real_price}$ = {item_total}$\n"
+            text += f"{emo} <b>{self.escape_html(name)}</b>{self.escape_html(opts_str)}\n"
+            text += f"   {quantity} x {real_price}{CURRENCY_SYMBOL} = {item_total}{CURRENCY_SYMBOL}\n"
 
             btn_text = f"{name} ({quantity})"
             row_btns = [
@@ -886,7 +863,7 @@ class OnlineShopBot:
             ]
             keyboard.append(row_btns)
 
-        text += self.get_text('cart_total', total_amount=total_amount)
+        text += self.get_text('cart_total', total_amount=total_amount).replace('$', CURRENCY_SYMBOL)
 
         keyboard.append([InlineKeyboardButton(self.get_text('checkout_button'), callback_data="checkout")])
 
@@ -900,11 +877,11 @@ class OnlineShopBot:
         if query.message.photo:
             await query.message.delete()
             await context.bot.send_message(chat_id=query.message.chat_id, text=text,
-                                           reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+                                           reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         else:
             try:
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                              parse_mode=ParseMode.MARKDOWN)
+                                              parse_mode=ParseMode.HTML)
             except:
                 pass
 
@@ -928,10 +905,10 @@ class OnlineShopBot:
         emo = product['emoji'] if product['emoji'] else "📦"
 
         text = (
-            f"{emo} **{product['name']}**\n\n"
-            f"📝 {product['description']}\n\n"
-            f"💰 Price: **{product['price']}$**\n"
-            f"📂 Category: {product['category']}"
+            f"{emo} <b>{self.escape_html(product['name'])}</b>\n\n"
+            f"📝 {self.escape_html(product['description'])}\n\n"
+            f"💰 Price: <b>{product['price']}{CURRENCY_SYMBOL}</b>\n"
+            f"📂 Category: {self.escape_html(product['category'])}"
         )
 
         keyboard = [
@@ -951,7 +928,7 @@ class OnlineShopBot:
                     photo=product['image_url'],
                     caption=text,
                     reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode=ParseMode.MARKDOWN
+                    parse_mode=ParseMode.HTML
                 )
             except Exception:
 
@@ -959,14 +936,14 @@ class OnlineShopBot:
                     chat_id=query.message.chat_id,
                     text=text + self.get_text('image_unavailable'),
                     reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode=ParseMode.MARKDOWN
+                    parse_mode=ParseMode.HTML
                 )
         else:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=text,
                 reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.HTML
             )
 
     async def handle_cart_update(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1229,7 +1206,7 @@ class OnlineShopBot:
 
                     quantity = val.get('qty', 0)
                     if 'price' in val:
-                        price_info = f" {val['price']}$"
+                        price_info = f" {val['price']}{CURRENCY_SYMBOL}"
                 else:
 
                     try:
@@ -1559,7 +1536,7 @@ class OnlineShopBot:
             img_source = product['image_url']
             is_file_id = img_source and not img_source.startswith("http")
 
-            image_link_markdown = f"[\u200b]({img_source})" if (img_source and not is_file_id) else ""
+            image_link_markdown = f"<a href='{img_source}'>&#8203;</a>" if (img_source and not is_file_id) else ""
 
             if stock > 0:
                 stock_text = self.get_text('in_stock_2', stock=stock)
@@ -1569,15 +1546,15 @@ class OnlineShopBot:
                 add_btn = None
 
             text = f"""{image_link_markdown}
-    {emoji} **{product['name']}**
+    {emoji} <b>{self.escape_html(product['name'])}</b>
 
-    📝 {product['description']}
+    📝 {self.escape_html(product['description'])}
 
-    💰 **Price:** {product['price']}$
+    💰 <b>Price:</b> {product['price']}{CURRENCY_SYMBOL}
     {stock_text}
-    🛒 **In Cart:** {cart_qty}
+    🛒 <b>In Cart:</b> {cart_qty}
 
-    **Category:** {product['category']}"""
+    <b>Category:</b> {self.escape_html(product['category'])}"""
 
             keyboard = []
 
@@ -1601,13 +1578,13 @@ class OnlineShopBot:
             if query.message.photo:
                 try:
                     await query.edit_message_caption(caption=text, reply_markup=reply_markup,
-                                                     parse_mode=ParseMode.MARKDOWN)
+                                                     parse_mode=ParseMode.HTML)
                 except Exception:
                     pass
             else:
 
                 try:
-                    await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+                    await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
                 except Exception:
                     pass
 
@@ -1839,28 +1816,13 @@ class OnlineShopBot:
             return
 
         order_id, products_list, total_amount = order_details
-        products_text = "".join(f"▫️ {item['emoji']} {item['name']} × {item['quantity']} = {item['total']}$\n" for item in products_list)
-
-        try:
-            from zoneinfo import ZoneInfo
-            tz_name = globals().get('BOT_TIMEZONE', 'Europe/Kyiv')
-            current_time = datetime.now(ZoneInfo(tz_name)).strftime('%d.%m.%Y %H:%M')
-        except:
-            current_time = datetime.now().strftime('%d.%m.%Y %H:%M')
-
-        order_text = (
-            f"✅ **Order #{order_id} has been successfully placed!**\n\n"
-            f"📦 **Products:**\n{products_text}\n"
-            f"💳 **Total: {total_amount}$**\n"
-            f"🗓 **Date:** {current_time}\n\n"
-            f"👤 **Payment:** {payment_method}\n\n"
-            f"Managers will contact you shortly to confirm details. ❤️"
-        )
+        
+        order_text = STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id)
 
         await query.edit_message_text(
             text=order_text,
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1980,6 +1942,89 @@ class OnlineShopBot:
         )
         self.user_states[user_id]['msg_id'] = m.message_id
 
+    async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method, products_list, total_amount):
+        try:
+            region_header = self.get_text('new_order_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('new_order_notification_international')
+            address_label = self.get_text('delivery_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('delivery_notification_international')
+            pay_label = self.get_text('payment_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('payment_notification_international')
+
+            items_str = ""
+            for item in products_list:
+                opts_str = ""
+                if item.get('selected_options'):
+                    opts_vals = [f"{v}" for k, v in item['selected_options'].items()]
+                    opts_str = f" ({', '.join(opts_vals)})"
+                items_str += f"▫️ {item['emoji']} {item['name']}{opts_str} x {item['quantity']}\n"
+
+            text = self.get_text('admin_new_order_notification',
+                                 region_header=region_header,
+                                 order_id=order_id,
+                                 full_name=full_name,
+                                 email=email,
+                                 phone=phone,
+                                 address_label=address_label,
+                                 address=address,
+                                 pay_label=pay_label,
+                                 payment_method=payment_method,
+                                 items_str=items_str,
+                                 total_amount=total_amount)
+
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=text,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(self.get_text('failed_to_notify_admin', admin=ADMIN_ID, e=e))
+
+    async def create_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, send_message=False, payment_method_override=None):
+        user_id = update.effective_user.id
+        state = self.user_states.get(user_id, {})
+        user_name = update.effective_user.full_name
+
+        full_name = state.get('full_name')
+        email = state.get('email')
+        address = state.get('address')
+        phone = state.get('phone')
+        payment_method = payment_method_override or state.get('payment')
+
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT c.id, p.name, p.price, c.quantity, p.emoji, c.selected_options, p.variants, p.id FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?', (user_id,))
+        cart_items = cursor.fetchall()
+
+        if not cart_items:
+            logger.warning("create_order called with empty cart for user %s", user_id)
+            return None
+
+        products_list = []
+        total_amount = 0
+        for row in cart_items:
+            cart_id, name, base_price, quantity, emoji, opts_json, variants_json, product_id = row
+            real_price = self.calculate_item_price(base_price, variants_json, opts_json)
+            item_total = real_price * quantity
+            total_amount += item_total
+            products_list.append({
+                "product_id": product_id,
+                "name": name,
+                "price": real_price,
+                "quantity": quantity,
+                "total": item_total,
+                "emoji": emoji,
+                "selected_options": json.loads(opts_json) if opts_json else {}
+            })
+
+        cursor.execute(
+            "INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address, payment_method, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, user_name, full_name, json.dumps(products_list, ensure_ascii=False), total_amount, phone, address, payment_method, email)
+        )
+        order_id = cursor.lastrowid
+        self.conn.commit()
+
+        if send_message:
+            await self.notify_admin_new_order(context, order_id, full_name, email, phone, address, payment_method, products_list, total_amount)
+
+        return order_id, products_list, total_amount
+
     async def choose_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
@@ -1994,8 +2039,13 @@ class OnlineShopBot:
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
         if data == "pay_online":
+            order_details = await self.create_order(update, context, send_message=False, payment_method_override="Online Payment (Pending)")
+            if not order_details:
+                await context.bot.send_message(chat_id=user_id, text="Error creating order.")
+                return
+            order_id, _, _ = order_details
             await query.message.delete()
-            await self.send_invoice(update, context, total_amount)
+            await self.send_invoice(update, context, total_amount, order_id)
         elif data == "pay_card":
             # Переклад для бази/адміна
             method_name = "Card to courier" if SHIPPING_MODE != 'UKRAINE' else "Картою кур'єру"
@@ -2005,16 +2055,15 @@ class OnlineShopBot:
             method_name = "Cash on delivery" if SHIPPING_MODE != 'UKRAINE' else "Готівка (накладений платіж)"
             await self.finalize_order(update, context, method_name, total_amount)
 
-    async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
-        from dom import REDSYS_TOKEN, PORTMONE_TOKEN
+    async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount, order_id):
         user_id = update.effective_user.id
 
         # Визначаємо токен та валюту залежно від регіону
         if SHIPPING_MODE == 'UKRAINE':
-            token = PORTMONE_TOKEN
+            token = PAYMENT_TOKENS['PORTMONE']
             currency = "UAH"
         else:
-            token = REDSYS_TOKEN
+            token = PAYMENT_TOKENS['REDSYS']
             currency = "EUR"  # Redsys найкраще працює з EUR у тестовому режимі
 
         keyboard = InlineKeyboardMarkup([
@@ -2027,7 +2076,7 @@ class OnlineShopBot:
                 chat_id=update.effective_chat.id,
                 title="Order Payment #QuickShop",
                 description="Payment for selected items in your cart",
-                payload=f"order_{user_id}",
+                payload=f"order_{order_id}",
                 provider_token=token,
                 currency=currency,
                 prices=[LabeledPrice("Total Amount", int(total_amount * 100))],
@@ -2066,21 +2115,24 @@ class OnlineShopBot:
 
     async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        state = self.user_states.get(user_id)
+        invoice_payload = update.message.successful_payment.invoice_payload
+        order_id = int(invoice_payload.split('_')[1])
+        
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE orders SET payment_method = 'Online', status = 'confirmed' WHERE id = ?", (order_id,))
+        self.conn.commit()
 
-        # 1. Clean up: Remove the invoice message so only the receipt remains
-        if state and 'invoice_msg_id' in state:
-            try:
-                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=state['invoice_msg_id'])
-            except Exception:
-                pass
+        # Повідомляємо користувача
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id),
+            parse_mode=ParseMode.HTML
+        )
 
-        # 2. Get payment info
-        payment_info = update.message.successful_payment
-        total_amount = payment_info.total_amount / 100
-
-        # 3. Finalize order and send the receipt (the receipt text is generated in finalize_order)
-        await self.finalize_order(update, context, "Online Card Payment", total_amount)
+        # Очищуємо кошик і стан
+        cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
+        self.conn.commit()
+        self.user_states.pop(user_id, None)
 
     async def handle_checkout_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
