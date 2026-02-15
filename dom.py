@@ -1,7 +1,7 @@
 # ==========================================
 # 🔧 ТЕХНІЧНІ НАЛАШТУВАННЯ (API & SECURITY)
 # ==========================================
-BOT_TOKEN = "8383113616:AAE4CfMMLjkBRxDZYrrWffVY20B-vWvfPKQ"
+BOT_TOKEN = "8383113616:AAFaG7SkRskmATVZOS2KfCJzDPxJB2jBQIY"
 ADMIN_ID = 8027188846
 DB_NAME = "shop_database.db"  # Назва бази даних для цього клієнта
 BOT_TIMEZONE = 'Europe/Kyiv'
