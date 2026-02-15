@@ -1838,25 +1838,6 @@ class OnlineShopBot:
             parse_mode="HTML"
         )
 
-    async def show_bank_payment_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        user_id = query.from_user.id
-        state = self.user_states.get(user_id, {})
-        order_id = state.get('order_id')
-
-        text = self.get_text(
-            'admin_bank_details',
-            recipient=BANK_RECIPIENT,
-            iban=BANK_IBAN,
-            purpose=f"{BANK_PURPOSE} #{order_id}" if order_id else BANK_PURPOSE
-        )
-        keyboard = [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]
-        await query.edit_message_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.HTML
-        )
-
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         user_id = update.effective_user.id
@@ -2145,48 +2126,36 @@ class OnlineShopBot:
             method_name = self.get_text('method_cod')
             await self.finalize_order(update, context, method_name, total_amount)
 
-    async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
-        user_id = update.effective_user.id
+    async def send_invoice(self, chat_id, user_id, context):
+        state = self.user_states[user_id]
+        cart = state.get('cart', {})
+        total_amount = sum(item['price'] * item['quantity'] for item in cart.values())
 
-        # Визначаємо токен та валюту з dom.py
-        token = PAYMENT_TOKENS['PORTMONE'] if SHIPPING_MODE == 'UKRAINE' else PAYMENT_TOKENS['REDSYS']
-        currency = CURRENCY_CODE
+        # ВИПРАВЛЕННЯ ПОМИЛКИ ВАЛЮТИ: перетворюємо в ціле число (копійки/центи)
+        telegram_amount = int(total_amount * 100)
 
-        try:
-            # Видаляємо старе повідомлення з кнопками вибору оплати
-            try:
-                if update.callback_query:
-                    await update.callback_query.message.delete()
-            except:
-                pass
+        prices = [LabeledPrice(self.get_text('invoice_label'), telegram_amount)]
 
-            invoice_msg = await context.bot.send_invoice(
-                chat_id=update.effective_chat.id,
-                title=self.get_text('invoice_title', shop_name=SHOP_NAME),
-                description=self.get_text('invoice_desc'),
-                payload=f"cart_{user_id}",
-                provider_token=token,
-                currency=currency,
-                prices=[LabeledPrice(self.get_text('invoice_label'), int(total_amount * 100))],
-                start_parameter="shop-payment",
-                reply_markup=InlineKeyboardMarkup([
-                    # Кнопка оплати з правильним текстом та символом
-                    [InlineKeyboardButton(f"💳 {self.get_text('pay_button_text')} {total_amount}{CURRENCY_SYMBOL}",
-                                          pay=True)],
-                    # Кнопка НАЗАД, яка тепер ПРАЦЮЄ (повертає до вибору Cash/Card/Bank)
-                    [InlineKeyboardButton(self.get_text('back_button'), callback_data="back_to_payment")]
-                ])
-            )
+        # Робимо лінію ідентичною
+        separator = "────────────────────"
+        description = (
+            f"{self.get_text('invoice_description')}\n"
+            f"{separator}\n"
+            f"💰 {self.get_text('total_to_pay')}: {total_amount} {CURRENCY_SYMBOL}"
+        )
 
-            if user_id in self.user_states:
-                self.user_states[user_id]['invoice_msg_id'] = invoice_msg.message_id
-
-        except Exception as e:
-            logger.error(f"❌ Error sending invoice: {e}")
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="⚠️ Вибачте, сталася помилка при генерації рахунку."
-            )
+        await context.bot.send_invoice(
+            chat_id=chat_id,
+            title=self.get_text('invoice_title'),
+            description=description,
+            payload=f"order_{user_id}_{int(time.time())}",
+            provider_token=PAYMENT_PROVIDER_TOKEN,
+            currency=CURRENCY_CODE,
+            prices=prices,
+            start_parameter="test-payment",
+            is_flexible=False,
+            payload_type="HTML"  # Додаємо, щоб тег <code> спрацював
+        )
 
     # main.py
     async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2282,14 +2251,37 @@ class OnlineShopBot:
     async def show_order_summary(self, context, chat_id, user_id):
         state = self.user_states[user_id]
         state['step'] = 'waiting_confirmation'
-        state['is_editing_single'] = False # Скидаємо режим редагування
+        state['is_editing_single'] = False
 
-        full_name = self.escape_html(state.get('full_name'))
-        email = self.escape_html(state.get('email'))
-        address = self.escape_html(state.get('address'))
-        phone = self.escape_html(state.get('phone'))
+        full_name = self.escape_html(state.get('full_name', ''))
+        email = self.escape_html(state.get('email', ''))
+        address = self.escape_html(state.get('address', ''))
+        phone = self.escape_html(state.get('phone', ''))
 
-        summary_text = self.get_text('confirm_details', full_name=full_name, email=email, address=address, phone=phone)
+        # Блок перевірки профілю (як у головному меню)
+        missing = self.get_profile_completion_status(user_id)
+        promo_header = ""
+        # Використовуємо ту саму лінію, що і в мейн меню
+        separator = "────────────────────"
+
+        if missing:
+            promo_text = self.get_text(f'welcome_promo_{len(missing)}')
+            labels = []
+            if "full_name" in missing: labels.append(self.get_text('missing_name'))
+            if "email" in missing: labels.append(self.get_text('missing_email'))
+            if "address" in missing:
+                key = 'missing_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'missing_address_international'
+                labels.append(self.get_text(key))
+            if "phone" in missing: labels.append(self.get_text('missing_phone'))
+
+            promo_header = f"{promo_text}\n⚠️ <b>Заповніть ці дані:</b> {', '.join(labels)}\n{separator}\n\n"
+
+        # Отримуємо текст підтвердження
+        base_summary = self.get_text('confirm_details', full_name=full_name, email=email, address=address, phone=phone)
+
+        # Склеюємо все докупи.
+        # Переконайся, що в strings.py у 'confirm_details' лінія ТАКОЖ у <code>
+        summary_text = f"{promo_header}{base_summary}"
 
         keyboard = InlineKeyboardMarkup([
             [
@@ -2304,8 +2296,16 @@ class OnlineShopBot:
             [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
         ])
 
-        m = await context.bot.send_message(chat_id=chat_id, text=summary_text, reply_markup=keyboard, parse_mode="HTML")
-        state['msg_id'] = m.message_id
+        try:
+            m = await context.bot.send_message(
+                chat_id=chat_id,
+                text=summary_text,
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            state['msg_id'] = m.message_id
+        except Exception as e:
+            logger.error(f"Error in show_order_summary: {e}")
 
     async def show_category_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -4164,7 +4164,7 @@ class OnlineShopBot:
             # У обох цих методах замініть рядок формування added_info:
             added_info = (
                 f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n"
-                f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
+                f"────────────────────\n\n"
             )
         header = self.get_text('status_message', status_msg=status_msg) if status_msg else ""
         # ПЕРЕДАЄМО added_info, щоб не було KeyError
@@ -4337,7 +4337,7 @@ class OnlineShopBot:
         # Шукайте цей рядок у методах роботи з варіантами (приблизно 4160 та 4349 рядки):
         added_info = (
             f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n"
-            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
+            f"────────────────────"
         )
 
         if variants:
@@ -4354,7 +4354,7 @@ class OnlineShopBot:
             # ВИПРАВЛЕНО: Використовуємо моноширинну стабільну лінію
             added_info = (
                 f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n"
-                f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
+                f"────────────────────"
             )
 
         # Формуємо текст повідомлення

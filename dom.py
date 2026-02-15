@@ -16,7 +16,7 @@ PAYMENT_TOKENS = {
 # ==========================================
 # 🌍 РЕГІОНАЛЬНІ НАЛАШТУВАННЯ
 # ==========================================
-SHIPPING_MODE = 'UKRAINE' # 'UKRAINE' або 'INTERNATIONAL'
+SHIPPING_MODE = 'INTERNATIONAL' # 'UKRAINE' або 'INTERNATIONAL'
 CURRENCY_CODE = 'UAH'           # 'UAH', 'USD', 'EUR'
 CURRENCY_SYMBOL = "₴"           # €, ₴
 
