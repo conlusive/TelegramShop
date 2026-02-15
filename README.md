@@ -1,52 +1,77 @@
-# Telegram Shop Bot
+# TelegramShop Bot
 
-A simple Telegram bot for managing an online shop with SQLite database.
-The bot supports both users and administrators:
+A fully functional e-commerce Telegram bot built with **Python**, **python-telegram-bot** (v22+), and **SQLite3**. This bot allows users to browse products, manage a shopping cart, and process orders through integrated payment systems.
 
-## Features
+## 🚀 Features
 
-### For Users
-- Browse product catalog by categories
-- View product details
-- Add products to cart
-- Place orders with phone number and delivery address
-- Cancel order at any step
+- **Catalog Management**: Dynamic product browsing with category support.
+- **Shopping Cart**: Add/remove items and calculate total prices.
+- **Order Processing**: Automated order creation and storage in SQLite.
+- **Payment Integration**: Built-in support for Telegram Payments (Invoices and Shipping).
+- **Database**: Persistent storage for products, users, and order history.
+- **Localization**: Centralized string management for easy UI customization.
 
-### For Admins
-- Add, edit, and delete products
-- Manage stock and product details (name, description, price, emoji, category)
-- View all user orders
-- Cancel actions at any stage
+## 🛠 Tech Stack
 
-## Tech Stack
-- Python 3
-- Aiogram (Telegram bot framework)
-- SQLite (database)
-- PyCharm (development)
+- **Language**: Python 3.10+
+- **Library**: [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) (Asynchronous)
+- **Database**: SQLite3
+- **Project Architecture**: Modular design (logic, constants, and credentials separation).
 
-## Setup
+## 📁 Project Structure
 
-1. Clone the repository:
+```text
+├── main.py          # Entry point, bot handlers, and core logic
+├── dom.py           # Configuration (Tokens & API keys) - [Excluded from Git]
+├── strings.py       # UI/UX text constants and messages
+├── shop.db          # SQLite database file
+├── requirements.txt # Project dependencies
+└── .gitignore       # Rules to exclude sensitive files
+```
+
+## ⚙️ Installation & Setup
+
+1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/telegram-shop-bot.git
-   cd telegram-shop-bot
+   git clone [https://github.com/your-username/TelegramShop.git](https://github.com/your-username/TelegramShop.git)
+   cd TelegramShop
    ```
 
-2. Create a virtual environment and install dependencies:
+2. **Create and activate a virtual environment**:
    ```bash
-   python -m venv venv
-   source venv/bin/activate   # On Windows use venv\Scripts\activate
+   python -m venv .venv
+   # MacOS/Linux:
+   source .venv/bin/activate
+   # Windows:
+   .venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
+   ```bash
    pip install -r requirements.txt
    ```
 
-3. Add your Telegram bot token to the code:
-   - Open `main.py` and set `API_TOKEN = "YOUR_BOT_TOKEN"`
+4. **Configuration**:
+   Create a `dom.py` file in the root directory and add your credentials:
+   ```python
+   BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+   PAYMENT_TOKENS = {
+       'PROVIDER_NAME': 'YOUR_PAYMENT_PROVIDER_TOKEN'
+   }
+   ```
 
-4. Run the bot:
+5. **Run the bot**:
    ```bash
    python main.py
    ```
 
-## Database
-The bot uses `shop.db` SQLite database.
-On first run, the database and tables will be automatically created.
+## 📝 Usage
+
+- `/start` - Initialize the bot and open the main menu.
+- **Catalog** - Browse available items and categories.
+- **Cart** - View selected items, adjust quantities, and proceed to checkout.
+- **Support** - Direct contact for customer assistance.
+
+## 🔒 Security Note
+
+The file `dom.py` contains sensitive API tokens and is explicitly added to `.gitignore` to prevent accidental exposure. **Never share your BOT_TOKEN or database files containing user data publicly.**
