@@ -352,6 +352,7 @@ STRINGS = {
         'type_Volume': "Об'єм",
         'type_Weight': "Вага",
         'type_ShoeSize': "Розмір взуття",
+        'pay_button_text': "Оплатити",
 
         'err_invalid_number': "❌ <b>Неправильний формат числа!</b>\n\nВи ввели: <code>{val}</code>\nОчікується лише число.\n\n<b>Приклад:</b> <code>{ex_val}</code>",
 
@@ -477,8 +478,8 @@ STRINGS = {
         'cart_empty': "🛒 **Your cart is empty!**\n\nLooks like you haven't added anything yet.\nCheck out our catalog to find something cool! 👇",
         'go_to_catalog_button': "📂 Go to Catalog",
         'my_orders_button_2': "📜 My Orders",
-        'cart_header': "🛒 **Your Cart:**\n\n",
-        'cart_total': "\n💰 **Total: {total_amount}{currency_symbol}**",
+        'cart_header': "🛒 <b>Your Cart:</b>\n\n",
+        'cart_total': "\n💰 <b>Total: {total_amount}{currency_symbol}</b>",
         'checkout_button': "✅ Checkout",
         'clear_cart_button': "🗑 Clear Cart",
         'back_to_catalog_button': "📂 Back to Catalog",
@@ -733,7 +734,7 @@ STRINGS = {
         'err_variant_format': "❌ <b>Variant format error!</b>\n\nYou entered: <code>{val}</code>\nUse the format: <code>Type: Name=Quantity=Price</code>\n\n<b>Example:</b> <code>Size: S=10=500, M=5=550</code>",
 
         'err_invalid_number': "❌ <b>Invalid number format!</b>\n\nYou entered: <code>{val}</code>\nOnly a number is expected.\n\n<b>Example:</b> <code>{ex_val}</code>",
-
+        'pay_button_text': "Pay",
         'admin_img_status_set': "✅ Image set",
         'admin_img_status_none': "❌ No image",
         'admin_variant_type_prompt': "Selected: <b>{variant_type}</b>\n\n⌨️ Enter available options separated by comma.\n\n<b>Formats:</b>\n1. <code>Option=Qty</code> (Default Price)\n2. <code>Option=Qty=Price</code> (Custom Price)\n\n✅ <b>Example for {variant_type}:</b>\n<code>{example_text}</code>",

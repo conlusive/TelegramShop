@@ -10,11 +10,12 @@ from telegram.constants import ParseMode
 from dom import (
     BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE,
     DB_NAME, SHOP_NAME, CURRENCY_SYMBOL, STORE_MESSAGES,
-    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS
+    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, CURRENCY_CODE
 )
 from telegram import LabeledPrice
 from telegram.ext import PreCheckoutQueryHandler
 from strings import STRINGS
+from dom import *
 
 
 # -------------------- LOGGING --------------------
@@ -2146,10 +2147,19 @@ class OnlineShopBot:
 
     async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
         user_id = update.effective_user.id
+
+        # Визначаємо токен та валюту з dom.py
         token = PAYMENT_TOKENS['PORTMONE'] if SHIPPING_MODE == 'UKRAINE' else PAYMENT_TOKENS['REDSYS']
-        currency = "UAH" if SHIPPING_MODE == 'UKRAINE' else "EUR"
+        currency = CURRENCY_CODE
 
         try:
+            # Видаляємо старе повідомлення з кнопками вибору оплати
+            try:
+                if update.callback_query:
+                    await update.callback_query.message.delete()
+            except:
+                pass
+
             invoice_msg = await context.bot.send_invoice(
                 chat_id=update.effective_chat.id,
                 title=self.get_text('invoice_title', shop_name=SHOP_NAME),
@@ -2160,14 +2170,23 @@ class OnlineShopBot:
                 prices=[LabeledPrice(self.get_text('invoice_label'), int(total_amount * 100))],
                 start_parameter="shop-payment",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"💳 Pay {total_amount} {currency}", pay=True)],
+                    # Кнопка оплати з правильним текстом та символом
+                    [InlineKeyboardButton(f"💳 {self.get_text('pay_button_text')} {total_amount}{CURRENCY_SYMBOL}",
+                                          pay=True)],
+                    # Кнопка НАЗАД, яка тепер ПРАЦЮЄ (повертає до вибору Cash/Card/Bank)
                     [InlineKeyboardButton(self.get_text('back_button'), callback_data="back_to_payment")]
                 ])
             )
+
             if user_id in self.user_states:
                 self.user_states[user_id]['invoice_msg_id'] = invoice_msg.message_id
+
         except Exception as e:
             logger.error(f"❌ Error sending invoice: {e}")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⚠️ Вибачте, сталася помилка при генерації рахунку."
+            )
 
     # main.py
     async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
