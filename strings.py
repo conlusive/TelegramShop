@@ -238,7 +238,6 @@ STRINGS = {
         'back_to_list_button_2': "🔙 Повернутися до списку",
         'invalid_request_2': "❌ Неправильний запит",
         'product_not_found_2': "❌ Товар не знайдено",
-        'none': "❌ Немає",
         'edit_button_2': "✏️ Редагувати",
         'delete_button_2': "🗑️ Видалити",
         'to_products_button': "🔙 До товарів",
@@ -262,7 +261,15 @@ STRINGS = {
         'enter_new_emoji': "😀 Введіть новий емодзі:",
         'enter_new_stock': "📦 Введіть новий сток (ціле число):",
         'editing_variants': "🎨 Редагування варіантів",
-        'editing_variants_instructions': "🎨 <b>Редагування варіантів</b>\n\n👇 Поточні налаштування:\n{current_text}\n\n✍️ Щоб ЗМІНИТИ, надішліть список:\n`Тип: Опція=К-сть` або `Тип: Опція=К-сть=Ціна`\n\nПриклад: `Колір: Червоний=10, Синій=5=900`\n🗑️ Надішліть `-`, щоб видалити всі варіанти.",
+        'editing_variants_instructions': (
+            "🎨 <b>Редагування варіантів</b>\n\n"
+            "👇 <b>Поточні налаштування:</b>\n{current_text}\n\n"
+            "✍️ <b>Щоб ЗМІНИТИ, надішліть список:</b>\n"
+            "<code>Тип: Опція=К-сть</code> або <code>Тип: Опція=К-сть=Ціна</code>\n\n"
+            "Приклад: <code>Колір: Червоний=10, Синій=5=900</code>\n"
+            "🗑️ Надішліть <code>-</code>, щоб видалити всі варіанти."
+        ),
+        'none': "❌ Немає",
         'product_image_management': "🖼️ <b>Керування зображенням товару</b>\n\nТовар: <b>{product_name}</b>\nСтатус: {status}",
         'add_photo_button': "➕ Додати фото",
         'change_photo_button': "✏️ Змінити фото",
@@ -336,7 +343,7 @@ STRINGS = {
         'admin_category_updated_success': "✅ Категорію успішно оновлено на: <b>{category}</b>",
         'err_invalid_price': "❌ <b>Неправильний формат ціни!</b>\n\nБудь ласка, введіть число (напр. 1250 або 45.50):",
         'err_invalid_stock': "❌ <b>Неправильний формат залишку!</b>\n\nБудь ласка, введіть ціле число (напр. 100):",
-        'err_variant_format': "❌ <b>Помилка формату варіантів!</b>\n\nВикористовуйте: <code>Тип: Опція=К-сть=Ціна</code>",
+        'err_variant_format': "❌ <b>Помилка формату варіантів!</b>\n\nВи ввели: <code>{val}</code>\nВикористовуйте схему: <code>Тип: Назва=Кількість=Ціна</code>\n\n<b>Приклад:</b> <code>Розмір: S=10=500, M=5=550</code>",
         'admin_wizard_variant_title': "🎨 <b>Керування варіантами</b>\n\n{added_info}Оберіть тип варіанту для додавання або натисніть <b>Готово</b>:",
         'active_variant_label': "📍 <b>Активно:</b> ",
         'type_Size': "Розмір",
@@ -345,6 +352,9 @@ STRINGS = {
         'type_Volume': "Об'єм",
         'type_Weight': "Вага",
         'type_ShoeSize': "Розмір взуття",
+
+        'err_invalid_number': "❌ <b>Неправильний формат числа!</b>\n\nВи ввели: <code>{val}</code>\nОчікується лише число.\n\n<b>Приклад:</b> <code>{ex_val}</code>",
+
 
         # Summary screen
         'summary_title': "🔍 Перевірте ваші дані",
@@ -617,7 +627,6 @@ STRINGS = {
         'back_to_list_button_2': "🔙 Back to List",
         'invalid_request_2': "❌ Invalid request",
         'product_not_found_2': "❌ Product not found",
-        'none': "❌ None",
         'edit_button_2': "✏️ Edit",
         'delete_button_2': "🗑️ Delete",
         'to_products_button': "🔙 To products",
@@ -641,7 +650,15 @@ STRINGS = {
         'enter_new_emoji': "😀 Enter new emoji:",
         'enter_new_stock': "📦 Enter new stock (integer):",
         'editing_variants': "🎨 **Editing Variants**",
-        'editing_variants_instructions': "🎨 **Editing Variants**\n\n👇 **Current settings:**\n{current_text}\n\n✍️ **To CHANGE, send a list:**\n`Type: Option=Qty` or `Type: Option=Qty=Price`\n\nExample: `Color: Red=10, Blue=5=900`\n🗑️ Send `-` to delete all variants.",
+        'editing_variants_instructions': (
+            "🎨 <b>Editing Variants</b>\n\n"
+            "👇 <b>Current settings:</b>\n{current_text}\n\n"
+            "✍️ <b>To CHANGE, send a list:</b>\n"
+            "<code>Type: Option=Qty</code> or <code>Type: Option=Qty=Price</code>\n\n"
+            "Example: <code>Color: Red=10, Blue=5=900</code>\n"
+            "🗑️ Send <code>-</code> to delete all variants."
+        ),
+        'none': "❌ None",
         'product_image_management': "🖼️ **Product Image Management**\n\nProduct: **{product_name}**\nStatus: {status}",
         'add_photo_button': "➕ Add Photo",
         'change_photo_button': "✏️ Change Photo",
@@ -662,9 +679,9 @@ STRINGS = {
         'has_variants_button': "🎨 Has Variants",
         'choose_product_type': "❓ <b>Choose Product Type:</b>",
         'enter_stock': "🔢 <b>Enter Stock:</b>",
-        'invalid_price': "⚠️ <b>Invalid Price!</b>",
+        'invalid_price': "⚠️ <b>Invalid Price!</b>\n\nEnter the product price (numbers only).\n\nExample: 1250 or 45.50",
         'enter_category': "📂 <b>Enter Category:</b>",
-        'invalid_quantity': "⚠️ <b>Invalid quantity!</b>",
+        'invalid_quantity': "⚠️ <b>Invalid quantity!</b>\n\nEnter the quantity available.\n\nExample: 100",
         'enter_emoji': "✨ <b>Enter Emoji:</b>",
         'send_photo': "📸 <b>Send Photo:</b>",
         'product_created': "✅ Product <b>{name}</b> created!",
@@ -714,7 +731,9 @@ STRINGS = {
         'admin_category_updated_success': "✅ Category successfully updated to: <b>{category}</b>",
         'err_invalid_price': "❌ <b>Invalid price format!</b>\n\nPlease enter a number (e.g., 1250 or 45.50):",
         'err_invalid_stock': "❌ <b>Invalid stock format!</b>\n\nPlease enter an integer (e.g., 100):",
-        'err_variant_format': "❌ <b>Variant format error!</b>\n\nUse: <code>Type: Option=Qty=Price</code>",
+        'err_variant_format': "❌ <b>Variant format error!</b>\n\nYou entered: <code>{val}</code>\nUse the format: <code>Type: Name=Quantity=Price</code>\n\n<b>Example:</b> <code>Size: S=10=500, M=5=550</code>",
+
+        'err_invalid_number': "❌ <b>Invalid number format!</b>\n\nYou entered: <code>{val}</code>\nOnly a number is expected.\n\n<b>Example:</b> <code>{ex_val}</code>",
 
         'admin_img_status_set': "✅ Image set",
         'admin_img_status_none': "❌ No image",

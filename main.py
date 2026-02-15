@@ -3520,6 +3520,7 @@ class OnlineShopBot:
         user_id = update.effective_user.id
         data = query.data
 
+        # Витягуємо поле та ID товару з callback_data
         match = re.search(r"admin_edit_field_(.+)_(\d+)$", data)
         if not match:
             return await query.answer(self.get_text('invalid_request_2'))
@@ -3527,30 +3528,16 @@ class OnlineShopBot:
         field = match.group(1)
         product_id = int(match.group(2))
 
-        # Отримуємо дані товару з бази
+        # Дістаємо товар з бази для відображення поточного значення
         self.conn.row_factory = sqlite3.Row
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
         product = cursor.fetchone()
+
         if not product:
             return await query.answer(self.get_text('product_not_found_2'))
 
-        current_val = product[field] if product[field] is not None else self.get_text('not_set')
-
-        # Словник з назвами полів та прикладами
-        field_map = {
-            "name": (self.get_text('summary_name_label'), "<i>iPhone 15 Pro</i>"),
-            "description": (self.get_text('desc'), "<i>Потужний смартфон...</i>"),
-            "price": (self.get_text('price'), "<code>1250</code>"),
-            "category": (self.get_text('category'), "<i>Smartphones</i>"),
-            "emoji": (self.get_text('emoji'), "📱"),
-            "stock": (self.get_text('stock'), "<code>100</code>"),
-            "variants": (self.get_text('variants'), "")
-        }
-
-        display_name, example = field_map.get(field, (field, ""))
-
-        # Окремий шаблон для варіантів (як на вашому скріншоті)
+        # Якщо ми редагуємо ВАРІАНТИ
         if field == "variants":
             current_text = self.get_text('none')
             if product['variants']:
@@ -3561,32 +3548,45 @@ class OnlineShopBot:
                         opt_parts = [f"{opt}={info['qty'] if isinstance(info, dict) else info}" for opt, info in
                                      options.items()]
                         lines.append(f"{v_type}: {', '.join(opt_parts)}")
-                    current_text = "\n".join(lines)
+                    current_text = "<code>" + "\n".join(lines) + "</code>"
                 except:
-                    current_text = str(product['variants'])
+                    current_text = f"<code>{product['variants']}</code>"
 
+            # Викликаємо нашу нову локалізовану інструкцію
             msg_text = self.get_text('editing_variants_instructions', current_text=current_text)
+
+        # Якщо ми редагуємо будь-яке інше поле (Ціна, Опис тощо)
         else:
-            # Стандартний шаблон для інших полів
+            current_val = product[field] if product[field] is not None else self.get_text('not_set')
+
+            field_names = {
+                "name": self.get_text('summary_name_label'),
+                "description": self.get_text('desc'),
+                "price": self.get_text('price'),
+                "stock": self.get_text('stock'),
+                "emoji": self.get_text('emoji'),
+                "category": self.get_text('category')
+            }
+            display_name = field_names.get(field, field.capitalize())
+
             msg_text = (
                 f"<b>{self.get_text('edit_field_title', field=display_name)}</b>\n\n"
-                f"<b>{self.get_text('current_value_label')}</b> <code>{self.escape_html(current_val)}</code>\n\n"
-                f"<b>{self.get_text('example_label')}</b> {example}\n\n"
+                f"<b>{self.get_text('current_value_label')}</b> <code>{current_val}</code>\n\n"
                 f"{self.get_text('enter_new_value_prompt')}"
             )
 
+        # Зберігаємо стан для "пилососа" та обробки вводу
         self.user_states[user_id] = {'step': 'edit_product_field', 'product_id': product_id, 'field': field}
 
         keyboard = [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data=f"admin_prod_{product_id}")]]
-        if field == "category":
-            keyboard = self.get_existing_categories_keyboard(product_id=product_id).inline_keyboard
 
         await query.message.delete()
         sent_msg = await context.bot.send_message(
-            chat_id=query.message.chat_id, text=msg_text,
+            chat_id=query.message.chat_id,
+            text=msg_text,
             reply_markup=InlineKeyboardMarkup(
                 keyboard) if field != "category" else self.get_existing_categories_keyboard(product_id=product_id),
-            parse_mode=ParseMode.HTML
+            parse_mode="HTML"
         )
         self.user_states[user_id]['msg_id'] = sent_msg.message_id
 
@@ -3907,21 +3907,19 @@ class OnlineShopBot:
         field = state.get('field')
         chat_id = update.effective_chat.id
 
-        # --- 🧹 ПИЛОСОС ---
-        # Видаляємо повідомлення, яке щойно написав адмін
+        # --- 🧹 ПИЛОСОС (видаляємо сміття) ---
         try:
             await update.message.delete()
         except:
             pass
 
-        # Видаляємо попереднє повідомлення бота (інструкцію або стару помилку)
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
-        # Функція для відправки повідомлення про помилку та збереження його ID для наступного кола "пилососа"
+        # Допоміжна функція для відправки помилки
         async def send_error(text, kb):
             new_msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = new_msg.message_id
@@ -3930,24 +3928,18 @@ class OnlineShopBot:
             InlineKeyboardButton(self.get_text('cancel_button'), callback_data=f"admin_prod_{product_id}")
         ]])
 
-        # 1. Валідація числових полів
+        # 1. ВАЛІДАЦІЯ ЧИСЕЛ (Ціна/Сток)
         if field in ['price', 'stock']:
             try:
-                clean_text = str(input_value).replace('$', '').replace('грн', '').replace(' ', '').replace(',',
-                                                                                                           '.').strip()
+                clean_text = str(input_value).replace('$', '').replace(' ', '').replace(',', '.').strip()
                 value = float(clean_text) if field == 'price' else int(clean_text)
             except ValueError:
-                example = "1250" if field == 'price' else "10"
-                error_msg = (
-                    f"❌ <b>Неправильний формат числа!</b>\n\n"
-                    f"Ви ввели: <code>{input_value}</code>\n"
-                    f"Очікується лише число.\n\n"
-                    f"<b>Приклад:</b> <code>{example}</code>"
-                )
+                example_val = "1250" if field == 'price' else "10"
+                error_msg = self.get_text('err_invalid_number', val=input_value, ex_val=example_val)
                 await send_error(error_msg, cancel_kb)
                 return
 
-        # 2. Обробка Варіантів
+        # 2. ВАЛІДАЦІЯ ВАРІАНТІВ
         elif field == 'variants':
             try:
                 if ":" in str(input_value):
@@ -3965,28 +3957,25 @@ class OnlineShopBot:
                 else:
                     raise ValueError()
             except Exception:
-                error_msg = (
-                    f"❌ <b>Помилка формату варіантів!</b>\n\n"
-                    f"Використовуйте: <code>Тип: Назва=К-сть=Ціна</code>\n\n"
-                    f"<b>Приклад:</b> <code>Розмір: S=10=500, M=5=550</code>"
-                )
+                error_msg = self.get_text('err_variant_format', val=input_value)
                 await send_error(error_msg, cancel_kb)
                 return
         else:
             value = input_value
 
-        # 3. Оновлення бази даних
+        # 3. ОНОВЛЕННЯ БД
         cursor = self.conn.cursor()
         try:
             cursor.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (value, product_id))
             self.conn.commit()
         except Exception as e:
-            await send_error(f"❌ Помилка БД: {e}", cancel_kb)
+            await send_error(f"❌ DB Error: {e}", cancel_kb)
             return
 
-        # 4. Успіх — видаляємо стан (щоб наступні повідомлення не вважалися вводом даних)
+        # 4. УСПІХ
         self.user_states.pop(user_id, None)
 
+        # Локалізуємо назву поля для фінального повідомлення
         field_names = {
             "name": self.get_text('summary_name_label'),
             "description": self.get_text('desc'),
