@@ -16,7 +16,7 @@ PAYMENT_TOKENS = {
 # ==========================================
 # 🌍 РЕГІОНАЛЬНІ НАЛАШТУВАННЯ
 # ==========================================
-SHIPPING_MODE = 'UKRAINE' # 'UKRAINE' або 'INTERNATIONAL'
+SHIPPING_MODE = 'INTERNATIONAL' # 'UKRAINE' або 'INTERNATIONAL'
 CURRENCY_CODE = 'USD'           # 'UAH', 'USD', 'EUR'
 CURRENCY_SYMBOL = "₴"           # €, ₴
 
@@ -29,10 +29,6 @@ CURRENCY_SYMBOL = "₴"           # €, ₴
 SHOP_NAME = "My Awesome Shop"
 SUPPORT_USER = "@your_support_account"  # Тільки юзернейм
 CHANNEL_LINK = "https://t.me/your_channel"
-
-BANK_RECIPIENT = "FOP John Doe"
-BANK_IBAN = "UA123456789012345678901234567"
-BANK_PURPOSE = "Payment for order"
 
 # ==========================================
 # ✍️ ПЕРСОНАЛІЗАЦІЯ ТЕКСТУ (BRAND VOICE)

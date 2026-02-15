@@ -10,7 +10,7 @@ from telegram.constants import ParseMode
 from dom import (
     BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE,
     DB_NAME, SHOP_NAME, CURRENCY_SYMBOL, STORE_MESSAGES,
-    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, BANK_RECIPIENT, BANK_IBAN, BANK_PURPOSE
+    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS
 )
 from telegram import LabeledPrice
 from telegram.ext import PreCheckoutQueryHandler
@@ -2299,7 +2299,7 @@ class OnlineShopBot:
 
         for p_id, name, base_price, emoji, variants_json in products:
             emo = emoji if emoji else "📦"
-            display_price = f"{base_price}$"
+            display_price = f"{base_price}{CURRENCY_SYMBOL}"
 
             if variants_json:
                 try:
@@ -2326,7 +2326,7 @@ class OnlineShopBot:
                             if min_p != max_p:
                                 display_price = self.get_text('price_from', price=min_p)
                             else:
-                                display_price = f"{min_p}$"
+                                display_price = f"{min_p}{CURRENCY_SYMBOL}"
 
                 except Exception as e:
                     print(f"Price calc error in category view: {e}")
@@ -2550,7 +2550,7 @@ class OnlineShopBot:
                 opts = p.get('selected_options', {})
                 opts_str = f" ({', '.join([str(v) for v in opts.values()])})" if opts else ""
 
-                products_text += f"{emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = <b>{price_total}$</b>\n"
+                products_text += f"{emoji} {self.escape_html(name)}{self.escape_html(opts_str)} x{qty} = <b>{price_total}{CURRENCY_SYMBOL}</b>\n"
         except:
 
             raw = order["products"]
@@ -3133,7 +3133,7 @@ class OnlineShopBot:
         keyboard = []
         for pid, name, price, stock, emoji in products[:20]:
             stock_status = "✅" if stock > 0 else "❌"
-            text_line = f"{stock_status} {emoji or ''} **{name}** | {price}$ | Stock: {stock}\n"
+            text_line = f"{stock_status} {emoji or ''} **{name}** | {price}{CURRENCY_SYMBOL} | {self.get_text('stock')}: {stock}\n"
             if len(text) + len(text_line) > 4000: break
             text += text_line
             keyboard.append([
@@ -3400,27 +3400,19 @@ class OnlineShopBot:
 
         emoji = product['emoji'] or ''
 
-        variants_text = self.get_text('none')
-        if 'variants' in product.keys() and product['variants']:
-            try:
-                v_data = json.loads(product['variants'])
-                v_list = [f"{k}: {', '.join(v)}" for k, v in v_data.items()]
-                variants_text = "\n" + "\n".join(v_list)
-            except:
-                pass
-
+        # Використовуємо локалізовані мітки
         text = (
             f"{emoji} **{product['name']}**\n\n"
             f"📝 {product['description']}\n"
-            f"💰 Price: {product['price']}$\n"
-            f"Category: {product['category']}\n"
-            f"Stock: {product['stock']}\n"
-            f"🎨 Variants: {variants_text}"
+            f"💰 {self.get_text('price')}: {product['price']}{CURRENCY_SYMBOL}\n"
+            f"📂 {self.get_text('category')}: {product['category']}\n"
+            f"📦 {self.get_text('stock')}: {product['stock']}\n"
         )
 
         keyboard = [
             [InlineKeyboardButton(self.get_text('edit_button_2'), callback_data=f"admin_edit_product_{product_id}"),
-             InlineKeyboardButton(self.get_text('delete_button_2'), callback_data=f"admin_delete_product_{product_id}")],
+             InlineKeyboardButton(self.get_text('delete_button_2'),
+                                  callback_data=f"admin_delete_product_{product_id}")],
             [InlineKeyboardButton(self.get_text('to_products_button'), callback_data="admin_products")]
         ]
 
@@ -4027,7 +4019,7 @@ class OnlineShopBot:
                 self.user_states.pop(user_id, None)
 
                 kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_prod_{product_id}")]]
-                await context.bot.send_message(chat_id=chat_id, text="✅ Image updated successfully!",
+                await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_img_status_set'),
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
             else:
                 text = "⚠️ **Error: Photo required!**\n\nPlease attach a file or send a link."
@@ -4345,7 +4337,7 @@ class OnlineShopBot:
 
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"✅ Category updated to **{category}**!",
+                text=self.get_text('admin_category_updated', category=category),
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_prod_{product_id}")]])
             )
@@ -4414,19 +4406,6 @@ class OnlineShopBot:
 
         await query.answer()
 
-    async def show_bank_payment_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        text = (
-            "🏦 <b>Bank Transfer (IBAN)</b>\n\n"
-            "Please use the following details for the transfer:\n\n"
-            "<b>Recipient:</b> John Doe Shop\n"
-            "<b>IBAN:</b> <code>UA12345678901234567890123456</code>\n"
-            "<b>Purpose:</b> Order Payment\n\n"
-            "────────────────────\n\n"
-            "Please send a confirmation screenshot to our support after the transfer."
-        )
-        # Тут використовується ваша клавіатура з кнопкою back_to_payment
-        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     async def process_variant_values_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
