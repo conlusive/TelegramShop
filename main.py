@@ -4161,8 +4161,11 @@ class OnlineShopBot:
             if v_type_localized == f"_type_{v_type_raw}_": v_type_localized = v_type_raw
 
             options_list = ', '.join(variants[v_type_raw].keys())
-            added_info = f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n────────────────────\n\n"
-
+            # У обох цих методах замініть рядок формування added_info:
+            added_info = (
+                f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n"
+                f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
+            )
         header = self.get_text('status_message', status_msg=status_msg) if status_msg else ""
         # ПЕРЕДАЄМО added_info, щоб не було KeyError
         text = f"{header}{self.get_text('admin_wizard_variant_title', added_info=added_info)}"
@@ -4178,18 +4181,6 @@ class OnlineShopBot:
         m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=self.get_variant_type_keyboard(),
                                            parse_mode="HTML")
         state['msg_id'] = m.message_id
-
-    async def admin_back_to_variant_types(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        user_id = update.effective_user.id
-        if user_id not in self.user_states:
-            return await query.answer(self.get_text('session_expired'))
-
-        self.user_states[user_id]['step'] = 'add_product_variants_loop'
-        # Викликаємо оновлену функцію з підтримкою редагування
-        await self.show_variant_type_selection(context, query.message.chat_id, user_id, edit_query=query)
-
-
 
     async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f'Update {update} caused error {context.error}')
@@ -4341,22 +4332,41 @@ class OnlineShopBot:
         state = self.user_states[user_id]
         state['step'] = 'add_product_variants_loop'
 
-        # Вирішуємо проблему KeyError: 'added_info'
+        # Отримуємо дані про вже додані варіанти
         variants = state.get('product_data', {}).get('variants', {})
-        added_info = ""
+        # Шукайте цей рядок у методах роботи з варіантами (приблизно 4160 та 4349 рядки):
+        added_info = (
+            f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n"
+            f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
+        )
+
         if variants:
+            # Беремо перший ключ (тип варіанту, наприклад 'color')
             v_type_raw = list(variants.keys())[0]
+            # Пробуємо локалізувати назву типу
             v_type_localized = self.get_text(f'type_{v_type_raw}')
-            if v_type_localized == f"_type_{v_type_raw}_": v_type_localized = v_type_raw
+            if v_type_localized == f"_type_{v_type_raw}_":
+                v_type_localized = v_type_raw
 
+            # Формуємо список значень (наприклад: Red, Blue)
             options_list = ', '.join(variants[v_type_raw].keys())
-            added_info = f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n────────────────────\n\n"
 
-        # Тепер передаємо added_info
+            # ВИПРАВЛЕНО: Використовуємо моноширинну стабільну лінію
+            added_info = (
+                f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n"
+                f"<code>━━━━━━━━━━━━━━━━━━━━━━━━</code>\n\n"
+            )
+
+        # Формуємо текст повідомлення
         text = self.get_text('admin_wizard_variant_title', added_info=added_info)
         reply_markup = self.get_variant_type_keyboard()
 
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+        # Оновлюємо інтерфейс
+        try:
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+        except:
+            # Якщо повідомлення не змінилося, просто ігноруємо помилку
+            await query.answer()
 
     def get_existing_categories_keyboard(self, product_id=None):
         cursor = self.conn.cursor()
