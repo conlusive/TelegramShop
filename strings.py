@@ -391,7 +391,6 @@ STRINGS = {
         'shipping_label_ukraine': "📍 Shipping (City/Branch):",
         'shipping_label_international': "📍 Shipping:",
         'receipt': (
-            "✅ {bold_start}Order #{order_id} has been successfully placed!{bold_end}\n\n"
             "👤 {bold_start}Customer:{bold_end} {user_name}\n\n"
             "📧 {bold_start}Email:{bold_end} {email}\n\n"
             "📞 {bold_start}Phone:{bold_end} {phone}\n\n"
@@ -420,7 +419,7 @@ STRINGS = {
         'order_canceled': "✅ Order canceled",
         'my_cart_count': "🛒 My cart ({cart_count})",
         'my_cart': "🛒 My cart",
-        'admin_panel_button': "👑 <b>Admin Panel</b>",
+        'admin_panel_button': "👑 Admin Panel",
         'product_catalog_button': "🛍️ Product catalog",
         'my_profile_button': "👤 My profile",
         'my_orders_button': "📋 My orders",
@@ -610,7 +609,7 @@ STRINGS = {
         'order_not_found_2': "Order not found",
         'order_already_status': "Order is already {current_status}",
         'order_accepted': "✅ Order #{order_id} ACCEPTED!",
-        'your_order_accepted': "✅ Your Order #{order_id} has been accepted!",
+        'your_order_accepted': "✅ {bold_start}Order #{order_id} has been successfully placed!{bold_end}\n\n",
         'order_rejected': "❌ Order #{order_id} REJECTED. Stock restored.",
         'your_order_canceled': "❌ Your Order #{order_id} was canceled.",
         'error_restoring_stock': "Error restoring stock",

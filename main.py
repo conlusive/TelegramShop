@@ -4006,12 +4006,18 @@ class OnlineShopBot:
         msg = update.message
         chat_id = msg.chat_id
 
-        try: await msg.delete()
-        except: pass
+        # --- 🧹 ПИЛОСОС (Видаляємо повідомлення адміна та попередню інструкцію бота) ---
+        try:
+            await msg.delete()
+        except:
+            pass
         if 'msg_id' in state:
-            try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except: pass
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except:
+                pass
 
+        # Отримання значення: фото або текст
         if update.message.photo:
             input_value = update.message.photo[-1].file_id
             is_photo = True
@@ -4021,10 +4027,12 @@ class OnlineShopBot:
 
         cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
 
+        # --- 1. ОБРОБКА РЕДАГУВАННЯ ПОЛЯ (для існуючих товарів) ---
         if step == 'edit_product_field':
             await self.handle_edit_field_input(update, context, state, input_value, msg)
             return
 
+        # --- 2. ОБРОБКА ОНОВЛЕННЯ ФОТО (меню зображень) ---
         if step == 'waiting_product_image':
             img = input_value if (is_photo or input_value.startswith('http')) else None
             if img or input_value == '-':
@@ -4039,6 +4047,7 @@ class OnlineShopBot:
                 state['msg_id'] = m.message_id
             return
 
+        # --- 3. КРОКИ ДОДАВАННЯ НОВОГО ТОВАРУ ---
         if step == 'add_product_name':
             state['product_data'] = {'name': input_value}
             state['step'] = 'add_product_description'
@@ -4056,22 +4065,31 @@ class OnlineShopBot:
 
         elif step == 'waiting_simple_price':
             try:
-                state['product_data']['price'] = float(input_value.replace(",", "."))
+                clean_text = input_value.replace('$', '').replace(' ', '').replace(',', '.').strip()
+                state['product_data']['price'] = float(clean_text)
                 state['step'] = 'waiting_simple_stock'
                 m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_wizard_simple_stock'), reply_markup=cancel_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
             except:
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('invalid_price'), reply_markup=cancel_kb, parse_mode="HTML")
+                error_msg = self.get_text('err_invalid_number', val=input_value, ex_val="1250")
+                m = await context.bot.send_message(chat_id=chat_id, text=error_msg, reply_markup=cancel_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_stock':
             try:
                 state['product_data']['stock'] = int(input_value)
                 state['step'] = 'waiting_simple_category'
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_category'), reply_markup=cancel_kb, parse_mode="HTML")
+                # Використовуємо клавіатуру з існуючими категоріями
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=self.get_text('enter_category'),
+                    reply_markup=self.get_existing_categories_keyboard(),
+                    parse_mode="HTML"
+                )
                 state['msg_id'] = m.message_id
             except:
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('invalid_quantity'), reply_markup=cancel_kb, parse_mode="HTML")
+                error_msg = self.get_text('err_invalid_number', val=input_value, ex_val="10")
+                m = await context.bot.send_message(chat_id=chat_id, text=error_msg, reply_markup=cancel_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_category':
@@ -4104,7 +4122,12 @@ class OnlineShopBot:
             else:
                 state['product_data']['image_url'] = img if input_value != '-' else None
                 state['step'] = 'waiting_var_category'
-                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_category'), reply_markup=cancel_kb, parse_mode="HTML")
+                m = await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=self.get_text('enter_category'),
+                    reply_markup=self.get_existing_categories_keyboard(),
+                    parse_mode="HTML"
+                )
                 state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_category':
@@ -4351,88 +4374,82 @@ class OnlineShopBot:
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # Перевірка прав адміністратора та наявності сесії
         if user_id != ADMIN_ID or user_id not in self.user_states:
             await query.answer("❌ Session expired")
             return
 
         category = query.data.replace("admin_set_cat_", "")
         state = self.user_states[user_id]
+        chat_id = query.message.chat_id
 
-        await query.answer(f"Обрано: {category}")
+        await query.answer(f"Selected: {category}")
 
         # --- КЕЙС 1: РЕДАГУВАННЯ КАТЕГОРІЇ ІСНУЮЧОГО ТОВАРУ ---
+        # Виправлено: перевіряємо ключ 'field', як він зберігається в admin_edit_field
         if state.get('field') == 'category':
             product_id = state.get('product_id')
-
-            # Оновлення в базі даних
             cursor = self.conn.cursor()
             cursor.execute("UPDATE products SET category = ? WHERE id = ?", (category, product_id))
             self.conn.commit()
 
-            # Очищуємо стан користувача
             self.user_states.pop(user_id, None)
 
-            # Видаляємо меню вибору категорій
             try:
                 await query.message.delete()
             except:
                 pass
 
-            # Надсилаємо підтвердження з кнопкою повернення до товару
+            # Локалізоване повідомлення про успіх
+            text = self.get_text('admin_category_updated_success', category=category)
+            if text == f"_admin_category_updated_success_":  # якщо ключа немає в strings.py
+                text = f"✅ Category updated to: <b>{category}</b>"
+
             await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=self.get_text('admin_category_updated_success', category=category),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_prod_{product_id}")]
-                ])
+                chat_id=chat_id,
+                text=text,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_prod_{product_id}")]]),
+                parse_mode="HTML"
             )
             return
 
-        # --- КЕЙС 2 ТА 3: СТВОРЕННЯ НОВОГО ТОВАРУ (SIMPLE АБО VARIANT) ---
+        # --- КЕЙС 2 ТА 3: СТВОРЕННЯ НОВОГО ТОВАРУ ---
         step = state.get('step')
 
-        # Видаляємо меню вибору категорій перед наступним кроком створення
+        # Видаляємо повідомлення з клавіатурою категорій
         try:
             await query.message.delete()
         except:
             pass
 
-        if step == 'waiting_simple_category':
-            # Продовжуємо створення звичайного товару
-            p = state['product_data']
-            cursor = self.conn.cursor()
-            cursor.execute(
-                "INSERT INTO products (name, description, price, stock, category, image_url, emoji) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (p['name'], p['description'], p['price'], p['stock'], category, p['image_url'], p['emoji'])
-            )
-            self.conn.commit()
+        cancel_kb = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
 
-            self.user_states.pop(user_id, None)
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=self.get_text('product_added_success'),
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_manage_products")]])
+        if step == 'waiting_simple_category':
+            # Зберігаємо категорію і переходимо до ЕМОДЗІ (а не до INSERT)
+            state['product_data']['category'] = category
+            state['step'] = 'waiting_simple_emoji'
+
+            m = await context.bot.send_message(
+                chat_id=chat_id,
+                text=self.get_text('enter_emoji'),
+                reply_markup=cancel_kb,
+                parse_mode="HTML"
             )
+            state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_category':
-            # Продовжуємо створення товару з варіантами
-            p = state['product_data']
-            cursor = self.conn.cursor()
-            cursor.execute(
-                "INSERT INTO products (name, description, price, stock, category, image_url, emoji, has_variants) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (p['name'], p['description'], 0, 0, category, p['image_url'], p['emoji'], 1)
-            )
-            product_id = cursor.lastrowid
-            self.conn.commit()
+            # Для товарів з варіантами — теж до ЕМОДЗІ
+            state['product_data']['category'] = category
+            state['step'] = 'waiting_var_emoji'
 
-            # Переходимо до додавання варіантів
-            self.user_states[user_id] = {'step': 'waiting_variant_name', 'product_id': product_id, 'variants': []}
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=self.get_text('enter_variant_name_prompt')
+            m = await context.bot.send_message(
+                chat_id=chat_id,
+                text=self.get_text('enter_emoji'),
+                reply_markup=cancel_kb,
+                parse_mode="HTML"
             )
+            state['msg_id'] = m.message_id
 
     async def handle_checkout_confirm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
