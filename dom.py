@@ -18,7 +18,7 @@ PAYMENT_TOKENS = {
 # ==========================================
 SHIPPING_MODE = 'UKRAINE' # 'UKRAINE' або 'INTERNATIONAL'
 CURRENCY_CODE = 'USD'           # 'UAH', 'USD', 'EUR'
-CURRENCY_SYMBOL = "€"           # €, ₴
+CURRENCY_SYMBOL = "₴"           # €, ₴
 
 # ==========================================
 # 🏪 БРЕНДИНГ ТА КОНТАКТИ (White Label)
@@ -65,7 +65,7 @@ STORE_MESSAGES = {
 
         # Повідомлення після успішного замовлення
         'order_success': """
-✅ <b>Дякуємо! Замовлення #{order_id} прийнято!</b>
+✅ <b>Дякуємо! Замовлення #{order_id} успішно оформлено!</b>
 
 Ми вже почали його готувати. Очікуйте повідомлення! 📦
 """,

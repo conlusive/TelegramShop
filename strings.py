@@ -2,19 +2,16 @@ STRINGS = {
     'UKRAINE': {
         'column_added': "✅ Колонку '{column_name}' додано до таблиці '{table_name}'!",
         'error_adding_column': "⚠️ Помилка додавання колонки {column_name} до {table_name}: {e}",
-        'shipping_label_ukraine': "📍 Доставка (Місто/Відділення):",
-        'shipping_label_international': "📍 Доставка (Місто/Індекс):",
+        'shipping_label_ukraine': "Доставка:",
         'receipt': (
-            "✅ {bold_start}Замовлення #{order_id} успішно оформлено!{bold_end}\n\n"
-            "👤 {bold_start}Клієнт:{bold_end} {user_name}\n\n"
-            "📧 {bold_start}Email:{bold_end} {email}\n\n"
-            "📞 {bold_start}Телефон:{bold_end} {phone}\n\n"
-            "{bold_start}{shipping_label}{bold_end}\n{address}\n\n"
-            "💳 {bold_start}Спосіб оплати:{bold_end} {payment}\n\n"
-            "📦 {bold_start}Товари:{bold_end}\n{products_text}\n"
-            "💰 {bold_start}Загальна сума: {total}{currency_symbol}{bold_end}\n\n"
-            "📋 {bold_start}Статус:{bold_end} В обробці\n\n"
-            "🕐 {bold_start}Дата:{bold_end} {date}\n\n"
+            "👤 <b>Клієнт:</b> {user_name}\n\n"
+            "📧 <b>Email:</b> {email}\n\n"
+            "📞 <b>Телефон:</b> {phone}\n\n"
+            "📍 <b>{shipping_label}</b> {address}\n\n"
+            "💳 <b>Оплата:</b> {payment}\n\n"
+            "📦 <b>Товари:</b>\n{products_text}\n"
+            "💰 <b>Всього: {total}{symbol}</b>\n\n"
+            "🕐 <b>Дата:</b> {date}\n\n"
             "Дякуємо за покупку! 🛍️"
         ),
         'product': "Товар",
@@ -327,7 +324,7 @@ STRINGS = {
         'column_added': "✅ Column '{column_name}' added to table '{table_name}'!",
         'error_adding_column': "⚠️ Error adding column {column_name} to {table_name}: {e}",
         'shipping_label_ukraine': "📍 Shipping (City/Branch):",
-        'shipping_label_international': "📍 Shipping (City/ZIP):",
+        'shipping_label_international': "📍 Shipping:",
         'receipt': (
             "✅ {bold_start}Order #{order_id} has been successfully placed!{bold_end}\n\n"
             "👤 {bold_start}Customer:{bold_end} {user_name}\n\n"

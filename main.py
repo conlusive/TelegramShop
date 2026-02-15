@@ -109,27 +109,28 @@ class OnlineShopBot:
         if not text: return ""
         return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    def generate_receipt(self, order_id, user_name, email, phone, address, payment, products_list, total, date, receipt_format='html'):
-        # Автоматичне визначення заголовка адреси на основі SHIPPING_MODE
-        if SHIPPING_MODE == 'UKRAINE':
-            shipping_label = self.get_text('shipping_label_ukraine')
-        else:
-            shipping_label = self.get_text('shipping_label_international')
+    # main.py
+    def generate_receipt(self, order_id, user_name, email, phone, address, payment, products_list, total, date,
+                         receipt_format='html'):
+        from dom import SHIPPING_MODE, CURRENCY_SYMBOL
+
+        # Визначаємо коротку мітку (без зайвих знаків, бо emoji додамо в шаблоні)
+        shipping_label = self.get_text('shipping_label_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text(
+            'shipping_label_international')
 
         if receipt_format == 'html':
             bold_start, bold_end = "<b>", "</b>"
             escaper = self.escape_html
-            product_line_format = "▫️ {emoji} {name}{opts}\n   {quantity} x {price}{currency_symbol} = <b>{total}{currency_symbol}</b>\n"
+            product_line_format = "▫️ {emoji} {name}{opts}\n   {quantity} x {price}{symbol} = <b>{total}{symbol}</b>\n"
         else:
             bold_start, bold_end = "**", "**"
             escaper = self.escape_md
-            product_line_format = "{emoji} {name}{opts}\n   {quantity} x {price}{currency_symbol} = {total}{currency_symbol}\n"
+            product_line_format = "{emoji} {name}{opts}\n   {quantity} x {price}{symbol} = {total}{symbol}\n"
 
         products_text = ""
         for item in products_list:
             opts_str = ""
             if item.get('selected_options'):
-                # Відображаємо тільки значення обраних варіантів
                 opts_vals = [f"{v}" for k, v in item['selected_options'].items()]
                 opts_str = f" ({', '.join(opts_vals)})"
 
@@ -140,7 +141,7 @@ class OnlineShopBot:
                 quantity=item.get('quantity', 1),
                 price=item.get('price', 0),
                 total=item.get('total', 0),
-                currency_symbol=CURRENCY_SYMBOL
+                symbol=CURRENCY_SYMBOL
             )
 
         return self.get_text(
@@ -156,7 +157,8 @@ class OnlineShopBot:
             payment=payment,
             products_text=products_text,
             total=total,
-            date=date
+            date=date,
+            symbol=CURRENCY_SYMBOL
         )
 
 
@@ -1977,51 +1979,66 @@ class OnlineShopBot:
         except Exception as e:
             logger.error(self.get_text('failed_to_notify_admin', admin=ADMIN_ID, e=e))
 
-    async def create_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, send_message=False, payment_method_override=None):
+    # main.py
+    async def create_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, send_message=False,
+                           payment_method_override=None):
         user_id = update.effective_user.id
         state = self.user_states.get(user_id, {})
         user_name = update.effective_user.full_name
 
-        full_name = state.get('full_name')
-        email = state.get('email')
-        address = state.get('address')
-        phone = state.get('phone')
-        payment_method = payment_method_override or state.get('payment')
-
         cursor = self.conn.cursor()
-        cursor.execute('SELECT c.id, p.name, p.price, c.quantity, p.emoji, c.selected_options, p.variants, p.id FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?', (user_id,))
+
+        # 1. Отримуємо товари з кошика
+        cursor.execute(
+            'SELECT c.id, p.name, p.price, c.quantity, p.emoji, c.selected_options, p.variants, p.id, p.stock FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
+            (user_id,))
         cart_items = cursor.fetchall()
 
         if not cart_items:
-            logger.warning("create_order called with empty cart for user %s", user_id)
             return None
 
         products_list = []
         total_amount = 0
+
         for row in cart_items:
-            cart_id, name, base_price, quantity, emoji, opts_json, variants_json, product_id = row
+            cart_id, name, base_price, quantity, emoji, opts_json, variants_json, product_id, current_stock = row
             real_price = self.calculate_item_price(base_price, variants_json, opts_json)
             item_total = real_price * quantity
             total_amount += item_total
+
             products_list.append({
-                "product_id": product_id,
-                "name": name,
-                "price": real_price,
-                "quantity": quantity,
-                "total": item_total,
-                "emoji": emoji,
+                "product_id": product_id, "name": name, "price": real_price,
+                "quantity": quantity, "total": item_total, "emoji": emoji,
                 "selected_options": json.loads(opts_json) if opts_json else {}
             })
 
+            # 2. СПИСУЄМО ЗІ СКЛАДУ
+            new_stock = max(0, current_stock - quantity)
+            cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, product_id))
+
+        # 3. ЗБЕРІГАЄМО ЗАМОВЛЕННЯ
+        full_name = state.get('full_name', user_name)
+        email = state.get('email', '—')
+        address = state.get('address', '—')
+        phone = state.get('phone', '—')
+        payment_method = payment_method_override or state.get('payment', 'Unknown')
+
         cursor.execute(
             "INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address, payment_method, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (user_id, user_name, full_name, json.dumps(products_list, ensure_ascii=False), total_amount, phone, address, payment_method, email)
+            (user_id, user_name, full_name, json.dumps(products_list, ensure_ascii=False), total_amount, phone, address,
+             payment_method, email)
         )
         order_id = cursor.lastrowid
+
+        # 4. ОЧИЩАЄМО КОШИК
+        cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
+
+        # 5. ПРИМУСОВО ЗБЕРІГАЄМО ВСІ ЗМІНИ
         self.conn.commit()
 
         if send_message:
-            await self.notify_admin_new_order(context, order_id, full_name, email, phone, address, payment_method, products_list, total_amount)
+            await self.notify_admin_new_order(context, order_id, full_name, email, phone, address, payment_method,
+                                              products_list, total_amount)
 
         return order_id, products_list, total_amount
 
@@ -2094,10 +2111,11 @@ class OnlineShopBot:
         except Exception as e:
             print(f"❌ Error sending Redsys invoice: {e}")
 
+    # main.py
     async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.pre_checkout_query
-        # --- ЦЕЙ ПРИНТ МАЄ З'ЯВИТИСЯ В КОНСОЛІ ---
-        print(f"🔔 [PAYMENT DEBUG] Отримано запит PreCheckout від юзера {query.from_user.id}")
+        # ТУТ МАЄ БУТИ ТІЛЬКИ ЦЕ:
+        await query.answer(ok=True)
 
         user_id = query.from_user.id
         cursor = self.conn.cursor()
@@ -2115,24 +2133,30 @@ class OnlineShopBot:
 
     async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        invoice_payload = update.message.successful_payment.invoice_payload
-        order_id = int(invoice_payload.split('_')[1])
-        
-        cursor = self.conn.cursor()
-        cursor.execute("UPDATE orders SET payment_method = 'Online', status = 'confirmed' WHERE id = ?", (order_id,))
-        self.conn.commit()
 
-        # Повідомляємо користувача
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id),
-            parse_mode=ParseMode.HTML
-        )
+        # Отримуємо стан (state), щоб він не був порожнім
+        if user_id not in self.user_states:
+            self.user_states[user_id] = {'step': 'completed'}
 
-        # Очищуємо кошик і стан
-        cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-        self.conn.commit()
-        self.user_states.pop(user_id, None)
+        state = self.user_states[user_id]
+
+        # Видаляємо сміття
+        try:
+            await update.message.delete()
+        except:
+            pass
+
+        if 'invoice_msg_id' in state:
+            try:
+                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=state['invoice_msg_id'])
+            except:
+                pass
+
+        payment_info = update.message.successful_payment
+        total_amount = payment_info.total_amount / 100
+
+        # Викликаємо фіналізацію. Вона ОДИН РАЗ викличе create_order.
+        await self.finalize_order(update, context, "Online Card Payment", total_amount)
 
     async def handle_checkout_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -2314,171 +2338,62 @@ class OnlineShopBot:
             await context.bot.send_message(chat_id=query.message.chat_id, text=text,
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
-    async def create_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, send_message=True):
-        user = update.effective_user
-        user_id = user.id
-        state = self.user_states.get(user_id, {})
-
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT product_id, quantity, selected_options FROM cart WHERE user_id = ?", (user_id,))
-        cart_items = cursor.fetchall()
-
-        if not cart_items:
-            return None
-
-        total_amount = 0
-        products_details = []
-        products_text_list = []
-
-        for prod_id, qty, opts_json in cart_items:
-            cursor.execute("SELECT name, price, emoji, variants, stock FROM products WHERE id = ?", (prod_id,))
-            prod = cursor.fetchone()
-            if prod:
-                name, base_price, emoji, variants_json, current_stock = prod
-                selected_opts = json.loads(opts_json) if opts_json else {}
-
-                price = self.calculate_item_price(base_price, variants_json, opts_json)
-                item_total = price * qty
-                total_amount += item_total
-
-                opts_str = f" ({', '.join(selected_opts.values())})" if selected_opts else ""
-                products_details.append({
-                    'name': name, 'quantity': qty, 'price': price,
-                    'total': item_total, 'emoji': emoji,
-                    'selected_options': selected_opts, 'product_id': prod_id
-                })
-                products_text_list.append(f"{emoji or '📦'} {name}{opts_str} x{qty}")
-
-                # --- ВИПРАВЛЕННЯ: Списання кількості конкретного варіанту ---
-                new_variants_json = variants_json
-                if variants_json and selected_opts:
-                    try:
-                        v_data = json.loads(variants_json)
-                        changed = False
-                        for key, val in selected_opts.items():
-                            if key in v_data:
-                                group = v_data[key]
-                                # Якщо формат: Варіант: {qty: 10, price: 100}
-                                if isinstance(group, dict) and val in group:
-                                    target = group[val]
-                                    if isinstance(target, dict) and 'qty' in target:
-                                        target['qty'] = max(0, int(target['qty']) - qty)
-                                        changed = True
-                                    elif isinstance(target, int):  # Якщо формат: Варіант: 10 (старий формат)
-                                        group[val] = max(0, target - qty)
-                                        changed = True
-
-                        if changed:
-                            new_variants_json = json.dumps(v_data, ensure_ascii=False)
-                    except Exception as e:
-                        print(f"Error updating variant stock: {e}")
-
-                # Оновлюємо і загальний сток, і JSON з варіантами
-                cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
-                               (max(0, current_stock - qty), new_variants_json, prod_id))
-                # -------------------------------------------------------------
-
-        full_name = state.get('full_name', '')
-        phone = state.get('phone', '')
-        address = state.get('address', '')
-        email = state.get('email', '')
-        payment_method = state.get('payment', self.get_text('unknown'))
-
-        cursor.execute('''
-                       INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address,
-                                           payment_method, email)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                       ''', (user_id, user.full_name, full_name, json.dumps(products_details, ensure_ascii=False),
-                             total_amount, phone, address, payment_method, email))
-
-        order_id = cursor.lastrowid
-        cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
-        self.conn.commit()
-
-        # --- СПОВІЩЕННЯ АДМІНІСТРАТОРІВ ---
-        if send_message:
-            items_str = "\n".join([f"▫️ {item}" for item in products_text_list])
-
-            if SHIPPING_MODE == 'UKRAINE':
-                region_header = self.get_text('new_order_notification_ukraine')
-                address_label = self.get_text('delivery_notification_ukraine')
-                pay_label = self.get_text('payment_notification_ukraine')
-            else:
-                region_header = self.get_text('new_order_notification_international')
-                address_label = self.get_text('delivery_notification_international')
-                pay_label = self.get_text('payment_notification_international')
-
-            admin_text = self.get_text(
-                'admin_new_order_notification',
-                region_header=region_header,
-                order_id=order_id,
-                full_name=self.escape_html(full_name),
-                email=self.escape_html(email),
-                phone=self.escape_html(str(phone)),
-                address_label=address_label,
-                address=self.escape_html(address),
-                pay_label=pay_label,
-                payment_method=payment_method,
-                items_str=items_str,
-                total_amount=total_amount
-            )
-
-            admins = ADMIN_ID if isinstance(ADMIN_ID, list) else [ADMIN_ID]
-            for admin in admins:
-                try:
-                    await context.bot.send_message(chat_id=admin, text=admin_text, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(self.get_text('failed_to_notify_admin', admin=admin, e=e))
-
-        return order_id, products_details, total_amount
-
     async def finalize_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, payment_method,
                              pre_calc_total=None):
-        user = update.effective_user
-        user_id = user.id
+        user_id = update.effective_user.id
 
-        # 1. Отримуємо стан або створюємо, якщо його немає
+        # Якщо state загубився (наприклад, довга оплата), створюємо мінімальний
         if user_id not in self.user_states:
             self.user_states[user_id] = {}
         state = self.user_states[user_id]
 
-        # 2. ВАЖЛИВО: Записуємо спосіб оплати в пам'ять, щоб create_order його побачив
+        # Встановлюємо спосіб оплати для бази даних
         state['payment'] = payment_method
 
-        # 3. Створюємо замовлення (тепер у базі та в адміна не буде "Unknown")
+        # Викликаємо створення замовлення (тут відбувається списування складу та DELETE FROM cart)
         result = await self.create_order(update, context, send_message=True)
 
         if not result:
+            # Якщо кошик раптом порожній
             msg = self.get_text('order_failed_cart_empty')
-            if update.callback_query:
-                await update.callback_query.answer(msg)
-            else:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
             return
 
         order_id, products_list, total_amount = result
 
-        # Беремо дані з анкети для фінального чека
-        user_name = state.get('full_name', user.full_name)
-        user_email = state.get('email', '—')
-        user_phone = state.get('phone', '—')
-        user_address = state.get('address', '—')
+        # Формуємо текст чека (беремо заголовок з dom.py та деталі з strings.py)
+        from dom import STORE_MESSAGES, SHIPPING_MODE, BOT_TIMEZONE, CURRENCY_SYMBOL
+        success_header = STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id)
 
         current_time = datetime.now(ZoneInfo(BOT_TIMEZONE)).strftime('%d.%m.%Y %H:%M')
 
-        # Генеруємо чек
-        receipt = self.generate_receipt(order_id, user_name, user_email, user_phone, user_address, payment_method,
-                                        products_list, total_amount, current_time, receipt_format='html')
+        # Генеруємо детальний список (ПІБ, Товари, Ціна)
+        details = self.generate_receipt(
+            order_id,
+            state.get('full_name', update.effective_user.full_name),
+            state.get('email', '—'),
+            state.get('phone', '—'),
+            state.get('address', '—'),
+            payment_method,
+            products_list,
+            total_amount,
+            current_time,
+            receipt_format='html'
+        )
 
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Main menu", callback_data="main_menu")]])
+        final_text = f"{success_header}\n\n{details}"
+        kb = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]])
 
+        # Відправляємо фінальний чек
         if update.callback_query:
-            await update.callback_query.edit_message_text(text=receipt, reply_markup=kb, parse_mode="HTML")
+            await update.callback_query.edit_message_text(text=final_text, reply_markup=kb, parse_mode="HTML")
         else:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=receipt, reply_markup=kb,
+            # Для успішної оплати карткою (це не CallbackQuery)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=final_text, reply_markup=kb,
                                            parse_mode="HTML")
 
-        # Видаляємо дані тільки ПІСЛЯ того, як все успішно створено
+        # ВАЖЛИВО: Очищуємо state тільки в самому кінці, коли замовлення вже в базі
         if user_id in self.user_states:
             del self.user_states[user_id]
 
