@@ -1660,65 +1660,6 @@ class OnlineShopBot:
         await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
         self.user_states[user_id]['msg_id'] = query.message.message_id
 
-    async def _request_missing_checkout_data(self, update, context, state, chat_id):
-        phone = state.get('phone')
-        address = state.get('address')
-        email = state.get('email')
-
-
-        if not email:
-            state['step'] = 'waiting_email_checkout_flow'
-            keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
-
-            loaded_info = []
-            if phone: loaded_info.append(f"📞 Phone: {self.escape_html(phone)}")
-            if address: loaded_info.append(f"📍 Address: {self.escape_html(address)}")
-
-            text = (
-                f"📋 <b>Placing an order</b>\n\n"
-                f"✅ <b>Loaded from profile:</b>\n" + "\n".join(loaded_info) + "\n\n"
-                f"📧 <b>Step 1/3:</b> Enter your email address.\n"
-                f"Example: example@gmail.com"
-            )
-
-            try:
-                await update.callback_query.message.delete()
-            except:
-                pass
-
-            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                               parse_mode="HTML")
-            state['msg_id'] = m.message_id
-            return True
-
-
-        if not address:
-            state['step'] = 'waiting_address'
-            keyboard = [[InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]]
-
-            loaded_info = []
-            if phone: loaded_info.append(f"📞 Phone: {self.escape_html(phone)}")
-            if email: loaded_info.append(f"📧 Email: {self.escape_html(email)}")
-
-            text = (
-                f"📋 <b>Placing an order</b>\n\n"
-                f"✅ <b>Loaded from profile:</b>\n" + "\n".join(loaded_info) + "\n\n"
-                f"📍 <b>Step 2/3:</b> Enter your shipping address.\n"
-                f"Example: Kyiv, Main St. 1, apt 5"
-            )
-            try:
-                await update.callback_query.message.delete()
-            except:
-                pass
-
-            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                               parse_mode="HTML")
-            state['msg_id'] = m.message_id
-            return True
-
-        return False
-
-
     async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
@@ -1923,22 +1864,18 @@ class OnlineShopBot:
         keyboard = []
 
         if SHIPPING_MODE == 'UKRAINE':
-            keyboard.append([InlineKeyboardButton("💵 Готівка при отриманні", callback_data="pay_cod")])
-            keyboard.append([InlineKeyboardButton("💳 Картою кур'єру", callback_data="pay_card")])
-            keyboard.append([InlineKeyboardButton("📱 Оплатити онлайн (Apple Pay)", callback_data="pay_online")])
-            back_text = "🔙 Назад"
-            cancel_text = "❌ Скасувати замовлення"
-            main_text = "💳 <b>Останній крок: Спосіб оплати</b>\n\nОберіть, як вам зручно оплатити замовлення:"
+            keyboard.append([InlineKeyboardButton(self.get_text('method_cod'), callback_data="pay_cod")])
+            keyboard.append([InlineKeyboardButton(self.get_text('method_card_courier'), callback_data="pay_card")])
+            keyboard.append([InlineKeyboardButton(self.get_text('method_online_card'), callback_data="pay_online")])
+            main_text = self.get_text('payment_step_header_ukraine')
         else:
-            keyboard.append([InlineKeyboardButton("💳 Card / Apple Pay", callback_data="pay_online")])
-            back_text = "🔙 Back"
-            cancel_text = "❌ Cancel Order"
-            main_text = "💳 <b>Final Step: Payment Method</b>\n\nChoose how you want to pay for your order:"
+            keyboard.append([InlineKeyboardButton(self.get_text('method_online_card'), callback_data="pay_online")])
+            main_text = self.get_text('payment_step_header_int')
 
-        keyboard.append([InlineKeyboardButton(back_text, callback_data="confirm_details_back")])
-        keyboard.append([InlineKeyboardButton(cancel_text, callback_data="cancel_order")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_button_2'), callback_data="confirm_details_back")])
+        keyboard.append([InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")])
 
-        # --- ПИЛОСОС: Спочатку пробуємо відредагувати існуюче повідомлення ---
+        # --- ПИЛОСОС ---
         try:
             msg_id = self.user_states[user_id].get('msg_id')
             if msg_id:
@@ -2190,7 +2127,7 @@ class OnlineShopBot:
             logger.error(f"❌ Error in send_invoice: {e}")
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="⚠️ Помилка при створенні платежу. Спробуйте інший спосіб оплати або зверніться до підтримки."
+                text=self.get_text('invoice_creation_error')
             )
 
     # main.py
@@ -3487,7 +3424,6 @@ class OnlineShopBot:
 
     async def admin_view_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
-        # Шукаємо ID в будь-якому місці рядка
         match = re.search(r"(\d+)$", query.data)
         if not match:
             return await query.answer(self.get_text('invalid_request_2'))
@@ -3502,41 +3438,43 @@ class OnlineShopBot:
         if not product:
             return await query.answer(self.get_text('product_not_found_2'))
 
-        text = (
-            f"🛠 <b>{self.get_text('admin_control_title')}</b>\n\n"
-            f"📌 <b>ID:</b> <code>{product['id']}</code>\n"
-            f"📦 <b>Сток:</b> {product['stock']}\n\n"
-            f"📝 <b>Назва:</b> {product['name']}\n"
-            f"📄 <b>Опис:</b> {product['description']}\n"
-            f"💰 <b>Ціна:</b> {product['price']}{CURRENCY_SYMBOL}\n"
-            f"📂 <b>Категорія:</b> {product['category']}\n"
-            f"😀 <b>Емодзі:</b> {product['emoji']}\n\n"
-            f"Виберіть дію:"
+        text = self.get_text(
+            'admin_view_product_details',
+            id=product['id'],
+            stock=product['stock'],
+            name=self.escape_html(product['name']),
+            description=self.escape_html(product['description']),
+            price=product['price'],
+            category=self.escape_html(product['category']),
+            emoji=product['emoji']
         )
 
-        # Кожна кнопка РЕДАГУВАННЯ тепер має однаковий префікс 'admin_edit_field_'
         keyboard = [
             [
-                InlineKeyboardButton("✏️ Назва", callback_data=f"admin_edit_field_name_{product_id}"),
-                InlineKeyboardButton("✏️ Опис", callback_data=f"admin_edit_field_description_{product_id}")
+                InlineKeyboardButton(self.get_text('edit_name_button_3'), callback_data=f"admin_edit_field_name_{product_id}"),
+                InlineKeyboardButton(self.get_text('edit_desc_button'), callback_data=f"admin_edit_field_description_{product_id}")
             ],
             [
-                InlineKeyboardButton("✏️ Ціна", callback_data=f"admin_edit_field_price_{product_id}"),
-                InlineKeyboardButton("✏️ Сток", callback_data=f"admin_edit_field_stock_{product_id}")
+                InlineKeyboardButton(self.get_text('edit_price_button'), callback_data=f"admin_edit_field_price_{product_id}"),
+                InlineKeyboardButton(self.get_text('edit_stock_button'), callback_data=f"admin_edit_field_stock_{product_id}")
             ],
             [
-                InlineKeyboardButton("✏️ Категорія", callback_data=f"admin_edit_field_category_{product_id}"),
-                InlineKeyboardButton("✏️ Емодзі", callback_data=f"admin_edit_field_emoji_{product_id}")
+                InlineKeyboardButton(self.get_text('edit_category_button'), callback_data=f"admin_edit_field_category_{product_id}"),
+                InlineKeyboardButton(self.get_text('edit_emoji_button'), callback_data=f"admin_edit_field_emoji_{product_id}")
             ],
             [
-                InlineKeyboardButton("🖼 Зображення", callback_data=f"admin_image_menu_{product_id}"),
-                InlineKeyboardButton("⚙️ Варіанти", callback_data=f"admin_edit_field_variants_{product_id}")
+                InlineKeyboardButton(self.get_text('edit_image_button'), callback_data=f"admin_image_menu_{product_id}"),
+                InlineKeyboardButton(self.get_text('edit_variants_button'), callback_data=f"admin_edit_field_variants_{product_id}")
             ],
-            [InlineKeyboardButton("🗑️ Видалити товар", callback_data=f"admin_delete_product_confirm_{product_id}")],
-            [InlineKeyboardButton("🔙 Назад", callback_data=f"admin_list_cat_{product['category']}_1")]
+            [InlineKeyboardButton(self.get_text('delete_product_button'), callback_data=f"admin_delete_product_confirm_{product_id}")],
+            [InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_list_cat_{product['category']}_1")]
         ]
 
-        await self.safe_edit_or_send(update, context, text, InlineKeyboardMarkup(keyboard))
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        except Exception:
+            await query.message.delete()
+            await context.bot.send_message(query.message.chat_id, text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     async def admin_add_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -4060,7 +3998,7 @@ class OnlineShopBot:
                 cursor.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (value, product_id))
             self.conn.commit()
         except Exception as e:
-            await send_error(f"❌ DB Error: {e}", cancel_kb)
+            await send_error(self.get_text('error_db', e=e), cancel_kb)
             return
 
         # 4. УСПІХ
@@ -4466,14 +4404,14 @@ class OnlineShopBot:
         user_id = update.effective_user.id
 
         if user_id != ADMIN_ID or user_id not in self.user_states:
-            await query.answer("❌ Session expired")
+            await query.answer(self.get_text('session_expired'))
             return
 
         category = query.data.replace("admin_set_cat_", "")
         state = self.user_states[user_id]
         chat_id = query.message.chat_id
 
-        await query.answer(f"Selected: {category}")
+        await query.answer(self.get_text('admin_category_selected', category=category))
 
         # --- КЕЙС 1: РЕДАГУВАННЯ КАТЕГОРІЇ ІСНУЮЧОГО ТОВАРУ ---
         # Виправлено: перевіряємо ключ 'field', як він зберігається в admin_edit_field
@@ -4493,7 +4431,7 @@ class OnlineShopBot:
             # Локалізоване повідомлення про успіх
             text = self.get_text('admin_category_updated_success', category=category)
             if text == f"_admin_category_updated_success_":  # якщо ключа немає в strings.py
-                text = f"✅ Category updated to: <b>{category}</b>"
+                text = self.get_text('admin_category_updated', category=category)
 
             await context.bot.send_message(
                 chat_id=chat_id,
