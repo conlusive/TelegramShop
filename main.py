@@ -410,7 +410,33 @@ class OnlineShopBot:
         if int(user_id) == int(ADMIN_ID):
             welcome_text = self.get_text('admin_welcome', safe_name=safe_name)
         else:
-            welcome_text = STORE_MESSAGES[SHIPPING_MODE]['welcome'].format(shop_name=SHOP_NAME)
+            # Отримуємо базовий текст із dom.py
+            base_welcome = STORE_MESSAGES[SHIPPING_MODE]['welcome'].format(shop_name=SHOP_NAME)
+
+            # Перевіряємо профіль
+            missing = self.get_profile_completion_status(user_id)
+            if missing:
+                promo = self.get_text(f'welcome_promo_{len(missing)}')
+                labels = []
+                if "full_name" in missing: labels.append(self.get_text('missing_name'))
+                if "email" in missing: labels.append(self.get_text('missing_email'))
+                if "address" in missing:
+                    key = 'missing_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'missing_address_international'
+                    labels.append(self.get_text(key))
+                if "phone" in missing: labels.append(self.get_text('missing_phone'))
+
+                promo_block = self.get_text('missing_fields_info', promo=promo, missing_labels=', '.join(labels))
+
+                # ЛОГІКА ПЕРЕМІЩЕННЯ: розрізаємо текст по подвійному переносу рядка
+                parts = base_welcome.split("\n\n", 1)
+                if len(parts) > 1:
+                    # Вставляємо ПРОМІЖ вітанням та описом
+                    welcome_text = f"{parts[0]}\n{promo_block}\n\n{parts[1]}"
+                else:
+                    # Якщо тексту мало, просто додаємо зверху
+                    welcome_text = f"{promo_block}\n\n{base_welcome}"
+            else:
+                welcome_text = base_welcome
 
         reply_markup = self.build_main_keyboard(user_id)
 
@@ -2064,30 +2090,23 @@ class OnlineShopBot:
 
     async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
         user_id = update.effective_user.id
-
-        if SHIPPING_MODE == 'UKRAINE':
-            token = PAYMENT_TOKENS['PORTMONE']
-            currency = "UAH"
-        else:
-            token = PAYMENT_TOKENS['REDSYS']
-            currency = "EUR"
-
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"💳 Pay {total_amount} {currency}", pay=True)],
-            [InlineKeyboardButton("🔙 Back to payment selection", callback_data="back_to_payment")]
-        ])
+        token = PAYMENT_TOKENS['PORTMONE'] if SHIPPING_MODE == 'UKRAINE' else PAYMENT_TOKENS['REDSYS']
+        currency = "UAH" if SHIPPING_MODE == 'UKRAINE' else "EUR"
 
         try:
             invoice_msg = await context.bot.send_invoice(
                 chat_id=update.effective_chat.id,
-                title=f"Order Payment - {SHOP_NAME}",
-                description="Payment for items in your cart",
-                payload=f"cart_{user_id}",  # Використовуємо ID користувача як корисне навантаження
+                title=self.get_text('invoice_title', shop_name=SHOP_NAME),
+                description=self.get_text('invoice_desc'),
+                payload=f"cart_{user_id}",
                 provider_token=token,
                 currency=currency,
-                prices=[LabeledPrice("Total Amount", int(total_amount * 100))],
+                prices=[LabeledPrice(self.get_text('invoice_label'), int(total_amount * 100))],
                 start_parameter="shop-payment",
-                reply_markup=keyboard
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"💳 Pay {total_amount} {currency}", pay=True)],
+                    [InlineKeyboardButton(self.get_text('back_button'), callback_data="back_to_payment")]
+                ])
             )
             if user_id in self.user_states:
                 self.user_states[user_id]['invoice_msg_id'] = invoice_msg.message_id
@@ -2104,12 +2123,11 @@ class OnlineShopBot:
             "SELECT c.quantity, p.name, p.stock FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?",
             (user_id,))
 
-        # Перевіряємо склад в останній момент перед оплатою
         for qty, name, stock in cursor.fetchall():
             if stock < qty:
-                return await query.answer(ok=False, error_message=f"Вибачте, {name} вже закінчився!")
+                # Використовуємо ключ stock_out_error із strings.py
+                return await query.answer(ok=False, error_message=self.get_text('stock_out_error', name=name))
 
-        # Якщо все ок, дозволяємо оплату
         await query.answer(ok=True)
 
     async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4419,20 +4437,28 @@ class OnlineShopBot:
             state['product_data']['variants'] = {v_type: opts_map}
             await self.show_variant_type_selection(context, chat_id, user_id, status_msg=f"Variant set to: {v_type}")
 
+
         except Exception:
-            examples = {
-                "Size": "S=10=1200", "Color": "Red=5=500", "Memory": "128GB=10=800",
-                "Volume": "1L=5=100", "Weight": "5kg=2=300", "ShoeSize": "42=10=2000"
-            }
-            ex = examples.get(v_type, "Option=Qty=Price")
+
+            examples = {"Size": "S=10=1200", "Color": "Red=5=500", "Memory": "128GB=10=800"}
+
+            ex = examples.get(v_type, self.get_text('variant_default_format'))
 
             text_err = (
-                f"⚠️ <b>Format Error for {v_type}!</b>\n\n"
-                f"Please use: <code>Option=Qty=Price</code>\n"
-                f"<b>Example:</b> <code>{ex}</code>"
+
+                f"{self.get_text('variant_error_title', v_type=v_type)}\n\n"
+
+                f"{self.get_text('variant_error_msg')}\n"
+
+                f"{self.get_text('variant_example_label')} <code>{ex}</code>"
+
             )
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_step_variants_init")]])
+
+            kb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_button'), callback_data="admin_step_variants_init")]])
+
             m = await context.bot.send_message(chat_id=chat_id, text=text_err, reply_markup=kb, parse_mode="HTML")
+
             state['msg_id'] = m.message_id
 
 

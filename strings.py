@@ -294,6 +294,18 @@ STRINGS = {
         'error_handler': "❌ Сталася помилка. Будь ласка, спробуйте ще раз або використайте /start",
         'add_variants_before_finishing': "⚠️ Додайте варіанти перед завершенням!",
         'product_created_2': "✅ <b>{name}</b> створено!",
+        'welcome_promo_1': "Залишився всього 1 крок до завершення профілю! ✨",
+        'welcome_promo_2': "Майже готово! Заповніть ще 2 поля для швидкого замовлення. 🚀",
+        'welcome_promo_3': "Ваш профіль заповнений лише частково. Додайте дані для зручності. 📦",
+        'welcome_promo_4': "Вітаємо! Заповніть свій профіль, щоб оформляти замовлення в один клік. 👇",
+        'missing_fields_info': "\n{promo}\n⚠️ <b>Заповніть ці дані:</b> {missing_labels}\n────────────────────",
+        'invoice_title': "Оплата замовлення — {shop_name}",
+        'invoice_desc': "Оплата товарів у вашому кошику",
+        'invoice_label': "Загальна сума",
+        'stock_out_error': "Вибачте, {name} вже закінчився!",
+        'method_online_card': "Онлайн оплата картою",
+        'method_card_courier': "Картою кур'єру",
+        'method_cod': "Готівка (накладений платіж)",
 
         # Summary screen
         'summary_title': "🔍 Перевірте ваші дані",
@@ -320,6 +332,10 @@ STRINGS = {
         'back_to_summary_btn': "🔙 Повернутись до перевірки",
         'enter_new_value_prompt': "Будь ласка, введіть нове значення нижче:",
     },
+
+
+
+
     'INTERNATIONAL': {
         'column_added': "✅ Column '{column_name}' added to table '{table_name}'!",
         'error_adding_column': "⚠️ Error adding column {column_name} to {table_name}: {e}",
@@ -619,6 +635,18 @@ STRINGS = {
         'error_handler': "❌ An error has occurred. Please try again or use /start",
         'add_variants_before_finishing': "⚠️ Add variants before finishing!",
         'product_created_2': "✅ <b>{name}</b> created!",
+        'welcome_promo_1': "Only 1 step left to complete your profile! ✨",
+        'welcome_promo_2': "Almost there! Fill 2 more fields for fast checkout. 🚀",
+        'welcome_promo_3': "Your profile is partially filled. Add data for convenience. 📦",
+        'welcome_promo_4': "Welcome! Complete your profile to order in one click. 👇",
+        'missing_fields_info': "\n{promo}\n⚠️ <b>Please fill:</b> {missing_labels}\n────────────────────",
+        'invoice_title': "Order Payment — {shop_name}",
+        'invoice_desc': "Payment for items in your cart",
+        'invoice_label': "Total Amount",
+        'stock_out_error': "Sorry, {name} is out of stock!",
+        'method_online_card': "Online Card Payment",
+        'method_card_courier': "Card to courier",
+        'method_cod': "Cash on delivery",
 
         # Summary screen
         'summary_title': "🔍 Confirm Your Details",
