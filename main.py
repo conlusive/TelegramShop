@@ -4092,21 +4092,45 @@ class OnlineShopBot:
         elif step == 'waiting_variant_values':
             await self.process_variant_values_input(update, context)
 
-    async def show_variant_type_selection(self, context, chat_id, user_id, status_msg=""):
+    async def show_variant_type_selection(self, context, chat_id, user_id, status_msg="", edit_query=None):
         state = self.user_states[user_id]
         variants = state['product_data'].get('variants', {})
 
         added_info = ""
         if variants:
-            v_type = list(variants.keys())[0]
-            added_info = f"<b>📍 Active:</b> {v_type} (<i>{', '.join(variants[v_type].keys())}</i>)\n────────────────────\n\n"
+            v_type_raw = list(variants.keys())[0]
+            # Перекладаємо назву типу (Size -> Розмір)
+            v_type_localized = self.get_text(f'type_{v_type_raw}')
+            if v_type_localized == f"_type_{v_type_raw}_": v_type_localized = v_type_raw
+
+            options_list = ', '.join(variants[v_type_raw].keys())
+            added_info = f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{options_list}</i>)\n────────────────────\n\n"
 
         header = self.get_text('status_message', status_msg=status_msg) if status_msg else ""
-        text = f"{header}{self.get_text('select_variant_type', added_info=added_info)}"
+        # ПЕРЕДАЄМО added_info, щоб не було KeyError
+        text = f"{header}{self.get_text('admin_wizard_variant_title', added_info=added_info)}"
+
+        if edit_query:
+            try:
+                await edit_query.edit_message_text(text, reply_markup=self.get_variant_type_keyboard(),
+                                                   parse_mode="HTML")
+                return
+            except Exception:
+                pass
 
         m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=self.get_variant_type_keyboard(),
                                            parse_mode="HTML")
         state['msg_id'] = m.message_id
+
+    async def admin_back_to_variant_types(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        user_id = update.effective_user.id
+        if user_id not in self.user_states:
+            return await query.answer(self.get_text('session_expired'))
+
+        self.user_states[user_id]['step'] = 'add_product_variants_loop'
+        # Викликаємо оновлену функцію з підтримкою редагування
+        await self.show_variant_type_selection(context, query.message.chat_id, user_id, edit_query=query)
 
 
 
@@ -4127,95 +4151,67 @@ class OnlineShopBot:
         data = query.data.replace("vartype_", "")
 
         if data == "DONE":
+            # (Логіка збереження в базу залишається без змін)
             p = state.get('product_data', {})
             vars_data = p.get('variants', {})
             if not vars_data:
                 await query.answer(self.get_text('add_variants_before_finishing'), show_alert=True)
                 return
-
-            total_stock = 0
-            for v_type in vars_data:
-                for opt in vars_data[v_type].values():
-                    total_stock += opt.get('qty', 0) if isinstance(opt, dict) else opt
-
+            total_stock = sum(
+                sum(opt.get('qty', 0) if isinstance(opt, dict) else opt for opt in group.values()) for group in
+                vars_data.values())
             cursor = self.conn.cursor()
             cursor.execute(
                 "INSERT INTO products (name, description, price, image_url, emoji, category, stock, variants) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (p.get("name"), p.get("description"), 0.0, p.get("image_url"), p.get("emoji", "📦"),
-                 p.get("category"), total_stock, json.dumps(vars_data, ensure_ascii=False))
+                (p.get("name"), p.get("description"), 0.0, p.get("image_url"), p.get("emoji", "📦"), p.get("category"),
+                 total_stock, json.dumps(vars_data, ensure_ascii=False))
             )
             self.conn.commit()
             self.user_states.pop(user_id, None)
-
             await query.message.delete()
-            await context.bot.send_message(chat_id=query.message.chat_id, text=self.get_text('product_created_2', name=p.get('name')),
+            await context.bot.send_message(chat_id=query.message.chat_id,
+                                           text=self.get_text('product_created_2', name=p.get('name')),
                                            reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]),
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                      callback_data="admin_products")]]),
                                            parse_mode="HTML")
             return
 
         state['current_variant_type'] = data
         state['step'] = 'waiting_variant_values'
 
-        # 🔥 ПОВНА МАПА ПРИКЛАДІВ ДЛЯ КОЖНОГО ТИПУ 🔥
-        examples = {
-            "Size": "S=10=1200, M=5=1300, L=2=1400",
-            "Color": "Red=10=500, Blue=5=500, Black=15=550",
-            "Memory": "128GB=10=800, 256GB=5=950, 512GB=2=1200",
-            "Volume": "0.5L=10=50, 1L=20=90, 2L=5=150",
-            "Weight": "1kg=10=100, 2kg=5=180, 5kg=2=400",
-            "ShoeSize": "41=5=2500, 42=10=2500, 43=3=2600"
-        }
-        ex = examples.get(data, "Option=Qty=Price")
+        # Локалізація назви та прикладу
+        v_type_localized = self.get_text(f'type_{data}')
+        if v_type_localized == f"_type_{data}_": v_type_localized = data
 
-        await query.edit_message_text(
-            text=f"📥 <b>Enter options for {data}:</b>\n\n<b>Format:</b> <code>Option=Qty=Price</code>\n<b>Example:</b> <code>{ex}</code>",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔙 Back", callback_data="admin_step_variants_init")]]),
-            parse_mode="HTML"
-        )
+        ex = self.get_text(f'admin_ex_{data}')
+        if ex == f"_admin_ex_{data}_": ex = self.get_text('admin_ex_default')
+
+        # Використовуємо ключ із strings.py замість хардкоду
+        text = self.get_text('variant_input_prompt', v_type=v_type_localized, example=ex)
+        kb = [[InlineKeyboardButton(self.get_text('back_button'), callback_data="admin_step_variants_init")]]
+
+        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
     async def admin_handle_variant_type_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         user_id = update.effective_user.id
+        variant_type_raw = query.data.replace("admin_add_variant_type_", "")
 
-        # Отримуємо тип варіанту з даних колбеку
-        variant_type = query.data.replace("admin_add_variant_type_", "")
+        # Локалізуємо назву (Size -> Розмір)
+        v_type_localized = self.get_text(f'type_{variant_type_raw}')
+        if v_type_localized == f"_type_{variant_type_raw}_": v_type_localized = variant_type_raw
 
-        # Отримуємо локалізований приклад для конкретного типу
-        example_key = f"admin_ex_{variant_type}"
-        example_text = self.get_text(example_key)
+        ex = self.get_text(f'admin_ex_{variant_type_raw}')
+        if ex == f"_admin_ex_{variant_type_raw}_": ex = self.get_text('admin_ex_default')
 
-        # Якщо спеціального прикладу немає, використовуємо дефолтний
-        if example_text == f"_{example_key}_":
-            example_text = self.get_text('admin_ex_default')
+        text = self.get_text('variant_input_prompt', v_type=v_type_localized, example=ex)
+        kb = [[InlineKeyboardButton(self.get_text('back_to_types'), callback_data="admin_step_variants_init")]]
 
-        # Формуємо текст повідомлення через локалізований шаблон
-        # Шаблон 'admin_variant_type_prompt' вже містить інструкції та формати
-        text = self.get_text('admin_variant_type_prompt',
-                             variant_type=variant_type,
-                             example_text=example_text)
-
-        # Локалізована кнопка "Назад"
-        kb = [[InlineKeyboardButton(self.get_text('back_to_types'),
-                                    callback_data="admin_step_variants_init")]]
-
-        # Оновлюємо стан користувача
         self.user_states[user_id]['step'] = 'waiting_variant_values'
-        self.user_states[user_id]['current_variant_type'] = variant_type
+        self.user_states[user_id]['current_variant_type'] = variant_type_raw
 
-        # Відправка повідомлення (використовуємо HTML, оскільки в strings.py шаблони з тегами <b> та <code>)
-        try:
-            await query.edit_message_text(text,
-                                          reply_markup=InlineKeyboardMarkup(kb),
-                                          parse_mode=ParseMode.HTML)
-        except Exception:
-            msg = await context.bot.send_message(chat_id=query.message.chat_id,
-                                                 text=text,
-                                                 reply_markup=InlineKeyboardMarkup(kb),
-                                                 parse_mode=ParseMode.HTML)
-            self.user_states[user_id]['msg_id'] = msg.message_id
-
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
         # main.py -> admin_handle_variant_decision
 
     async def admin_handle_variant_decision(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
