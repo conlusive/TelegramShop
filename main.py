@@ -3969,7 +3969,7 @@ class OnlineShopBot:
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        # Перевірка прав адміна
+        # Перевірка прав адміна та наявності активного стану
         if user_id != ADMIN_ID or user_id not in self.user_states:
             return
 
@@ -3978,20 +3978,20 @@ class OnlineShopBot:
         msg = update.message
         chat_id = msg.chat_id
 
-        # 1. Видаляємо повідомлення користувача
+        # 1. "Пилосос": видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
             pass
 
-        # 2. Видаляємо попереднє повідомлення бота
+        # 2. Видаляємо попереднє повідомлення бота, щоб не засмічувати чат
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
-        # 3. Отримуємо вхідні дані
+        # 3. Визначаємо тип вхідних даних (фото чи текст)
         if update.message.photo:
             input_value = update.message.photo[-1].file_id
             is_photo = True
@@ -3999,32 +3999,32 @@ class OnlineShopBot:
             input_value = update.message.text.strip() if update.message.text else ""
             is_photo = False
 
-        cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
+        cancel_kb = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
 
-        # ОБРОБКА РЕДАГУВАННЯ ПОЛІВ
+        # --- ОБРОБКА РЕДАГУВАННЯ ПОЛІВ ІСНУЮЧОГО ТОВАРУ ---
         if step == 'edit_product_field':
             await self.handle_edit_field_input(update, context, state, input_value, msg)
             return
 
-        # ОБРОБКА ОНОВЛЕННЯ ФОТО (ДЛЯ ІСНУЮЧОГО ТОВАРУ)
+        # --- ОБРОБКА ОНОВЛЕННЯ ФОТО (ДЛЯ ІСНУЮЧОГО ТОВАРУ) ---
         if step == 'waiting_product_image':
-            product_id = state.get('product_id')
-            img_to_set = input_value if (is_photo or input_value.startswith('http')) else None
+            img = input_value if (is_photo or input_value.startswith('http')) else None
 
-            if img_to_set or input_value == '-':
+            if img or input_value == '-':
                 cursor = self.conn.cursor()
                 cursor.execute("UPDATE products SET image_url = ? WHERE id = ?",
-                               (None if input_value == '-' else img_to_set, product_id))
+                               (None if input_value == '-' else img, state.get('product_id')))
                 self.conn.commit()
                 self.user_states.pop(user_id, None)
 
-                kb = [[InlineKeyboardButton("🔙 Back to Product", callback_data=f"admin_prod_{product_id}")]]
+                kb = [[InlineKeyboardButton(self.get_text('back_to_list_button_2'),
+                                            callback_data=f"admin_prod_{state.get('product_id')}")]]
                 await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_img_status_set'),
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
             else:
-                text = "⚠️ **Error: Photo required!**\n\nPlease attach a file or send a link."
-                m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
-                                                   parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('error_photo_required'),
+                                                   reply_markup=cancel_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
             return
 
@@ -4038,9 +4038,10 @@ class OnlineShopBot:
 
         elif step == 'add_product_description':
             state['product_data']['description'] = input_value
-            kb = [[InlineKeyboardButton(self.get_text('simple_product_button'), callback_data="admin_decision_vars_no")],
-                  [InlineKeyboardButton(self.get_text('has_variants_button'), callback_data="admin_decision_vars_yes")],
-                  [InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]]
+            kb = [
+                [InlineKeyboardButton(self.get_text('simple_product_button'), callback_data="admin_decision_vars_no")],
+                [InlineKeyboardButton(self.get_text('has_variants_button'), callback_data="admin_decision_vars_yes")],
+                [InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]]
             state['step'] = 'waiting_type_decision'
             m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('choose_product_type'),
                                                reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
@@ -4050,7 +4051,7 @@ class OnlineShopBot:
             try:
                 state['product_data']['price'] = float(input_value.replace(",", "."))
                 state['step'] = 'waiting_simple_stock'
-                text = self.get_text('enter_stock')
+                text = self.get_text('admin_wizard_simple_stock')
                 m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb,
                                                    parse_mode="HTML")
                 state['msg_id'] = m.message_id
@@ -4077,43 +4078,60 @@ class OnlineShopBot:
         elif step == 'waiting_simple_category':
             state['product_data']['category'] = input_value
             state['step'] = 'waiting_simple_emoji'
-            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_emoji'), reply_markup=cancel_kb,
-                                               parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_emoji'),
+                                               reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_emoji':
             state['product_data']['emoji'] = input_value
             state['step'] = 'waiting_simple_image'
-            text = self.get_text('send_photo')
+            text = self.get_text('admin_wizard_variant_photo')
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_simple_image':
             img = input_value if (is_photo or input_value.startswith('http')) else None
+
+            if not img and input_value != '-':
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('error_photo_required'),
+                                                   reply_markup=cancel_kb, parse_mode="HTML")
+                state['msg_id'] = m.message_id
+                return
+
             p = state['product_data']
+            final_img = img if input_value != '-' else None
             cursor = self.conn.cursor()
             cursor.execute(
                 "INSERT INTO products (name, description, price, image_url, category, stock, emoji) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (p['name'], p['description'], p['price'], img, p['category'], p['stock'], p['emoji']))
+                (p['name'], p['description'], p['price'], final_img, p['category'], p['stock'], p['emoji']))
             self.conn.commit()
             self.user_states.pop(user_id, None)
-            await context.bot.send_message(chat_id=chat_id, text=self.get_text('product_created', name=p['name']),
+            await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_product_created_simple'),
                                            reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]),
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                      callback_data="admin_products")]]),
                                            parse_mode="HTML")
 
         elif step == 'waiting_var_image':
-            state['product_data']['image_url'] = input_value if (is_photo or input_value.startswith('http')) else None
+            img = input_value if (is_photo or input_value.startswith('http')) else None
+
+            if not img and input_value != '-':
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('error_photo_required'),
+                                                   reply_markup=cancel_kb, parse_mode="HTML")
+                state['msg_id'] = m.message_id
+                return
+
+            state['product_data']['image_url'] = img if input_value != '-' else None
             state['step'] = 'waiting_var_category'
-            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_category'), reply_markup=cancel_kb,
-                                               parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_category'),
+                                               reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_category':
             state['product_data']['category'] = input_value
             state['step'] = 'waiting_var_emoji'
-            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_emoji'), reply_markup=cancel_kb,
-                                               parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_emoji'),
+                                               reply_markup=cancel_kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         elif step == 'waiting_var_emoji':
@@ -4248,51 +4266,57 @@ class OnlineShopBot:
                                                  reply_markup=InlineKeyboardMarkup(kb), parse_mode=ParseMode.MARKDOWN)
             self.user_states[user_id]['msg_id'] = msg.message_id
 
+        # main.py -> admin_handle_variant_decision
+
     async def admin_handle_variant_decision(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        user_id = update.effective_user.id
-        data = query.data
+            query = update.callback_query
+            user_id = update.effective_user.id
+            data = query.data
 
-        try:
-            await query.message.delete()
-        except:
-            pass
+            # Видаляємо попереднє повідомлення для чистоти інтерфейсу
+            try:
+                await query.message.delete()
+            except:
+                pass
 
-        if data == "admin_decision_vars_no":
-            self.user_states[user_id]['step'] = 'waiting_simple_price'
+            # Перевірка наявності стану
+            if user_id not in self.user_states:
+                self.user_states[user_id] = {'product_data': {}}
 
-            cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
+            if data == "admin_decision_vars_no":
+                # Якщо товар без варіантів — переходимо до вводу ціни
+                self.user_states[user_id]['step'] = 'waiting_simple_price'
+                text = self.get_text('admin_wizard_simple_price')
+            else:
+                # Якщо товар з варіантами — спочатку питаємо фото
+                self.user_states[user_id]['step'] = 'waiting_var_image'
+                self.user_states[user_id]['product_data']['variants'] = {}
+                text = self.get_text('admin_wizard_variant_photo')
+
+            cancel_kb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
 
             msg = await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=self.get_text('admin_wizard_simple_price'),
+                text=text,
                 reply_markup=cancel_kb,
-                parse_mode=ParseMode.HTML
+                parse_mode="HTML"
             )
             self.user_states[user_id]['msg_id'] = msg.message_id
-        else: # admin_decision_vars_yes
-            self.user_states[user_id]['step'] = 'waiting_variant_photo'
-            self.user_states[user_id]['product_data']['variants'] = {}
-
-            cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
-
-            msg = await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=self.get_text('admin_wizard_variant_photo'),
-                reply_markup=cancel_kb,
-                parse_mode=ParseMode.HTML
-            )
 
     async def admin_back_to_variant_types(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        user_id = update.effective_user.id
+            query = update.callback_query
+            user_id = update.effective_user.id
 
-        self.user_states[user_id]['step'] = 'add_product_variants_loop'
+            if user_id not in self.user_states:
+                return await query.answer(self.get_text('session_expired'))
 
-        text = self.get_text('admin_wizard_variant_title')
-        reply_markup = self.get_variant_type_keyboard()
+            self.user_states[user_id]['step'] = 'add_product_variants_loop'
 
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+            text = self.get_text('admin_wizard_variant_title')
+            reply_markup = self.get_variant_type_keyboard()
+
+            await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
 
     def get_existing_categories_keyboard(self):
         cursor = self.conn.cursor()
@@ -4572,6 +4596,7 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.admin_image_delete, pattern=r'^admin_image_delete_'))
     application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
     application.add_handler(CallbackQueryHandler(bot.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
     application.add_handler(
         CallbackQueryHandler(bot.admin_handle_variant_type_selection, pattern=r'^admin_add_variant_type_'))
     application.add_handler(
