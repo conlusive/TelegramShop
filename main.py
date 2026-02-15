@@ -16,6 +16,7 @@ from telegram import LabeledPrice
 from telegram.ext import PreCheckoutQueryHandler
 from strings import STRINGS
 from dom import *
+import time
 
 
 # -------------------- LOGGING --------------------
@@ -815,6 +816,7 @@ class OnlineShopBot:
         )
         cart_items = cursor.fetchall()
 
+        # --- СЦЕНАРІЙ: КОШИК ПОРОЖНІЙ ---
         if not cart_items:
             text = STORE_MESSAGES[SHIPPING_MODE]['cart_empty']
             keyboard = [
@@ -824,15 +826,28 @@ class OnlineShopBot:
             ]
 
             if query.message.photo:
-                await query.message.delete()
+                try:
+                    await query.message.delete()
+                except:
+                    pass
                 await context.bot.send_message(chat_id=query.message.chat_id, text=text,
                                                reply_markup=InlineKeyboardMarkup(keyboard),
                                                parse_mode=ParseMode.HTML)
             else:
-                await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                              parse_mode=ParseMode.HTML)
+                try:
+                    await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                  parse_mode=ParseMode.HTML)
+                except Exception:
+                    # Якщо повідомлення було видалено (наприклад, скасований інвойс)
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=text,
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        parse_mode=ParseMode.HTML
+                    )
             return
 
+        # --- СЦЕНАРІЙ: КОШИК З ТОВАРАМИ ---
         total_amount = 0
         text = self.get_text('cart_header')
         keyboard = []
@@ -877,6 +892,8 @@ class OnlineShopBot:
             ]
             keyboard.append(row_btns)
 
+        # Додаємо роздільну лінію перед підсумком та сам підсумок
+
         text += self.get_text('cart_total', total_amount=total_amount).replace('$', CURRENCY_SYMBOL)
 
         keyboard.append([InlineKeyboardButton(self.get_text('checkout_button'), callback_data="checkout")])
@@ -889,15 +906,25 @@ class OnlineShopBot:
         keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")])
 
         if query.message.photo:
-            await query.message.delete()
+            try:
+                await query.message.delete()
+            except:
+                pass
             await context.bot.send_message(chat_id=query.message.chat_id, text=text,
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         else:
             try:
+                # Намагаємося змінити існуюче повідомлення
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
                                               parse_mode=ParseMode.HTML)
-            except:
-                pass
+            except Exception:
+                # Якщо змінити не вдалося (бо інвойс був видалений), надсилаємо нове
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode=ParseMode.HTML
+                )
 
     async def show_single_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -1786,57 +1813,25 @@ class OnlineShopBot:
 
 
     async def handle_payment_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self.check_user_blocked(update, context): return
-
         query = update.callback_query
+        await query.answer()
         user_id = query.from_user.id
-
-        payment_map = {
-            "pay_cod": self.get_text('method_cod'),
-            "pay_card": self.get_text('method_card_courier'),
-            "pay_bank": self.get_text('admin_bank_title')
-        }
         payment_key = query.data
-        if payment_key not in payment_map: return
-        payment_method = payment_map[payment_key]
 
-        if user_id not in self.user_states:
-            await query.answer(self.get_text('session_expired'), show_alert=True)
-            await self.show_cart(update, context)
-            return
-
-        self.user_states[user_id]['payment'] = payment_method
-
-        # This part seems to be from an older version of the checkout flow
-        if not self.user_states[user_id].get('phone'):
-            self.user_states[user_id]['step'] = 'waiting_phone'
-            await self.continue_checkout_flow(update, context)
-            return
-
-        order_details = await self.create_order(update, context, send_message=True)
-
-        if not order_details:
-            try:
-                await query.edit_message_text(self.get_text('order_failed_cart_empty'), reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(self.get_text('my_cart'), callback_data="cart")]]))
-            except Exception:
-                pass
-            return
-
-        order_id, products_list, total_amount = order_details
-        self.user_states[user_id]['order_id'] = order_id
-        
-        if payment_key == 'pay_bank':
+        if payment_key == 'pay_cod':
+            await self.process_final_order(update, context, payment_method="cod")
+        elif payment_key == 'pay_card':
+            await self.process_final_order(update, context, payment_method="card_manual")
+        elif payment_key == 'pay_bank':
             await self.show_bank_payment_info(update, context)
+        elif payment_key == 'pay_online':
+            # Передаємо ТІЛЬКИ ці три параметри
+            await self.send_invoice(update.effective_chat.id, user_id, context)
             return
-            
-        order_text = STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id)
-
-        await query.edit_message_text(
-            text=order_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]),
-            parse_mode="HTML"
-        )
+        elif payment_key == 'confirm_details_back':
+            await self.show_order_summary(context, update.effective_chat.id, user_id)
+        elif payment_key == 'cancel_order':
+            await self.cancel_order(update, context)
 
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1927,19 +1922,15 @@ class OnlineShopBot:
         self.user_states[user_id]['step'] = 'waiting_payment'
         keyboard = []
 
-        # Логіка кнопок та текстів залежно від регіону
         if SHIPPING_MODE == 'UKRAINE':
             keyboard.append([InlineKeyboardButton("💵 Готівка при отриманні", callback_data="pay_cod")])
             keyboard.append([InlineKeyboardButton("💳 Картою кур'єру", callback_data="pay_card")])
             keyboard.append([InlineKeyboardButton("📱 Оплатити онлайн (Apple Pay)", callback_data="pay_online")])
-
             back_text = "🔙 Назад"
             cancel_text = "❌ Скасувати замовлення"
             main_text = "💳 <b>Останній крок: Спосіб оплати</b>\n\nОберіть, як вам зручно оплатити замовлення:"
         else:
-            # Міжнародна версія
             keyboard.append([InlineKeyboardButton("💳 Card / Apple Pay", callback_data="pay_online")])
-
             back_text = "🔙 Back"
             cancel_text = "❌ Cancel Order"
             main_text = "💳 <b>Final Step: Payment Method</b>\n\nChoose how you want to pay for your order:"
@@ -1947,13 +1938,27 @@ class OnlineShopBot:
         keyboard.append([InlineKeyboardButton(back_text, callback_data="confirm_details_back")])
         keyboard.append([InlineKeyboardButton(cancel_text, callback_data="cancel_order")])
 
-        m = await context.bot.send_message(
-            chat_id=chat_id,
-            text=main_text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="HTML"
-        )
-        self.user_states[user_id]['msg_id'] = m.message_id
+        # --- ПИЛОСОС: Спочатку пробуємо відредагувати існуюче повідомлення ---
+        try:
+            msg_id = self.user_states[user_id].get('msg_id')
+            if msg_id:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    text=main_text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="HTML"
+                )
+            else:
+                raise Exception("No msg_id")
+        except Exception:
+            m = await context.bot.send_message(
+                chat_id=chat_id,
+                text=main_text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="HTML"
+            )
+            self.user_states[user_id]['msg_id'] = m.message_id
 
     async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method,
                                      products_list, total_amount):
@@ -2103,59 +2108,90 @@ class OnlineShopBot:
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
         await query.answer()
-        data = query.data
         user_id = query.from_user.id
         state = self.user_states.get(user_id)
         if not state: return
 
+        if query.data == "pay_online":
+            try:
+                await query.message.delete()
+            except:
+                pass
+            # ПЕРЕДАЄМО ТІЛЬКИ ЦІ ТРИ АРГУМЕНТИ
+            await self.send_invoice(update.effective_chat.id, user_id, context)
+            return
+
+        # Для інших способів оплати логіка залишається (розрахунок суми для finalize_order)
         cursor = self.conn.cursor()
         cursor.execute(
             'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
             (user_id,))
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
-        if data == "pay_online":
-            await query.message.delete()
-            await self.send_invoice(update, context, total_amount)
-
-        # --- 🛠 ВИПРАВЛЕНО: Прибираємо хардкод для інших методів ---
-        elif data == "pay_card":
+        if query.data == "pay_card":
             method_name = self.get_text('method_card_courier')
             await self.finalize_order(update, context, method_name, total_amount)
         else:
             method_name = self.get_text('method_cod')
             await self.finalize_order(update, context, method_name, total_amount)
 
-    async def send_invoice(self, chat_id, user_id, context):
-        state = self.user_states[user_id]
-        cart = state.get('cart', {})
-        total_amount = sum(item['price'] * item['quantity'] for item in cart.values())
+    async def send_invoice(self, chat_id, user_id, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            # 1. Отримуємо дані з кошика
+            cursor = self.conn.cursor()
+            cursor.execute(
+                'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
+                (user_id,)
+            )
+            cart_data = cursor.fetchall()
 
-        # ВИПРАВЛЕННЯ ПОМИЛКИ ВАЛЮТИ: перетворюємо в ціле число (копійки/центи)
-        telegram_amount = int(total_amount * 100)
+            if not cart_data:
+                await context.bot.send_message(chat_id=chat_id, text=self.get_text('cart_empty_3'))
+                return
 
-        prices = [LabeledPrice(self.get_text('invoice_label'), telegram_amount)]
+            # Рахуємо суму
+            total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_data)
+            telegram_amount = int(total_amount * 100)
+            prices = [LabeledPrice(self.get_text('invoice_label'), telegram_amount)]
 
-        # Робимо лінію ідентичною
-        separator = "────────────────────"
-        description = (
-            f"{self.get_text('invoice_description')}\n"
-            f"{separator}\n"
-            f"💰 {self.get_text('total_to_pay')}: {total_amount} {CURRENCY_SYMBOL}"
-        )
+            # Опис
+            description_template = self.get_text('invoice_desc')
+            description = (
+                f"{description_template}\n"
+                f"💰 До сплати: {total_amount} {CURRENCY_SYMBOL}"
+            )
 
-        await context.bot.send_invoice(
-            chat_id=chat_id,
-            title=self.get_text('invoice_title'),
-            description=description,
-            payload=f"order_{user_id}_{int(time.time())}",
-            provider_token=PAYMENT_PROVIDER_TOKEN,
-            currency=CURRENCY_CODE,
-            prices=prices,
-            start_parameter="test-payment",
-            is_flexible=False,
-            payload_type="HTML"  # Додаємо, щоб тег <code> спрацював
-        )
+            invoice_title = self.get_text('invoice_title', shop_name=SHOP_NAME)
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(self.get_text('pay_button_text'), pay=True)],
+                [InlineKeyboardButton(self.get_text('back_button_2'), callback_data="back_to_payment")],
+                [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
+            ])
+
+            # --- ВИПРАВЛЕННЯ: Відправляємо інвойс і зберігаємо його в змінну `m` ---
+            m = await context.bot.send_invoice(
+                chat_id=chat_id,
+                title=invoice_title,
+                description=description,
+                payload=f"order_{user_id}_{int(time.time())}",
+                provider_token=PAYMENT_TOKENS['PORTMONE'],
+                currency=CURRENCY_CODE,
+                prices=prices,
+                start_parameter="test-payment",
+                is_flexible=False,
+                reply_markup=keyboard
+            )
+
+            # Зберігаємо ID інвойсу, щоб бот знав, що саме видаляти після оплати
+            self.user_states[user_id]['invoice_msg_id'] = m.message_id
+
+        except Exception as e:
+            logger.error(f"❌ Error in send_invoice: {e}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Помилка при створенні платежу. Спробуйте інший спосіб оплати або зверніться до підтримки."
+            )
 
     # main.py
     async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2243,9 +2279,20 @@ class OnlineShopBot:
     async def handle_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context):
             return
+        query = update.callback_query
         user_id = update.effective_user.id
         self.user_states.pop(user_id, None)
-        await update.callback_query.edit_message_text(self.get_text('order_cancelled_2'))
+
+        await query.answer(self.get_text('order_cancelled_2'))
+
+        # ВИПРАВЛЕННЯ: Видаляємо повідомлення ТІЛЬКИ якщо це інвойс.
+        # Якщо це звичайний текст, show_cart його плавно відредагує
+        if getattr(query.message, 'invoice', None):
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+
         await self.show_cart(update, context)
 
     async def show_order_summary(self, context, chat_id, user_id):
@@ -2258,11 +2305,9 @@ class OnlineShopBot:
         address = self.escape_html(state.get('address', ''))
         phone = self.escape_html(state.get('phone', ''))
 
-        # Блок перевірки профілю (як у головному меню)
         missing = self.get_profile_completion_status(user_id)
         promo_header = ""
-        # Використовуємо ту саму лінію, що і в мейн меню
-        separator = "────────────────────"
+        separator = "<code>────────────────────</code>"
 
         if missing:
             promo_text = self.get_text(f'welcome_promo_{len(missing)}')
@@ -2276,11 +2321,7 @@ class OnlineShopBot:
 
             promo_header = f"{promo_text}\n⚠️ <b>Заповніть ці дані:</b> {', '.join(labels)}\n{separator}\n\n"
 
-        # Отримуємо текст підтвердження
         base_summary = self.get_text('confirm_details', full_name=full_name, email=email, address=address, phone=phone)
-
-        # Склеюємо все докупи.
-        # Переконайся, що в strings.py у 'confirm_details' лінія ТАКОЖ у <code>
         summary_text = f"{promo_header}{base_summary}"
 
         keyboard = InlineKeyboardMarkup([
@@ -2296,7 +2337,20 @@ class OnlineShopBot:
             [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
         ])
 
+        # --- ПИЛОСОС: Спочатку пробуємо відредагувати існуюче повідомлення ---
         try:
+            msg_id = state.get('msg_id')
+            if msg_id:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=msg_id,
+                    text=summary_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+            else:
+                raise Exception("No msg_id")
+        except Exception:
             m = await context.bot.send_message(
                 chat_id=chat_id,
                 text=summary_text,
@@ -2304,8 +2358,6 @@ class OnlineShopBot:
                 parse_mode="HTML"
             )
             state['msg_id'] = m.message_id
-        except Exception as e:
-            logger.error(f"Error in show_order_summary: {e}")
 
     async def show_category_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -2399,6 +2451,8 @@ class OnlineShopBot:
     async def finalize_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE, payment_method,
                              pre_calc_total=None):
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        query = update.callback_query
 
         # Якщо state загубився (наприклад, довга оплата), створюємо мінімальний
         if user_id not in self.user_states:
@@ -2414,7 +2468,7 @@ class OnlineShopBot:
         if not result:
             # Якщо кошик раптом порожній
             msg = self.get_text('order_failed_cart_empty')
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            await context.bot.send_message(chat_id=chat_id, text=msg)
             return
 
         order_id, products_list, total_amount = result
@@ -2443,15 +2497,37 @@ class OnlineShopBot:
         kb = InlineKeyboardMarkup(
             [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]])
 
-        # Відправляємо фінальний чек
-        if update.callback_query:
-            await update.callback_query.edit_message_text(text=final_text, reply_markup=kb, parse_mode="HTML")
+        # --- ПИЛОСОС ДЛЯ ЧЕКУ ---
+        if query:
+            try:
+                # Намагаємося плавно змінити меню вибору оплати на фінальний чек
+                await query.edit_message_text(
+                    text=final_text,
+                    reply_markup=kb,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                # Якщо змінити не вийшло, м'яко видаляємо старе і надсилаємо нове
+                try:
+                    await query.message.delete()
+                except Exception:
+                    pass
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=final_text,
+                    reply_markup=kb,
+                    parse_mode=ParseMode.HTML
+                )
         else:
-            # Для успішної оплати карткою (це не CallbackQuery)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=final_text, reply_markup=kb,
-                                           parse_mode="HTML")
+            # Для успішної онлайн-оплати (це не CallbackQuery, а SUCCESSFUL_PAYMENT)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=final_text,
+                reply_markup=kb,
+                parse_mode=ParseMode.HTML
+            )
 
-        # ВАЖЛИВО: Очищуємо state тільки в самому кінці, коли замовлення вже в базі
+        # ВАЖЛИВО: Очищуємо state тільки в самому кінці, коли замовлення вже в базі і чек показано
         if user_id in self.user_states:
             del self.user_states[user_id]
 
@@ -4474,27 +4550,21 @@ class OnlineShopBot:
 
         # 1. Підтвердження даних (з Summary до вибору оплати)
         if data == "confirm_details":
-            try:
-                await query.message.delete()
-            except:
-                pass
             await self.send_payment_keyboard(context, query.message.chat_id, user_id)
 
         # 2. Назад з вибору оплати до перевірки даних (Summary)
         elif data == "confirm_details_back":
-            try:
-                await query.message.delete()
-            except:
-                pass
             await self.show_order_summary(context, query.message.chat_id, user_id)
 
-        # 3. НАЗАД з реквізитів (карти/банку) до вибору способу оплати
+        # 3. НАЗАД з інвойсу до вибору способу оплати
         elif data == "back_to_payment":
             try:
+                # Інвойс не можна відредагувати, тому ми його видаляємо
                 await query.message.delete()
             except:
                 pass
-            # Повертаємо користувача до вибору кнопок: Cash, Card, Bank
+            # Видаляємо старий msg_id, щоб змусити бота надіслати нове повідомлення
+            self.user_states[user_id].pop('msg_id', None)
             await self.send_payment_keyboard(context, query.message.chat_id, user_id)
 
         await query.answer()
