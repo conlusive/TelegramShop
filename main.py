@@ -970,7 +970,6 @@ class OnlineShopBot:
         row = cursor.fetchone()
 
         if not row:
-
             await self.show_cart(update, context)
             return
 
@@ -987,23 +986,20 @@ class OnlineShopBot:
                     if k in v_data and isinstance(v_data[k], dict) and v in v_data[k]:
                         info = v_data[k][v]
                         if isinstance(info, dict) and 'qty' in info:
-
                             max_stock = info['qty']
                             break
             except:
                 pass
 
         if "plus" in action:
-
             if current_qty < max_stock:
                 new_qty = current_qty + 1
                 cursor.execute("UPDATE cart SET quantity = ? WHERE id = ?", (new_qty, cart_id))
                 self.conn.commit()
-
                 await self.show_cart(update, context)
             else:
-
-                await query.answer(self.get_text('stock_limit', max_stock=max_stock), show_alert=True)
+                # ВИПРАВЛЕНО: використовуємо limit замість max_stock
+                await query.answer(self.get_text('stock_limit', limit=max_stock), show_alert=True)
                 return
 
         elif "minus" in action:
@@ -1023,8 +1019,6 @@ class OnlineShopBot:
 
         try:
             parts = data.split("_")
-
-
             action_type = parts[1]
             product_id = int(parts[2])
 
@@ -1069,7 +1063,8 @@ class OnlineShopBot:
                     cursor.execute("UPDATE cart SET quantity = quantity + 1 WHERE user_id = ? AND product_id = ?",
                                    (user_id, product_id))
             else:
-                await query.answer(self.get_text('stock_limit', stock=stock), show_alert=True)
+                # ВИПРАВЛЕНО: використовуємо limit замість stock
+                await query.answer(self.get_text('stock_limit', limit=stock), show_alert=True)
                 return
 
         elif action_type == "minus":
@@ -1087,8 +1082,6 @@ class OnlineShopBot:
                 return
 
         self.conn.commit()
-
-
         await self.show_product(update, context, product_id_override=product_id)
 
 
@@ -1357,6 +1350,7 @@ class OnlineShopBot:
 
         if action == "plus":
             if current_qty + 1 > limit:
+                # ТУТ ПРАВИЛЬНО: вже використовується limit
                 await query.answer(self.get_text('stock_limit', limit=limit), show_alert=True)
                 return
 
@@ -1366,7 +1360,6 @@ class OnlineShopBot:
             if current_qty > 1:
                 cursor.execute("UPDATE cart SET quantity = quantity - 1 WHERE id = ?", (cart_id,))
             else:
-
                 cursor.execute("DELETE FROM cart WHERE id = ?", (cart_id,))
 
         self.conn.commit()
@@ -2052,36 +2045,32 @@ class OnlineShopBot:
         if not state: return
 
         cursor = self.conn.cursor()
-        cursor.execute('SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?', (user_id,))
+        cursor.execute(
+            'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
+            (user_id,))
+        # Розраховуємо суму для інвойсу
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
         if data == "pay_online":
-            order_details = await self.create_order(update, context, send_message=False, payment_method_override="Online Payment (Pending)")
-            if not order_details:
-                await context.bot.send_message(chat_id=user_id, text="Error creating order.")
-                return
-            order_id, _, _ = order_details
             await query.message.delete()
-            await self.send_invoice(update, context, total_amount, order_id)
+            # Тепер ми НЕ викликаємо create_order тут. Просто шлемо інвойс.
+            await self.send_invoice(update, context, total_amount)
         elif data == "pay_card":
-            # Переклад для бази/адміна
             method_name = "Card to courier" if SHIPPING_MODE != 'UKRAINE' else "Картою кур'єру"
             await self.finalize_order(update, context, method_name, total_amount)
         else:
-            # Переклад для бази/адміна
             method_name = "Cash on delivery" if SHIPPING_MODE != 'UKRAINE' else "Готівка (накладений платіж)"
             await self.finalize_order(update, context, method_name, total_amount)
 
-    async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount, order_id):
+    async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
         user_id = update.effective_user.id
 
-        # Визначаємо токен та валюту залежно від регіону
         if SHIPPING_MODE == 'UKRAINE':
             token = PAYMENT_TOKENS['PORTMONE']
             currency = "UAH"
         else:
             token = PAYMENT_TOKENS['REDSYS']
-            currency = "EUR"  # Redsys найкраще працює з EUR у тестовому режимі
+            currency = "EUR"
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"💳 Pay {total_amount} {currency}", pay=True)],
@@ -2091,44 +2080,36 @@ class OnlineShopBot:
         try:
             invoice_msg = await context.bot.send_invoice(
                 chat_id=update.effective_chat.id,
-                title="Order Payment #QuickShop",
-                description="Payment for selected items in your cart",
-                payload=f"order_{order_id}",
+                title=f"Order Payment - {SHOP_NAME}",
+                description="Payment for items in your cart",
+                payload=f"cart_{user_id}",  # Використовуємо ID користувача як корисне навантаження
                 provider_token=token,
                 currency=currency,
                 prices=[LabeledPrice("Total Amount", int(total_amount * 100))],
                 start_parameter="shop-payment",
-                reply_markup=keyboard,
-                need_name=False,
-                need_phone_number=False,
-                need_email=False,
-                need_shipping_address=False,
-                is_flexible=False
+                reply_markup=keyboard
             )
-
             if user_id in self.user_states:
                 self.user_states[user_id]['invoice_msg_id'] = invoice_msg.message_id
         except Exception as e:
-            print(f"❌ Error sending Redsys invoice: {e}")
+            logger.error(f"❌ Error sending invoice: {e}")
 
     # main.py
     async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.pre_checkout_query
-        # ТУТ МАЄ БУТИ ТІЛЬКИ ЦЕ:
-        await query.answer(ok=True)
-
         user_id = query.from_user.id
+
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT c.quantity, p.name, p.stock FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?",
             (user_id,))
 
+        # Перевіряємо склад в останній момент перед оплатою
         for qty, name, stock in cursor.fetchall():
             if stock < qty:
-                print(f"❌ [PAYMENT DEBUG] Товар {name} закінчився")
-                return await query.answer(ok=False, error_message=f"Sorry, {name} is already sold out!")
+                return await query.answer(ok=False, error_message=f"Вибачте, {name} вже закінчився!")
 
-        print("✅ [PAYMENT DEBUG] Відправлено ok=True")
+        # Якщо все ок, дозволяємо оплату
         await query.answer(ok=True)
 
     async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
