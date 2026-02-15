@@ -560,51 +560,41 @@ class OnlineShopBot:
         product = cursor.fetchone()
         if not product: return
 
+        # --- 🛠️ РОЗРАХУНОК ЦІНИ ---
+        all_prices = []
+        if product['variants']:
+            try:
+                v_data = json.loads(product['variants'])
+                for v_type, options in v_data.items():
+                    for opt, info in options.items():
+                        # Витягуємо ціну з варіанту
+                        p = float(info['price']) if isinstance(info, dict) else float(info)
+                        if p > 0: all_prices.append(p)
+            except: pass
+
+        if all_prices:
+            # Для варіантів ЗАВЖДИ додаємо "від / from"
+            min_p = min(all_prices)
+            display_price = self.get_text('price_from', price=min_p).replace('$', CURRENCY_SYMBOL)
+        else:
+            # Для звичайних товарів — просто ціна
+            display_price = f"{product['price']}{CURRENCY_SYMBOL}"
+
         stock = product['stock']
         stock_status = self.get_text('in_stock') if stock > 5 else (
             self.get_text('low_stock', stock=stock) if stock > 0 else self.get_text('out_of_stock'))
 
-        variants_display = ""
-        base_price = product['price']
-        display_price = f"{base_price}{CURRENCY_SYMBOL}"
+        cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
+        in_cart = cursor.fetchone()[0] or 0
 
+        variants_display = ""
         if product['variants']:
             try:
                 v_data = json.loads(product['variants'])
-                all_prices = []
-
-                # Collect all variant prices
                 for v_type, options in v_data.items():
-                    if isinstance(options, dict):
-                        for opt, info in options.items():
-                            if isinstance(info, dict) and 'price' in info:
-                                all_prices.append(float(info['price']))
-
-                # If there are variant prices, calculate min/max
-                if all_prices:
-                    # If base_price is also set and > 0, consider it in min/max calculation
-                    if base_price > 0:
-                        all_prices.append(float(base_price))
-
-                    if all_prices: # Check if there are any prices to process
-                        min_p = min(all_prices)
-                        max_p = max(all_prices)
-
-                        if min_p != max_p:
-                            display_price = self.get_text('price_from', price=min_p).replace('$', CURRENCY_SYMBOL)
-                        else:
-                            display_price = f"{min_p}{CURRENCY_SYMBOL}"
-                
-                # This part handles the display of the variants themselves, not the price.
-                for v_type, options in v_data.items():
-                    opt_list = list(options.keys()) if isinstance(options, dict) else options
+                    opt_list = list(options.keys())
                     variants_display += self.get_text('variant_display', v_type=v_type, opt_list=', '.join(map(str, opt_list)))
-
-            except Exception as e:
-                print(f"Price calc error: {e}")
-
-        cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
-        in_cart = cursor.fetchone()[0] or 0
+            except: pass
 
         text = (
             f"{product['emoji'] or '📦'} <b>{self.escape_html(product['name'])}</b>\n\n"
@@ -613,17 +603,12 @@ class OnlineShopBot:
             f"{self.get_text('product_details', display_price=display_price, stock_status=stock_status, in_cart=in_cart)}"
         )
 
-        keyboard = []
-        keyboard.append([
-            InlineKeyboardButton(self.get_text('minus_button'), callback_data=f"prod_minus_{product_id}_{prod_page}_{cat_page}"),
-            InlineKeyboardButton(self.get_text('plus_button'), callback_data=f"prod_plus_{product_id}_{prod_page}_{cat_page}")
-        ])
-
-        cart_btn_text = self.get_text('cart_button_count', in_cart=in_cart) if in_cart > 0 else self.get_text('cart_button')
-        keyboard.append([
-            InlineKeyboardButton(cart_btn_text, callback_data="cart"),
-            InlineKeyboardButton(self.get_text('back_button'), callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")
-        ])
+        keyboard = [
+            [InlineKeyboardButton(self.get_text('minus_button'), callback_data=f"prod_minus_{product_id}_{prod_page}_{cat_page}"),
+             InlineKeyboardButton(self.get_text('plus_button'), callback_data=f"prod_plus_{product_id}_{prod_page}_{cat_page}")],
+            [InlineKeyboardButton(self.get_text('cart_button_count', in_cart=in_cart) if in_cart > 0 else self.get_text('cart_button'), callback_data="cart"),
+             InlineKeyboardButton(self.get_text('back_button'), callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")]
+        ]
 
         try:
             if product['image_url']:
@@ -632,8 +617,7 @@ class OnlineShopBot:
                                              reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
             else:
                 await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-        except:
-            pass
+        except: pass
 
     async def handle_add_to_cart_click(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -1543,72 +1527,81 @@ class OnlineShopBot:
         await self.show_cart(update, context)
 
     async def update_product_view(self, query, product_id, context):
-            self.conn.row_factory = sqlite3.Row
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
-            product = cursor.fetchone()
+        user_id = query.from_user.id
+        self.conn.row_factory = sqlite3.Row
+        cursor = self.conn.cursor()
 
-            user_id = query.from_user.id
-            cursor.execute("SELECT quantity FROM cart WHERE user_id=? AND product_id=?", (user_id, product_id))
-            row = cursor.fetchone()
-            cart_qty = row[0] if row else 0
+        cursor.execute("SELECT * FROM products WHERE id = ?", (product_id,))
+        product = cursor.fetchone()
+        if not product: return
 
-            emoji = product['emoji'] if product['emoji'] else ""
-            stock = product['stock']
-            img_source = product['image_url']
-            is_file_id = img_source and not img_source.startswith("http")
+        cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ? AND product_id = ?", (user_id, product_id))
+        in_cart = cursor.fetchone()[0] or 0
 
-            image_link_markdown = f"<a href='{img_source}'>&#8203;</a>" if (img_source and not is_file_id) else ""
+        # --- 🛠️ ТАКА Ж ЛОГІКА ЦІНИ ---
+        all_prices = []
+        if product['variants']:
+            try:
+                v_data = json.loads(product['variants'])
+                for v_type, options in v_data.items():
+                    for opt, info in options.items():
+                        p = float(info['price']) if isinstance(info, dict) else float(info)
+                        if p > 0: all_prices.append(p)
+            except:
+                pass
 
-            if stock > 0:
-                stock_text = self.get_text('in_stock_2', stock=stock)
-                add_btn = InlineKeyboardButton(self.get_text('add_button'), callback_data=f"add_to_cart_{product_id}")
+        if all_prices:
+            min_p = min(all_prices)
+            display_price = self.get_text('price_from', price=min_p).replace('$', CURRENCY_SYMBOL)
+        else:
+            display_price = f"{product['price']}{CURRENCY_SYMBOL}"
+
+        stock = product['stock']
+        stock_status = self.get_text('in_stock') if stock > 5 else (
+            self.get_text('low_stock', stock=stock) if stock > 0 else self.get_text('out_of_stock'))
+
+        variants_display = ""
+        if product['variants']:
+            try:
+                v_data = json.loads(product['variants'])
+                for v_type, options in v_data.items():
+                    opt_list = list(options.keys())
+                    variants_display += self.get_text('variant_display', v_type=v_type,
+                                                      opt_list=', '.join(map(str, opt_list)))
+            except:
+                pass
+
+        text = (
+            f"{product['emoji'] or '📦'} <b>{self.escape_html(product['name'])}</b>\n\n"
+            f"{self.escape_html(product['description'] or self.get_text('no_description'))}\n"
+            f"{variants_display}\n\n"
+            f"{self.get_text('product_details', display_price=display_price, stock_status=stock_status, in_cart=in_cart)}"
+        )
+
+        state = self.user_states.get(user_id, {})
+        prod_page = state.get('prod_page', 1)
+        cat_page = state.get('cat_page', 1)
+
+        keyboard = [
+            [InlineKeyboardButton(self.get_text('minus_button'),
+                                  callback_data=f"prod_minus_{product_id}_{prod_page}_{cat_page}"),
+             InlineKeyboardButton(self.get_text('plus_button'),
+                                  callback_data=f"prod_plus_{product_id}_{prod_page}_{cat_page}")],
+            [InlineKeyboardButton(
+                self.get_text('cart_button_count', in_cart=in_cart) if in_cart > 0 else self.get_text('cart_button'),
+                callback_data="cart"),
+             InlineKeyboardButton(self.get_text('back_button'),
+                                  callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")]
+        ]
+
+        try:
+            if product['image_url']:
+                await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                 parse_mode="HTML")
             else:
-                stock_text = self.get_text('out_of_stock_2')
-                add_btn = None
-
-            text = f"""{image_link_markdown}
-    {emoji} <b>{self.escape_html(product['name'])}</b>
-
-    📝 {self.escape_html(product['description'])}
-
-    💰 <b>Price:</b> {product['price']}{CURRENCY_SYMBOL}
-    {stock_text}
-    🛒 <b>In Cart:</b> {cart_qty}
-
-    <b>Category:</b> {self.escape_html(product['category'])}"""
-
-            keyboard = []
-
-            control_row = []
-
-            if cart_qty > 0:
-                control_row.append(InlineKeyboardButton(self.get_text('remove_button'), callback_data=f"remove_from_cart_{product_id}"))
-
-            if add_btn:
-                control_row.append(add_btn)
-
-            if control_row:
-                keyboard.append(control_row)
-
-            keyboard.append([InlineKeyboardButton(self.get_text('go_to_cart_button_count', cart_qty=cart_qty), callback_data="cart")])
-            keyboard.append([InlineKeyboardButton(self.get_text('back_to_category_button', product_category=product['category']),
-                                                  callback_data=f"category_{product['category']}")])
-
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            if query.message.photo:
-                try:
-                    await query.edit_message_caption(caption=text, reply_markup=reply_markup,
-                                                     parse_mode=ParseMode.HTML)
-                except Exception:
-                    pass
-            else:
-
-                try:
-                    await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
-                except Exception:
-                    pass
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        except:
+            pass
 
     # -------------------- CHECKOUT LOGIC --------------------
     async def checkout(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1980,20 +1973,33 @@ class OnlineShopBot:
         )
         self.user_states[user_id]['msg_id'] = m.message_id
 
-    async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method, products_list, total_amount):
+    async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method,
+                                     products_list, total_amount):
         try:
-            region_header = self.get_text('new_order_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('new_order_notification_international')
-            address_label = self.get_text('delivery_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('delivery_notification_international')
-            pay_label = self.get_text('payment_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('payment_notification_international')
+            # Визначаємо мову заголовків залежно від SHIPPING_MODE
+            region_header = self.get_text(
+                'new_order_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text(
+                'new_order_notification_international')
+            address_label = self.get_text(
+                'delivery_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text(
+                'delivery_notification_international')
+            pay_label = self.get_text('payment_notification_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text(
+                'payment_notification_international')
 
             items_str = ""
             for item in products_list:
                 opts_str = ""
+                # Формуємо рядок обраних варіантів (наприклад: 1L, Red)
                 if item.get('selected_options'):
                     opts_vals = [f"{v}" for k, v in item['selected_options'].items()]
                     opts_str = f" ({', '.join(opts_vals)})"
-                items_str += f"▫️ {item['emoji']} {item['name']}{opts_str} x {item['quantity']}\n"
 
+                # --- 🛠️ ВИПРАВЛЕНО: Додано ціну до кожного товару ---
+                # Формат: ▫️ Емодзі Назва (Варіант) x Кількість - Ціна₴
+                item_price = item.get('price', 0)
+                items_str += f"▫️ {item['emoji']} {item['name']}{opts_str} x {item['quantity']} - <b>{item_price}{CURRENCY_SYMBOL}</b>\n"
+
+            # Формуємо повний текст повідомлення за шаблоном з strings.py
             text = self.get_text('admin_new_order_notification',
                                  region_header=region_header,
                                  order_id=order_id,
@@ -2007,6 +2013,7 @@ class OnlineShopBot:
                                  items_str=items_str,
                                  total_amount=total_amount)
 
+            # Відправляємо адміну
             await context.bot.send_message(
                 chat_id=ADMIN_ID,
                 text=text,
@@ -2042,15 +2049,47 @@ class OnlineShopBot:
             item_total = real_price * quantity
             total_amount += item_total
 
+            sel_opts = json.loads(opts_json) if opts_json else {}
             products_list.append({
                 "product_id": product_id, "name": name, "price": real_price,
                 "quantity": quantity, "total": item_total, "emoji": emoji,
-                "selected_options": json.loads(opts_json) if opts_json else {}
+                "selected_options": sel_opts
             })
 
-            # 2. СПИСУЄМО ЗІ СКЛАДУ
-            new_stock = max(0, current_stock - quantity)
-            cursor.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, product_id))
+            # --- 🛠 ВИПРАВЛЕНО: СПИСУЄМО ЗІ СКЛАДУ (Загальний + Варіанти) ---
+            # Отримуємо свіжі дані з бази, бо в кошику може бути кілька варіантів одного товару
+            cursor.execute("SELECT stock, variants FROM products WHERE id = ?", (product_id,))
+            p_row = cursor.fetchone()
+
+            if p_row:
+                p_stock, p_variants_json = p_row
+                new_stock = max(0, p_stock - quantity)
+                new_variants_json = p_variants_json
+
+                # Якщо у товару є варіанти, списуємо конкретний варіант
+                if p_variants_json and sel_opts:
+                    try:
+                        v_data = json.loads(p_variants_json)
+                        changed = False
+                        for key, val in sel_opts.items():
+                            if key in v_data:
+                                group = v_data[key]
+                                if isinstance(group, dict) and val in group:
+                                    target = group[val]
+                                    if isinstance(target, dict) and 'qty' in target:
+                                        target['qty'] = max(0, target['qty'] - quantity)
+                                        changed = True
+                                    elif isinstance(target, int):
+                                        group[val] = max(0, group[val] - quantity)
+                                        changed = True
+                        if changed:
+                            new_variants_json = json.dumps(v_data, ensure_ascii=False)
+                    except Exception as e:
+                        print(f"Error deducting variants stock: {e}")
+
+                # Оновлюємо товар у базі
+                cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
+                               (new_stock, new_variants_json, product_id))
 
         # 3. ЗБЕРІГАЄМО ЗАМОВЛЕННЯ
         full_name = state.get('full_name', user_name)
@@ -2265,7 +2304,6 @@ class OnlineShopBot:
         prod_page = 1
         category = ""
 
-
         try:
             if len(parts) >= 4 and parts[-1].isdigit() and parts[-2].isdigit():
                 cat_page = int(parts[-1])
@@ -2295,54 +2333,46 @@ class OnlineShopBot:
                        (category, ITEMS_PER_PAGE, offset))
         products = cursor.fetchall()
 
-        text = self.get_text('category_header', category=self.escape_html(category), prod_page=prod_page, total_pages=total_pages)
+        text = self.get_text('category_header', category=self.escape_html(category), prod_page=prod_page,
+                             total_pages=total_pages)
         keyboard = []
 
         for p_id, name, base_price, emoji, variants_json in products:
             emo = emoji if emoji else "📦"
+
+            # --- ЛОГІКА ЦІНИ ДЛЯ СПИСКУ ---
             display_price = f"{base_price}{CURRENCY_SYMBOL}"
 
             if variants_json:
                 try:
                     v_data = json.loads(variants_json)
                     all_prices = []
-
-                    # Collect all variant prices
                     for v_type, options in v_data.items():
                         if isinstance(options, dict):
                             for opt, info in options.items():
-                                if isinstance(info, dict) and 'price' in info:
+                                if isinstance(info, dict) and 'price' in info and float(info['price']) > 0:
                                     all_prices.append(float(info['price']))
 
-                    # If there are variant prices, calculate min/max
                     if all_prices:
-                        # If base_price is also set and > 0, consider it in min/max calculation
-                        if base_price > 0:
-                            all_prices.append(float(base_price))
-                        
-                        if all_prices:
-                            min_p = min(all_prices)
-                            max_p = max(all_prices)
+                        min_p = min(all_prices)
+                        display_price = self.get_text('price_from', price=min_p).replace('$', CURRENCY_SYMBOL)
+                except:
+                    pass
 
-                            if min_p != max_p:
-                                display_price = self.get_text('price_from', price=min_p)
-                            else:
-                                display_price = f"{min_p}{CURRENCY_SYMBOL}"
-
-                except Exception as e:
-                    print(f"Price calc error in category view: {e}")
-            
             keyboard.append([InlineKeyboardButton(f"{emo} {name} - {display_price}",
                                                   callback_data=f"product_{p_id}_{prod_page}_{cat_page}")])
 
         nav = []
         if prod_page > 1:
-            nav.append(InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"category_{category}_{prod_page - 1}_{cat_page}"))
+            nav.append(InlineKeyboardButton(self.get_text('prev_button'),
+                                            callback_data=f"category_{category}_{prod_page - 1}_{cat_page}"))
         if prod_page < total_pages:
-            nav.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"category_{category}_{prod_page + 1}_{cat_page}"))
+            nav.append(InlineKeyboardButton(self.get_text('next_button'),
+                                            callback_data=f"category_{category}_{prod_page + 1}_{cat_page}"))
         if nav: keyboard.append(nav)
 
-        keyboard.append([InlineKeyboardButton(self.get_text('back_to_catalog_button_2'), callback_data=f"catalog_page_{cat_page}")])
+        keyboard.append(
+            [InlineKeyboardButton(self.get_text('back_to_catalog_button_2'), callback_data=f"catalog_page_{cat_page}")])
 
         try:
             await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -3149,98 +3179,70 @@ class OnlineShopBot:
     async def admin_handle_order_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         user_id = update.effective_user.id
-        if user_id != ADMIN_ID: return
+
+        # Перевірка прав адміністратора
+        if user_id != ADMIN_ID:
+            return
 
         data = query.data
         parts = data.split("_")
         action = parts[2]
-        order_id = parts[3]
+        order_id = int(parts[3])
 
         cursor = self.conn.cursor()
-
-        cursor.execute("SELECT products, status, user_id FROM orders WHERE id = ?", (order_id,))
+        # Отримуємо дані замовлення
+        cursor.execute("SELECT status, user_id FROM orders WHERE id = ?", (order_id,))
         row = cursor.fetchone()
 
         if not row:
             await query.answer(self.get_text('order_not_found_2'))
             return
 
-        products_json = row[0]
-        current_status = row[1]
-        buyer_id = row[2]
+        current_status = row[0]
+        buyer_id = row[1]
 
+        # Не дозволяємо міняти статус, якщо замовлення вже не в черзі (pending)
         if current_status != 'pending':
             await query.answer(self.get_text('order_already_status', current_status=current_status))
             return
 
         if action == "accept":
-
-            cursor.execute("UPDATE orders SET status = 'accepted' WHERE id = ?", (order_id,))
+            # Оновлюємо статус на "Підтверджено"
+            cursor.execute("UPDATE orders SET status = 'confirmed' WHERE id = ?", (order_id,))
             self.conn.commit()
 
             await query.edit_message_text(self.get_text('order_accepted', order_id=order_id))
+
+            # Сповіщаємо покупця про підтвердження
             try:
-                await context.bot.send_message(chat_id=buyer_id, text=self.get_text('your_order_accepted', order_id=order_id))
-            except:
-                pass
+                status_text = self.get_text('status_confirmed')
+                msg_text = self.get_text('order_update_notification_ukraine', order_id=order_id,
+                                         display_status=status_text) if SHIPPING_MODE == 'UKRAINE' else self.get_text(
+                    'order_update_notification_international', order_id=order_id, display_status=status_text)
+                await context.bot.send_message(chat_id=buyer_id, text=msg_text, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"Failed to notify buyer: {e}")
 
         elif action == "reject":
+            # --- 🛠 ВИПРАВЛЕНО: Використовуємо універсальний метод повернення товару ---
+            # Це автоматично оновить і загальний stock, і JSON-варіанти
+            self.restore_stock(order_id)
 
+            # Оновлюємо статус замовлення на "Скасовано"
+            cursor.execute("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
+            self.conn.commit()
 
+            await query.edit_message_text(self.get_text('order_rejected', order_id=order_id))
+
+            # Сповіщаємо покупця про скасування
             try:
-                products_list = json.loads(products_json)
-                for item in products_list:
-                    p_id = item['product_id']
-                    qty_to_return = item['quantity']
-                    sel_opts = item['selected_options']
-
-                    cursor.execute("SELECT stock, variants FROM products WHERE id = ?", (p_id,))
-                    prod_row = cursor.fetchone()
-
-                    if prod_row:
-                        current_stock = prod_row[0]
-                        variants_json = prod_row[1]
-                        new_stock = current_stock + qty_to_return
-                        new_vars_json = variants_json
-                        if variants_json and sel_opts:
-                            try:
-                                v_data = json.loads(variants_json)
-                                changed = False
-                                for key, val in sel_opts.items():
-                                    if key in v_data:
-                                        group = v_data[key]
-
-                                        if isinstance(group, dict) and val in group:
-                                            target = group[val]
-                                            if isinstance(target, dict) and 'qty' in target:
-                                                target['qty'] += qty_to_return
-                                                changed = True
-
-                                            elif isinstance(target, int):
-                                                group[val] += qty_to_return
-                                                changed = True
-
-                                if changed:
-                                    new_vars_json = json.dumps(v_data, ensure_ascii=False)
-                            except:
-                                pass
-
-                        cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
-                                       (new_stock, new_vars_json, p_id))
-
-
-                cursor.execute("UPDATE orders SET status = 'canceled' WHERE id = ?", (order_id,))
-                self.conn.commit()
-
-                await query.edit_message_text(self.get_text('order_rejected', order_id=order_id))
-                try:
-                    await context.bot.send_message(chat_id=buyer_id, text=self.get_text('your_order_canceled', order_id=order_id))
-                except:
-                    pass
-
+                status_text = self.get_text('status_cancelled')
+                msg_text = self.get_text('order_update_notification_ukraine', order_id=order_id,
+                                         display_status=status_text) if SHIPPING_MODE == 'UKRAINE' else self.get_text(
+                    'order_update_notification_international', order_id=order_id, display_status=status_text)
+                await context.bot.send_message(chat_id=buyer_id, text=msg_text, parse_mode="HTML")
             except Exception as e:
-                print(f"Refund error: {e}")
-                await query.answer(self.get_text('error_restoring_stock'))
+                logger.error(f"Failed to notify buyer: {e}")
 
     async def admin_product_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE, product_id_override=None):
         query = update.callback_query
@@ -3907,19 +3909,17 @@ class OnlineShopBot:
         field = state.get('field')
         chat_id = update.effective_chat.id
 
-        # --- 🧹 ПИЛОСОС (видаляємо сміття) ---
+        # --- 🧹 ПИЛОСОС ---
         try:
             await update.message.delete()
         except:
             pass
-
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
             except:
                 pass
 
-        # Допоміжна функція для відправки помилки
         async def send_error(text, kb):
             new_msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = new_msg.message_id
@@ -3928,18 +3928,21 @@ class OnlineShopBot:
             InlineKeyboardButton(self.get_text('cancel_button'), callback_data=f"admin_prod_{product_id}")
         ]])
 
-        # 1. ВАЛІДАЦІЯ ЧИСЕЛ (Ціна/Сток)
+        cursor = self.conn.cursor()
+        value = input_value
+        new_total_stock = None  # Для синхронізації
+
+        # 1. Валідація чисел
         if field in ['price', 'stock']:
             try:
                 clean_text = str(input_value).replace('$', '').replace(' ', '').replace(',', '.').strip()
                 value = float(clean_text) if field == 'price' else int(clean_text)
             except ValueError:
                 example_val = "1250" if field == 'price' else "10"
-                error_msg = self.get_text('err_invalid_number', val=input_value, ex_val=example_val)
-                await send_error(error_msg, cancel_kb)
+                await send_error(self.get_text('err_invalid_number', val=input_value, ex_val=example_val), cancel_kb)
                 return
 
-        # 2. ВАЛІДАЦІЯ ВАРІАНТІВ
+        # 2. Валідація ВАРІАНТІВ + РОЗРАХУНОК СТОКУ
         elif field == 'variants':
             try:
                 if ":" in str(input_value):
@@ -3947,26 +3950,34 @@ class OnlineShopBot:
                     v_type = v_type_part.strip()
                     options_list = options_part.split(",")
                     v_data = {v_type: {}}
+
+                    calculated_stock = 0
                     for opt in options_list:
                         parts = opt.strip().split("=")
                         opt_name = parts[0].strip()
                         qty = int(parts[1].strip()) if len(parts) > 1 else 0
                         price = float(parts[2].strip()) if len(parts) > 2 else 0
                         v_data[v_type][opt_name] = {"qty": qty, "price": price}
+                        calculated_stock += qty  # Додаємо до загального залишку
+
                     value = json.dumps(v_data, ensure_ascii=False)
+                    new_total_stock = calculated_stock
                 else:
                     raise ValueError()
             except Exception:
-                error_msg = self.get_text('err_variant_format', val=input_value)
-                await send_error(error_msg, cancel_kb)
+                await send_error(self.get_text('err_variant_format', val=input_value), cancel_kb)
                 return
         else:
             value = input_value
 
-        # 3. ОНОВЛЕННЯ БД
-        cursor = self.conn.cursor()
+        # 3. ОНОВЛЕННЯ БД (Синхронізовано)
         try:
-            cursor.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (value, product_id))
+            if new_total_stock is not None:
+                # Оновлюємо і варіанти, і загальний сток одним запитом
+                cursor.execute("UPDATE products SET variants = ?, stock = ? WHERE id = ?",
+                               (value, new_total_stock, product_id))
+            else:
+                cursor.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (value, product_id))
             self.conn.commit()
         except Exception as e:
             await send_error(f"❌ DB Error: {e}", cancel_kb)
@@ -3974,25 +3985,15 @@ class OnlineShopBot:
 
         # 4. УСПІХ
         self.user_states.pop(user_id, None)
-
-        # Локалізуємо назву поля для фінального повідомлення
-        field_names = {
-            "name": self.get_text('summary_name_label'),
-            "description": self.get_text('desc'),
-            "price": self.get_text('price'),
-            "stock": self.get_text('stock'),
-            "variants": self.get_text('variants'),
-            "emoji": self.get_text('emoji'),
-            "category": self.get_text('category')
-        }
+        field_names = {"name": self.get_text('summary_name_label'), "price": self.get_text('price'),
+                       "stock": self.get_text('stock'), "variants": self.get_text('variants')}
         display_field = field_names.get(field, str(field).capitalize())
 
         await context.bot.send_message(
             chat_id=chat_id,
             text=self.get_text('status_updated', new_status=f"<b>{display_field}</b>"),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_prod_{product_id}")
-            ]]),
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_prod_{product_id}")]]),
             parse_mode="HTML"
         )
 
