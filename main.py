@@ -2131,18 +2131,18 @@ class OnlineShopBot:
         cursor.execute(
             'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
             (user_id,))
-        # Розраховуємо суму для інвойсу
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
         if data == "pay_online":
             await query.message.delete()
-            # Тепер ми НЕ викликаємо create_order тут. Просто шлемо інвойс.
             await self.send_invoice(update, context, total_amount)
+
+        # --- 🛠 ВИПРАВЛЕНО: Прибираємо хардкод для інших методів ---
         elif data == "pay_card":
-            method_name = "Card to courier" if SHIPPING_MODE != 'UKRAINE' else "Картою кур'єру"
+            method_name = self.get_text('method_card_courier')
             await self.finalize_order(update, context, method_name, total_amount)
         else:
-            method_name = "Cash on delivery" if SHIPPING_MODE != 'UKRAINE' else "Готівка (накладений платіж)"
+            method_name = self.get_text('method_cod')
             await self.finalize_order(update, context, method_name, total_amount)
 
     async def send_invoice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, total_amount):
@@ -2207,30 +2207,23 @@ class OnlineShopBot:
 
     async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-
-        # Отримуємо стан (state), щоб він не був порожнім
         if user_id not in self.user_states:
             self.user_states[user_id] = {'step': 'completed'}
-
         state = self.user_states[user_id]
 
-        # Видаляємо сміття
-        try:
-            await update.message.delete()
-        except:
-            pass
+        try: await update.message.delete()
+        except: pass
 
         if 'invoice_msg_id' in state:
-            try:
-                await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=state['invoice_msg_id'])
-            except:
-                pass
+            try: await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=state['invoice_msg_id'])
+            except: pass
 
         payment_info = update.message.successful_payment
         total_amount = payment_info.total_amount / 100
 
-        # Викликаємо фіналізацію. Вона ОДИН РАЗ викличе create_order.
-        await self.finalize_order(update, context, "Online Card Payment", total_amount)
+        # --- 🛠 ВИПРАВЛЕНО: Використовуємо локалізований текст замість "Online Card Payment" ---
+        method_name = self.get_text('method_online_card')
+        await self.finalize_order(update, context, method_name, total_amount)
 
     async def handle_checkout_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -3877,39 +3870,31 @@ class OnlineShopBot:
         query = update.callback_query
         user_id = update.effective_user.id
 
-        # Отримуємо всі дані профілю
         cursor = self.conn.cursor()
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
 
-        # Якщо даних взагалі немає
         if not row:
-            await query.answer("Your profile is already empty")
+            await query.answer(self.get_text('session_expired'))
             await self.show_profile(update, context)
             return
 
         full_name, email, address, phone = row
         keyboard = []
 
-        # Додаємо кнопки тільки для тих даних, які існують у базі
+        # Використовуємо локалізовані кнопки
         if full_name:
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Name", callback_data="delete_profile_full_name")])
+            keyboard.append([InlineKeyboardButton(self.get_text('delete_name_btn'), callback_data="delete_profile_full_name")])
         if email:
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Email", callback_data="delete_profile_email")])
-
+            keyboard.append([InlineKeyboardButton(self.get_text('delete_email_btn'), callback_data="delete_profile_email")])
         if address:
-            # Адаптивна назва залежно від регіону
-            shipping_label = "🗑️ Delete Shipping (City/Branch)" if SHIPPING_MODE == 'UKRAINE' else "🗑️ Delete Shipping (City/ZIP)"
-            keyboard.append([InlineKeyboardButton(shipping_label, callback_data="delete_profile_address")])
-
+            label_key = 'delete_shipping_ukr_btn' if SHIPPING_MODE == 'UKRAINE' else 'delete_shipping_int_btn'
+            keyboard.append([InlineKeyboardButton(self.get_text(label_key), callback_data="delete_profile_address")])
         if phone:
-            keyboard.append([InlineKeyboardButton("🗑️ Delete Phone", callback_data="delete_profile_phone")])
+            keyboard.append([InlineKeyboardButton(self.get_text('delete_phone_btn'), callback_data="delete_profile_phone")])
 
-        keyboard.append([InlineKeyboardButton("🔙 Back to Profile", callback_data="my_profile")])
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_profile_btn'), callback_data="my_profile")])
 
-        text = "🗑️ <b>Delete Personal Data</b>\n\nSelect the information you want to remove from your profile:"
-
-        # Видаляємо старе повідомлення, щоб уникнути помилок при зміні типів (текст/фото)
         try:
             await query.message.delete()
         except:
@@ -3917,7 +3902,7 @@ class OnlineShopBot:
 
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=text,
+            text=self.get_text('profile_delete_title'),
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="HTML"
         )

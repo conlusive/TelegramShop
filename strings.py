@@ -305,7 +305,7 @@ STRINGS = {
         'welcome_promo_1': "Залишився всього 1 крок до завершення профілю! ✨",
         'welcome_promo_2': "Майже готово! Заповніть ще 2 поля для швидкого замовлення. 🚀",
         'welcome_promo_3': "Ваш профіль заповнений лише частково. Додайте дані для зручності. 📦",
-        'welcome_promo_4': "Вітаємо! Заповніть свій профіль, щоб оформляти замовлення в один клік. 👇",
+        'welcome_promo_4': "Заповніть свій профіль, щоб оформляти замовлення в один клік. 👇",
         'missing_fields_info': "\n{promo}\n⚠️ <b>Заповніть ці дані:</b> {missing_labels}\n────────────────────",
         'invoice_title': "Оплата замовлення — {shop_name}",
         'invoice_desc': "Оплата товарів у вашому кошику",
@@ -359,7 +359,7 @@ STRINGS = {
 
         # Summary screen
         'summary_title': "🔍 Перевірте ваші дані",
-        'summary_confirm_btn': "✅ Все вірно",
+        'summary_confirm_btn': "✅ Все правильно",
         'summary_edit_name_btn': "✏️ Ім'я",
         'summary_edit_email_btn': "✏️ Email",
         'summary_edit_address_btn': "✏️ Доставка",
@@ -368,6 +368,13 @@ STRINGS = {
         'summary_email_label': "📧 Email",
         'summary_address_label': "📍 Доставка",
         'summary_phone_label': "📱 Телефон",
+        'profile_delete_title': "🗑️ <b>Видалення персональних даних</b>\n\nОберіть інформацію, яку ви хочете видалити з профілю:",
+        'delete_name_btn': "🗑️ Видалити Ім'я",
+        'delete_email_btn': "🗑️ Видалити Email",
+        'delete_phone_btn': "🗑️ Видалити Телефон",
+        'delete_shipping_ukr_btn': "🗑️ Видалити Доставку (Місто/Відділення)",
+        'delete_shipping_int_btn': "🗑️ Видалити Доставку (Місто/Індекс)",
+        'back_to_profile_btn': "🔙 Назад до профілю",
 
         # Profile/Checkout validation errors
         'err_invalid_name': "❌ <b>Некоректне ім'я</b>\n\n<b>Приклад:</b> <i>Іван Іванов</i>\n\nБудь ласка, спробуйте ще раз:",
@@ -756,6 +763,13 @@ STRINGS = {
         'summary_email_label': "📧 Email",
         'summary_address_label': "📍 Shipping",
         'summary_phone_label': "📱 Phone",
+        'profile_delete_title': "🗑️ <b>Delete Personal Data</b>\n\nSelect the information you want to remove from your profile:",
+        'delete_name_btn': "🗑️ Delete Name",
+        'delete_email_btn': "🗑️ Delete Email",
+        'delete_phone_btn': "🗑️ Delete Phone",
+        'delete_shipping_ukr_btn': "🗑️ Delete Shipping (City/Branch)",
+        'delete_shipping_int_btn': "🗑️ Delete Shipping (City/ZIP)",
+        'back_to_profile_btn': "🔙 Back to Profile",
 
         # Profile/Checkout validation errors
         'err_invalid_name': "❌ <b>Invalid Name</b>\n\n<b>Example:</b> <i>John Doe</i>\n\nPlease try again:",
