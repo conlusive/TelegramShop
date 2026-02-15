@@ -10,7 +10,7 @@ from telegram.constants import ParseMode
 from dom import (
     BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE,
     DB_NAME, SHOP_NAME, CURRENCY_SYMBOL, STORE_MESSAGES,
-    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS
+    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, BANK_RECIPIENT, BANK_IBAN, BANK_PURPOSE
 )
 from telegram import LabeledPrice
 from telegram.ext import PreCheckoutQueryHandler
@@ -1796,54 +1796,70 @@ class OnlineShopBot:
         query = update.callback_query
         user_id = query.from_user.id
 
-        payment_map = {"pay_cod": "Cash on delivery", "pay_card": "Card to courier", "pay_bank": "Bank transfer"}
+        payment_map = {
+            "pay_cod": self.get_text('method_cod'),
+            "pay_card": self.get_text('method_card_courier'),
+            "pay_bank": self.get_text('admin_bank_title')
+        }
         payment_key = query.data
         if payment_key not in payment_map: return
         payment_method = payment_map[payment_key]
 
         if user_id not in self.user_states:
-            await query.answer("❌ Session expired")
+            await query.answer(self.get_text('session_expired'), show_alert=True)
             await self.show_cart(update, context)
             return
 
         self.user_states[user_id]['payment'] = payment_method
 
+        # This part seems to be from an older version of the checkout flow
         if not self.user_states[user_id].get('phone'):
             self.user_states[user_id]['step'] = 'waiting_phone'
-            self.user_states[user_id]['msg_id'] = query.message.message_id
-
-            await query.edit_message_text(
-                "📋 **Placing an order**\n\n"
-                "📞 **Step 4/4:** Enter your phone number for delivery contact:\n"
-                "Enter your phone number in the format: +380XXXXXXXXX\n"
-                "Example: +380501234567",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="checkout")],
-                    [InlineKeyboardButton("❌ Cancel", callback_data="cancel_order")]
-                ]),
-                parse_mode="Markdown"
-            )
+            await self.continue_checkout_flow(update, context)
             return
 
-        # ВИПРАВЛЕНО: встановлено True для надсилання сповіщення адміну
         order_details = await self.create_order(update, context, send_message=True)
 
         if not order_details:
             try:
-                await query.edit_message_text("❌ Order failed.", reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🛒 Cart", callback_data="cart")]]))
+                await query.edit_message_text(self.get_text('order_failed_cart_empty'), reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(self.get_text('my_cart'), callback_data="cart")]]))
             except Exception:
                 pass
             return
 
         order_id, products_list, total_amount = order_details
+        self.user_states[user_id]['order_id'] = order_id
         
+        if payment_key == 'pay_bank':
+            await self.show_bank_payment_info(update, context)
+            return
+            
         order_text = STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id)
 
         await query.edit_message_text(
             text=order_text,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Main Menu", callback_data="main_menu")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]),
             parse_mode="HTML"
+        )
+
+    async def show_bank_payment_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        user_id = query.from_user.id
+        state = self.user_states.get(user_id, {})
+        order_id = state.get('order_id')
+
+        text = self.get_text(
+            'admin_bank_details',
+            recipient=BANK_RECIPIENT,
+            iban=BANK_IBAN,
+            purpose=f"{BANK_PURPOSE} #{order_id}" if order_id else BANK_PURPOSE
+        )
+        keyboard = [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
         )
 
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3269,7 +3285,7 @@ class OnlineShopBot:
         if product['variants']:
             try:
                 v_data = json.loads(product['variants'])
-                stock_details = "\n📊 **Stock Details:**\n"
+                stock_details = self.get_text('admin_stock_details_header')
 
                 for key, val in v_data.items():
                     if isinstance(val, dict):
@@ -3285,7 +3301,7 @@ class OnlineShopBot:
                                 if 'price' in info:
                                     p_val = float(info['price'])
                                     all_prices.append(p_val)
-                                    price_str = f" ({p_val}$)"
+                                    price_str = f" ({p_val}{CURRENCY_SYMBOL})"
                                 else:
                                     if base_price > 0: all_prices.append(base_price)
                             else:
@@ -3304,9 +3320,9 @@ class OnlineShopBot:
         max_p = max(all_prices)
 
         if min_p != max_p:
-            display_price = self.get_text('price_from', min_p=min_p)
+            display_price = self.get_text('price_from', price=min_p)
         else:
-            display_price = f"{min_p}$"
+            display_price = f"{min_p}{CURRENCY_SYMBOL}"
 
 
         text = self.get_text(
@@ -3582,7 +3598,7 @@ class OnlineShopBot:
         text = self.get_text(
             'product_image_management',
             product_name=product['name'],
-            status='✅ Image set' if has_image else '❌ No image'
+            status=self.get_text('admin_img_status_set') if has_image else self.get_text('admin_img_status_none')
         )
 
         keyboard = []
@@ -3597,9 +3613,9 @@ class OnlineShopBot:
         if query.message.photo:
             try: await query.message.delete()
             except: pass
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+            await context.bot.send_message(chat_id=query.message.chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         else:
-            await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+            await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
     async def admin_image_set_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
             query = update.callback_query
@@ -4253,32 +4269,27 @@ class OnlineShopBot:
         if data == "admin_decision_vars_no":
             self.user_states[user_id]['step'] = 'waiting_simple_price'
 
-            cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
+            cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
 
             msg = await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text="💰 **Simple Product**\n\nEnter the **Price** (number):",
+                text=self.get_text('admin_wizard_simple_price'),
                 reply_markup=cancel_kb,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.HTML
             )
             self.user_states[user_id]['msg_id'] = msg.message_id
-
-        elif data == "admin_decision_vars_yes":
-            self.user_states[user_id]['step'] = 'waiting_var_image'
-
+        else: # admin_decision_vars_yes
+            self.user_states[user_id]['step'] = 'waiting_variant_photo'
             self.user_states[user_id]['product_data']['variants'] = {}
-            self.user_states[user_id]['product_data']['stock'] = 0
-            self.user_states[user_id]['product_data']['price'] = 0
 
-            cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="admin_wizard_cancel")]])
+            cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_wizard_cancel")]])
 
             msg = await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text="🎨 **Variant Product**\n\n📸 Send a **Photo** (or URL, or `-` to skip):",
+                text=self.get_text('admin_wizard_variant_photo'),
                 reply_markup=cancel_kb,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.HTML
             )
-            self.user_states[user_id]['msg_id'] = msg.message_id
 
     async def admin_back_to_variant_types(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -4286,10 +4297,10 @@ class OnlineShopBot:
 
         self.user_states[user_id]['step'] = 'add_product_variants_loop'
 
-        text = "🎨 **Product Variants**\n\nSelect a type below or click **Finish**:"
+        text = self.get_text('admin_wizard_variant_title')
         reply_markup = self.get_variant_type_keyboard()
 
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
 
     def get_existing_categories_keyboard(self):
         cursor = self.conn.cursor()
@@ -4355,17 +4366,19 @@ class OnlineShopBot:
                 (p["name"], p["description"], p["price"], p.get('image_url'), p["emoji"], category, p["stock"], None))
             self.conn.commit()
             self.user_states.pop(user_id, None)
-            await context.bot.send_message(chat_id=query.message.chat_id, text="✅ Product Created!",
+            await context.bot.send_message(chat_id=query.message.chat_id, text=self.get_text('admin_product_created_simple'),
                                            reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton("🔙 Back to Products",
-                                                                      callback_data="admin_products")]]))
+                                               [[InlineKeyboardButton(self.get_text('back_to_products_button'),
+                                                                      callback_data="admin_products")]]),
+                                           parse_mode=ParseMode.HTML)
 
         elif step == 'waiting_var_category':
 
             state['product_data']['category'] = category
             state['step'] = 'add_product_variants_loop'
-            m = await context.bot.send_message(chat_id=query.message.chat_id, text="🎨 Setup Variants:",
-                                               reply_markup=self.get_variant_type_keyboard())
+            m = await context.bot.send_message(chat_id=query.message.chat_id, text=self.get_text('admin_wizard_setup_variants'),
+                                               reply_markup=self.get_variant_type_keyboard(),
+                                               parse_mode=ParseMode.HTML)
             state['msg_id'] = m.message_id
 
     async def handle_checkout_confirm(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
