@@ -344,7 +344,7 @@ STRINGS = {
         'add_photo_button': "➕ Додати фото",
         'change_photo_button': "✏️ Змінити фото",
         'delete_photo_button': "🗑️ Видалити фото",
-        'send_product_image': "📸 Надішліть зображення товару (або URL-посилання):",
+        'send_product_image': "📸 Надішліть зображення товару (або -):",
         'image_deleted': "🗑️ Зображення видалено!",
         'back_to_editing_button': "🔙 Повернутися до редагування",
 
@@ -365,7 +365,7 @@ STRINGS = {
         'add_variants_before_finishing': "⚠️ Додайте варіанти перед завершенням!",
         'finish_skip_variant': "✅ Завершити",
         'back_to_types_btn': "🔙 Назад до типів",
-        'admin_stock_details_header': "\n📊 <b>Деталі складу:</b>\n",
+        'admin_stock_details_header': "\n📊 Деталі складу:\n",
 
         # Ключі варіантів та переклади
         'size_variant': "📏 Розмір (S, M, L)",
