@@ -1448,10 +1448,13 @@ class OnlineShopBot:
                                              [InlineKeyboardButton(self.get_text('cancel_order_button'),
                                                                    callback_data="cancel_order")]])
 
+
+            provider_key = 'PORTMONE' if SHIPPING_MODE == 'UKRAINE' else 'REDSYS'
+
             m = await context.bot.send_invoice(
                 chat_id=chat_id, title=self.get_text('invoice_title', shop_name=SHOP_NAME),
                 description=description, payload=f"order_{user_id}_{int(time.time())}",
-                provider_token=PAYMENT_TOKENS['PORTMONE'], currency=CURRENCY_CODE,
+                provider_token=PAYMENT_TOKENS[provider_key], currency=CURRENCY_CODE,
                 prices=[LabeledPrice(self.get_text('invoice_label'), telegram_amount)], start_parameter="test-payment",
                 is_flexible=False, reply_markup=keyboard
             )
