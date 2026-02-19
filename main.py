@@ -1218,39 +1218,30 @@ class OnlineShopBot:
             state['is_editing_single'] = False
             return await self.show_order_summary(context, chat_id, user_id)
 
-        header = self.get_text('checkout_profile_loaded_header') if state.get('from_profile') else self.get_text(
-            'checkout_header')
+        header = self.get_text('checkout_profile_loaded_header') if state.get('from_profile') else self.get_text('checkout_header')
 
         if not state.get('full_name'):
-            state['step'], text, back_cb = 'waiting_full_name', header + self.get_text('checkout_step_1_of_4',
-                                                                                       total_steps="4"), "cart"
+            state['step'], text, back_cb = 'waiting_full_name', header + self.get_text('checkout_step_1_of_4', total_steps="4"), "cart"
         elif not state.get('email'):
-            state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4',
-                                                                                   total_steps="4"), "back_to_name"
+            state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4', total_steps="4"), "back_to_name"
         elif not state.get('address'):
             state['step'] = 'waiting_shipping'
-            text = header + self.get_text(
-                'checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international',
-                total_steps="4")
+            text = header + self.get_text('checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international', total_steps="4")
             back_cb = "back_to_email"
         elif not state.get('phone'):
-            state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4',
-                                                                                   total_steps="4",
-                                                                                   example=self.get_text('example_phone_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('example_phone_international')), "back_to_shipping"
+            # Більше ніяких перевірок — словник сам віддасть потрібний приклад телефону!
+            state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4', total_steps="4", example=self.get_text('ex_phone')), "back_to_shipping"
         else:
             return await self.show_order_summary(context, chat_id, user_id)
 
         kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
-                                   [InlineKeyboardButton(self.get_text('cancel_order_button'),
-                                                         callback_data="cancel_order")]])
+                                   [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]])
         if update.callback_query:
             await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
         else:
             if 'msg_id' in state:
-                try:
-                    await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-                except:
-                    pass
+                try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+                except: pass
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -1311,22 +1302,11 @@ class OnlineShopBot:
         state = self.user_states[user_id]
         state['step'], state['is_editing_single'] = 'waiting_confirmation', False
 
-        missing = self.get_profile_completion_status(user_id)
-        promo_header = ""
-        if missing:
-            labels = [self.get_text('missing_name') if "full_name" in missing else "",
-                      self.get_text('missing_email') if "email" in missing else "",
-                      self.get_text(
-                          'missing_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'missing_address_international') if "address" in missing else "",
-                      self.get_text('missing_phone') if "phone" in missing else ""]
-            labels = [l for l in labels if l]
-            promo_header = f"{self.get_text(f'welcome_promo_{len(missing)}')}\n{self.get_text('promo_fill_in_details', labels=', '.join(labels))}\n"
-
-        summary_text = promo_header + self.get_text('confirm_details',
-                                                    full_name=self.escape_html(state.get('full_name')),
-                                                    email=self.escape_html(state.get('email')),
-                                                    address=self.escape_html(state.get('address')),
-                                                    phone=self.escape_html(state.get('phone')))
+        summary_text = self.get_text('confirm_details',
+                                     full_name=self.escape_html(state.get('full_name')),
+                                     email=self.escape_html(state.get('email')),
+                                     address=self.escape_html(state.get('address')),
+                                     phone=self.escape_html(state.get('phone')))
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(self.get_text('summary_edit_name_btn'), callback_data="edit_check_name"),
@@ -1354,39 +1334,28 @@ class OnlineShopBot:
         state = self.user_states.get(user_id)
         if not state: return
 
+        # Ідеально чистий код без жодних перевірок на SHIPPING_MODE
         edit_map = {
-            "edit_check_name": ("full_name", self.get_text('summary_name_label'), "waiting_full_name",
-                                self.get_text('example_full_name')),
-            "edit_check_email": ("email", self.get_text('summary_email_label'), "waiting_email",
-                                 self.get_text('example_email')),
-            "edit_check_address": ("address", self.get_text('summary_address_label'), "waiting_shipping",
-                                   self.get_text('example_address_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('example_address_international')),
-            "edit_check_phone": ("phone", self.get_text('summary_phone_label'), "waiting_phone",
-                                 self.get_text('example_phone_ukraine_checkout') if SHIPPING_MODE == 'UKRAINE' else self.get_text('example_phone_international_checkout'))
+            "edit_check_name": ("full_name", self.get_text('summary_name_label'), "waiting_full_name", self.get_text('ex_name')),
+            "edit_check_email": ("email", self.get_text('summary_email_label'), "waiting_email", self.get_text('ex_email')),
+            "edit_check_address": ("address", self.get_text('summary_address_label'), "waiting_shipping", self.get_text('ex_address')),
+            "edit_check_phone": ("phone", self.get_text('summary_phone_label'), "waiting_phone", self.get_text('ex_phone'))
         }
 
         if query.data in edit_map:
             field_key, display_name, next_step, example = edit_map[query.data]
             state['step'], state['is_editing_single'] = next_step, True
             text = f"<b>{self.get_text('edit_field_title', field=display_name)}</b>\n\n<b>{self.get_text('current_value_label')}</b> <code>{self.escape_html(state.get(field_key, self.get_text('not_set')))}</code>\n\n<b>{self.get_text('example_label')}</b> {example}\n\n{self.get_text('enter_new_value_prompt')}"
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(self.get_text('back_to_summary_btn'), callback_data="confirm_details_back")]]),
-                                          parse_mode="HTML")
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_to_summary_btn'), callback_data="confirm_details_back")]]), parse_mode="HTML")
             return
 
-        if query.data == "back_to_name":
-            state['full_name'] = None
-        elif query.data == "back_to_email":
-            state['email'] = None
-        elif query.data == "back_to_shipping":
-            state['address'] = None
-        elif query.data == "back_to_phone_input":
-            state['phone'] = None
+        if query.data == "back_to_name": state['full_name'] = None
+        elif query.data == "back_to_email": state['email'] = None
+        elif query.data == "back_to_shipping": state['address'] = None
+        elif query.data == "back_to_phone_input": state['phone'] = None
         elif query.data == "back_to_payment":
-            try:
-                await query.message.delete()
-            except:
-                pass
+            try: await query.message.delete()
+            except: pass
             return await self.send_payment_keyboard(context, query.message.chat_id, user_id)
 
         await self.continue_checkout_flow(update, context)
@@ -1597,9 +1566,12 @@ class OnlineShopBot:
             cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
                            (max(0, p_stock - quantity), new_variants_json, product_id))
 
+        # ВИПРАВЛЕНО: 'payment_unknown' та 'not_specified_dash' беруться зі strings.py
         payment_method = payment_method_override or state.get('payment', self.get_text('payment_unknown'))
         full_name = state.get('full_name', update.effective_user.full_name)
-        email, address, phone = state.get('email', self.get_text('not_specified_dash')), state.get('address', self.get_text('not_specified_dash')), state.get('phone', self.get_text('not_specified_dash'))
+        email = state.get('email', self.get_text('not_specified_dash'))
+        address = state.get('address', self.get_text('not_specified_dash'))
+        phone = state.get('phone', self.get_text('not_specified_dash'))
 
         cursor.execute(
             "INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address, payment_method, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1835,14 +1807,17 @@ class OnlineShopBot:
                 pass
 
         sorted_sales = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)
-        top_text = "\n".join([f"🔥 {name}: {qty}{self.get_text('pcs_unit')}" for name, qty in sorted_sales[:5]]) if sorted_sales[
+
+        pcs_str = self.get_text('unit_pcs')
+        top_text = "\n".join([f"🔥 {name}: {qty} {pcs_str}" for name, qty in sorted_sales[:5]]) if sorted_sales[
             :5] else self.get_text('no_data')
-        bottom_text = "\n".join([f"🧊 {name}: {qty}{self.get_text('pcs_unit')}" for name, qty in sorted_sales[-5:]]) if sorted_sales[
+        bottom_text = "\n".join([f"🧊 {name}: {qty} {pcs_str}" for name, qty in sorted_sales[-5:]]) if sorted_sales[
             -5:] else self.get_text('no_data')
 
         text = self.get_text('admin_stats_text', total_revenue=total_revenue or 0, total_orders=total_orders,
                              pending_orders=pending_orders, total_users=total_users, active_buyers=active_buyers,
                              top_text=top_text, bottom_text=bottom_text)
+
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]]),
                                                       parse_mode="HTML")

@@ -161,6 +161,11 @@ STRINGS = {
         'example_label': "Приклад:",
         'enter_new_value_prompt': "Будь ласка, введіть нове значення нижче:",
         'back_to_summary_btn': "🔙 Повернутись до перевірки",
+        'ex_name': "<i>Іван Іванов</i>",
+        'ex_email': "<i>user@gmail.com</i>",
+        'ex_address': "<i>Київ, Нова Пошта #15</i>",
+        'ex_phone': "<i>+380...</i>",
+        'unit_pcs': "шт.",
 
         # Validation Errors
         'err_invalid_name': "❌ <b>Некоректне ім'я</b>\n\n<b>Приклад:</b> <i>Іван Іванов</i>\n\nБудь ласка, спробуйте ще раз:",
@@ -404,6 +409,8 @@ STRINGS = {
         'admin_ex_Weight': "1kg=10=100, 5kg=2=450",
         'admin_ex_ShoeSize': "41=5=2500, 42=10=2500",
         'admin_ex_default': "Опція=К-сть=Ціна",
+        'payment_unknown': "Невідомо",
+        'not_specified_dash': "—",
     },
 
     'INTERNATIONAL': {
@@ -574,6 +581,12 @@ STRINGS = {
         'example_label': "Example:",
         'enter_new_value_prompt': "Please enter the new value below:",
         'back_to_summary_btn': "🔙 Back to Summary",
+        'ex_name': "<i>John Doe</i>",
+        'ex_email': "<i>user@example.com</i>",
+        'ex_address': "<i>Germany, Berlin...</i>",
+        'ex_phone': "<i>+123...</i>",
+        'unit_pcs': "pcs",
+
 
         # Validation Errors
         'err_invalid_name': "❌ <b>Invalid Name</b>\n\n<b>Example:</b> <i>John Doe</i>\n\nPlease try again:",
@@ -817,5 +830,7 @@ STRINGS = {
         'admin_ex_Weight': "1kg=10=100, 5kg=2=450",
         'admin_ex_ShoeSize': "41=5=2500, 42=10=2500",
         'admin_ex_default': "Option=Qty=Price",
+        'payment_unknown': "Unknown",
+        'not_specified_dash': "—",
     }
 }
