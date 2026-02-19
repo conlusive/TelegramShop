@@ -453,6 +453,17 @@ STRINGS = {
         'promo_applied_error': "❌ Промокод недійсний або його не існує.",
         'cart_discount_info': "🎟 Знижка ({discount}%): -{discount_amount}{currency_symbol}\n",
         'order_promo_info': "\n🎟 <b>Промокод:</b> <code>{code}</code>",
+
+        'btn_minus': "➖",
+        'btn_plus': "➕",
+        'emoji_pending': "🟡",
+        'emoji_confirmed': "🔵",
+        'emoji_shipped': "🟠",
+        'emoji_delivered': "🟢",
+        'emoji_cancelled': "🔴",
+        'receipt_discount': "🎟 <b>Знижка:</b> -{amount}{symbol}\n",
+        'ex_price_val': "1250",
+        'ex_stock_val': "10",
     },
 
     'INTERNATIONAL': {
@@ -915,5 +926,16 @@ STRINGS = {
         'promo_applied_error': "❌ Invalid or non-existent promo code.",
         'cart_discount_info': "🎟 Discount ({discount}%): -{discount_amount}{currency_symbol}\n",
         'order_promo_info': "\n🎟 <b>Promo code:</b> <code>{code}</code>",
+
+        'btn_minus': "➖",
+        'btn_plus': "➕",
+        'emoji_pending': "🟡",
+        'emoji_confirmed': "🔵",
+        'emoji_shipped': "🟠",
+        'emoji_delivered': "🟢",
+        'emoji_cancelled': "🔴",
+        'receipt_discount': "🎟 <b>Discount:</b> -{amount}{symbol}\n",
+        'ex_price_val': "1250",
+        'ex_stock_val': "10",
     }
 }
