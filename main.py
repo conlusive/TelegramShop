@@ -178,7 +178,6 @@ class OnlineShopBot:
                               0
                           )''')
 
-        # ТАБЛИЦЯ ДЛЯ ПРОМОКОДІВ
         cursor.execute('''CREATE TABLE IF NOT EXISTS promocodes
                           (
                               id
@@ -190,7 +189,27 @@ class OnlineShopBot:
                               TEXT
                               UNIQUE,
                               discount
+                              INTEGER,
+                              max_uses
                               INTEGER
+                              DEFAULT
+                              100,
+                              current_uses
+                              INTEGER
+                              DEFAULT
+                              0,
+                              is_reusable
+                              INTEGER
+                              DEFAULT
+                              0
+                          )''')
+
+        cursor.execute('''CREATE TABLE IF NOT EXISTS used_promocodes
+                          (
+                              user_id
+                              INTEGER,
+                              code
+                              TEXT
                           )''')
 
         self._add_column_if_not_exists(cursor, "products", "emoji", "TEXT")
@@ -199,9 +218,14 @@ class OnlineShopBot:
         self._add_column_if_not_exists(cursor, "orders", "payment_method", "TEXT")
         self._add_column_if_not_exists(cursor, "orders", "email", "TEXT")
         self._add_column_if_not_exists(cursor, "orders", "full_name", "TEXT")
+        self._add_column_if_not_exists(cursor, "orders", "promo_code", "TEXT")
         self._add_column_if_not_exists(cursor, "users", "email", "TEXT")
         self._add_column_if_not_exists(cursor, "users", "full_name", "TEXT")
         self._add_column_if_not_exists(cursor, "users", "blocked", "INTEGER DEFAULT 0")
+
+        self._add_column_if_not_exists(cursor, "promocodes", "max_uses", "INTEGER DEFAULT 100")
+        self._add_column_if_not_exists(cursor, "promocodes", "current_uses", "INTEGER DEFAULT 0")
+        self._add_column_if_not_exists(cursor, "promocodes", "is_reusable", "INTEGER DEFAULT 0")
 
         self.conn.commit()
 
@@ -357,6 +381,18 @@ class OnlineShopBot:
                             except Exception as e:
                                 logger.error(f"Restore variants error: {e}")
             self.conn.commit()
+
+    async def handle_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context): return
+        query = update.callback_query
+        self.user_states.pop(update.effective_user.id, None)
+        await query.answer(self.get_text('order_cancelled_2'))
+        if getattr(query.message, 'invoice', None):
+            try:
+                await query.message.delete()
+            except:
+                pass
+        await self.show_cart(update, context)
 
     async def user_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -979,6 +1015,7 @@ class OnlineShopBot:
         text = update.message.text.strip() if update.message.text else ""
         msg = update.message
         chat_id = update.message.chat_id
+
         try:
             await msg.delete()
         except:
@@ -1060,7 +1097,14 @@ class OnlineShopBot:
                                                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
             return
 
-        total_amount, text, keyboard = 0, self.get_text('cart_header'), []
+        total_amount, text, keyboard = 0, "", []
+
+        promo_msg = self.user_states.get(user_id, {}).pop('promo_msg', None)
+        if promo_msg:
+            text += promo_msg + "\n\n"
+
+        text += self.get_text('cart_header')
+
         for cart_id, name, base_price, quantity, emoji, opts_json, variants_json, product_id in cart_items:
             real_price = self.calculate_item_price(base_price, variants_json, opts_json)
             item_total = real_price * quantity
@@ -1071,7 +1115,6 @@ class OnlineShopBot:
                              InlineKeyboardButton(f"{name} ({quantity})", callback_data=f"product_{product_id}"),
                              InlineKeyboardButton("➕", callback_data=f"cart_plus_{cart_id}")])
 
-        # Застосування промокоду
         discount_amount = 0
         active_promo = self.user_states.get(user_id, {}).get('active_promo')
         if active_promo:
@@ -1492,7 +1535,6 @@ class OnlineShopBot:
             (user_id,))
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
-        # Застосування знижки для оффлайн оплат
         active_promo = self.user_states.get(user_id, {}).get('active_promo')
         if active_promo:
             total_amount -= total_amount * (active_promo['discount'] / 100.0)
@@ -1508,18 +1550,18 @@ class OnlineShopBot:
                 (user_id,))
             cart_data = cursor.fetchall()
 
-            if not cart_data: return await context.bot.send_message(chat_id=chat_id, text=self.get_text('cart_empty_3'))
+            if not cart_data: return await context.bot.send_message(chat_id=chat_id,
+                                                                    text=self.get_text('cart_empty_3'))
 
             total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_data)
 
-            # Застосування промокоду для інвойсу
             active_promo = self.user_states.get(user_id, {}).get('active_promo')
             if active_promo:
                 total_amount -= total_amount * (active_promo['discount'] / 100.0)
 
             telegram_amount = int(round(total_amount, 2) * 100)
 
-            description = f"{self.get_text('invoice_desc')}\n💰 До сплати: {round(total_amount, 2)}{CURRENCY_SYMBOL}"
+            description = f"{self.get_text('invoice_desc')}\n{self.get_text('invoice_to_pay', amount=round(total_amount, 2), symbol=CURRENCY_SYMBOL)}"
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('pay_button_text'), pay=True)],
                                              [InlineKeyboardButton(self.get_text('back_button_2'),
                                                                    callback_data="back_to_payment")],
@@ -1581,13 +1623,20 @@ class OnlineShopBot:
         if not result: return await context.bot.send_message(chat_id=chat_id,
                                                              text=self.get_text('order_failed_cart_empty'))
 
-        order_id, products_list, total_amount = result
+        # ВИПРАВЛЕНО: Тепер ми дістаємо promo_code_used з результату
+        order_id, products_list, total_amount, promo_code_used = result
+
         details = self.generate_receipt(order_id, state.get('full_name', update.effective_user.full_name),
                                         state.get('email', '—'), state.get('phone', '—'), state.get('address', '—'),
                                         payment_method, products_list, total_amount,
                                         datetime.now(ZoneInfo(BOT_TIMEZONE)).strftime('%d.%m.%Y %H:%M'),
                                         receipt_format='html')
+
         final_text = f"{STORE_MESSAGES[SHIPPING_MODE]['order_success'].format(order_id=order_id)}\n\n{details}"
+
+        if promo_code_used:
+            final_text += self.get_text('order_promo_info', code=promo_code_used)
+
         kb = InlineKeyboardMarkup(
             [[InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]])
 
@@ -1646,11 +1695,16 @@ class OnlineShopBot:
             cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
                            (max(0, p_stock - quantity), new_variants_json, product_id))
 
-        # Застосування знижки в базі
         active_promo = state.get('active_promo')
+        promo_code_used = None
         if active_promo:
             total_amount -= total_amount * (active_promo['discount'] / 100.0)
-            state.pop('active_promo', None)  # Очищаємо промо після використання
+            promo_code_used = f"{active_promo['code']} (-{active_promo['discount']}%)"
+            promo_code = active_promo['code']
+            state.pop('active_promo', None)
+
+            cursor.execute("UPDATE promocodes SET current_uses = current_uses + 1 WHERE code = ?", (promo_code,))
+            cursor.execute("INSERT INTO used_promocodes (user_id, code) VALUES (?, ?)", (user_id, promo_code))
 
         total_amount = round(total_amount, 2)
 
@@ -1661,19 +1715,20 @@ class OnlineShopBot:
         phone = state.get('phone', self.get_text('not_specified_dash'))
 
         cursor.execute(
-            "INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address, payment_method, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address, payment_method, email, promo_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user_id, update.effective_user.full_name, full_name, json.dumps(products_list, ensure_ascii=False),
-             total_amount, phone, address, payment_method, email))
+             total_amount, phone, address, payment_method, email, promo_code_used))
         order_id = cursor.lastrowid
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
 
         if send_message: await self.notify_admin_new_order(context, order_id, full_name, email, phone, address,
-                                                           payment_method, products_list, total_amount)
-        return order_id, products_list, total_amount
+                                                           payment_method, products_list, total_amount, promo_code_used)
+
+        return order_id, products_list, total_amount, promo_code_used
 
     async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method,
-                                     products_list, total_amount):
+                                     products_list, total_amount, promo_code_used=None):
         try:
             region_header = self.get_text(
                 'new_order_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'new_order_notification_international')
@@ -1692,21 +1747,13 @@ class OnlineShopBot:
                                  full_name=full_name, email=email, phone=phone, address_label=address_label,
                                  address=address, pay_label=pay_label, payment_method=payment_method,
                                  items_str=items_str, total_amount=total_amount)
+
+            if promo_code_used:
+                text += self.get_text('order_promo_info', code=promo_code_used)
+
             await context.bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode=ParseMode.HTML)
         except Exception as e:
             logger.error(self.get_text('failed_to_notify_admin', admin=ADMIN_ID, e=e))
-
-    async def handle_cancel_order(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if await self.check_user_blocked(update, context): return
-        query = update.callback_query
-        self.user_states.pop(update.effective_user.id, None)
-        await query.answer(self.get_text('order_cancelled_2'))
-        if getattr(query.message, 'invoice', None):
-            try:
-                await query.message.delete()
-            except:
-                pass
-        await self.show_cart(update, context)
 
     # -------------------- ORDERS HISTORY --------------------
     async def show_my_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
@@ -1826,6 +1873,10 @@ class OnlineShopBot:
                              status_display=status_map.get(order['status'], order['status']),
                              date=self.format_date(order['created_at']))
 
+        promo_val = order['promo_code'] if 'promo_code' in order.keys() else None
+        if promo_val:
+            text += self.get_text('order_promo_info', code=promo_val)
+
         keyboard = []
         if int(user_id) == int(ADMIN_ID):
             if order['status'] not in ('cancelled', 'delivered'):
@@ -1864,7 +1915,6 @@ class OnlineShopBot:
     async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID: return await update.callback_query.answer(
             self.get_text('access_denied'))
-        # ДОДАНО НОВІ КНОПКИ БРОАДКАСТУ ТА ПРОМОКОДІВ
         keyboard = [[InlineKeyboardButton(self.get_text('all_orders_button'), callback_data="admin_all_orders")],
                     [InlineKeyboardButton(self.get_text('products_button'), callback_data="admin_products")],
                     [InlineKeyboardButton(self.get_text('stats_button'), callback_data="admin_statistics"),
@@ -1890,9 +1940,22 @@ class OnlineShopBot:
 
     async def handle_broadcast_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
+        state = self.user_states[user_id]
         if user_id != ADMIN_ID: return
+        chat_id = update.effective_chat.id
 
-        await update.message.reply_text(self.get_text('admin_broadcast_started'), parse_mode="HTML")
+        try:
+            await update.message.delete()
+        except:
+            pass
+        if 'msg_id' in state:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except:
+                pass
+
+        m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_broadcast_started'),
+                                           parse_mode="HTML")
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT user_id FROM users")
@@ -1904,12 +1967,17 @@ class OnlineShopBot:
             try:
                 await update.message.copy(chat_id=uid)
                 success += 1
-                await asyncio.sleep(0.05)  # Захист від спам-лімітів Телеграму
+                await asyncio.sleep(0.05)
             except Exception:
                 failed += 1
 
         self.user_states.pop(user_id, None)
-        await context.bot.send_message(chat_id=update.effective_chat.id,
+        try:
+            await m.delete()
+        except:
+            pass
+
+        await context.bot.send_message(chat_id=chat_id,
                                        text=self.get_text('admin_broadcast_finished', success=success, failed=failed),
                                        parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]]))
@@ -1917,20 +1985,27 @@ class OnlineShopBot:
     # -------------------- PROMO CODES ADMIN --------------------
     async def admin_promo_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID: return
+        self.user_states.pop(update.effective_user.id, None)
         cursor = self.conn.cursor()
-        cursor.execute("SELECT code, discount FROM promocodes")
+        cursor.execute("SELECT code, discount, max_uses, current_uses, is_reusable FROM promocodes")
         promos = cursor.fetchall()
 
         promo_list = ""
         if not promos:
             promo_list = self.get_text('promo_no_active')
         else:
-            for code, discount in promos:
-                promo_list += self.get_text('promo_item', code=code, discount=discount) + "\n"
+            for code, discount, max_uses, current_uses, is_reusable in promos:
+                left = max_uses - current_uses
+                is_reusable = is_reusable or 0
+                reusable_text = self.get_text('promo_reusable_multi') if is_reusable else self.get_text(
+                    'promo_reusable_once')
+                promo_list += self.get_text('promo_item_detailed', code=code, discount=discount, left=left,
+                                            reusable_text=reusable_text) + "\n"
 
         keyboard = [
             [InlineKeyboardButton(self.get_text('admin_promo_add_btn'), callback_data="admin_promo_add_prompt")],
-            [InlineKeyboardButton(self.get_text('admin_promo_del_btn'), callback_data="admin_promo_del_prompt")],
+            [InlineKeyboardButton(self.get_text('admin_promo_del_btn'),
+                                  callback_data="admin_promo_del_prompt")] if promos else [],
             [InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]
         ]
 
@@ -1943,21 +2018,51 @@ class OnlineShopBot:
 
     async def admin_promo_add_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID: return
-        self.user_states[update.effective_user.id] = {'step': 'waiting_promo_code_name'}
-        await update.callback_query.edit_message_text(self.get_text('admin_promo_ask_code'),
-                                                      reply_markup=InlineKeyboardMarkup(
-                                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
-                                                                                 callback_data="admin_promo_menu")]]),
-                                                      parse_mode="HTML")
+        query = update.callback_query
+
+        self.user_states[update.effective_user.id] = {
+            'step': 'waiting_promo_code_name',
+            'msg_id': query.message.message_id
+        }
+
+        await query.edit_message_text(self.get_text('admin_promo_ask_code'),
+                                      reply_markup=InlineKeyboardMarkup(
+                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                 callback_data="admin_promo_menu")]]),
+                                      parse_mode="HTML")
 
     async def admin_promo_del_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID: return
-        self.user_states[update.effective_user.id] = {'step': 'waiting_promo_delete'}
-        await update.callback_query.edit_message_text(self.get_text('admin_promo_ask_del'),
-                                                      reply_markup=InlineKeyboardMarkup(
-                                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
-                                                                                 callback_data="admin_promo_menu")]]),
-                                                      parse_mode="HTML")
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, code FROM promocodes")
+        promos = cursor.fetchall()
+
+        if not promos:
+            return await self.admin_promo_menu(update, context)
+
+        kb = [[InlineKeyboardButton(f"🗑 {code}", callback_data=f"admin_pdel_{pid}")] for pid, code in promos]
+        kb.append([InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_promo_menu")])
+
+        await update.callback_query.edit_message_text(self.get_text('admin_promo_del_select'),
+                                                      reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+
+    async def admin_delete_promo_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID: return
+        query = update.callback_query
+        pid = int(query.data.split('_')[2])
+        cursor = self.conn.cursor()
+
+        cursor.execute("SELECT code FROM promocodes WHERE id = ?", (pid,))
+        row = cursor.fetchone()
+        if row:
+            code = row[0]
+            cursor.execute("DELETE FROM promocodes WHERE id = ?", (pid,))
+            self.conn.commit()
+            await query.answer(self.get_text('admin_promo_deleted', code=code))
+        else:
+            await query.answer(self.get_text('admin_promo_not_found'))
+
+        await self.admin_promo_menu(update, context)
 
     async def handle_promo_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -1966,82 +2071,146 @@ class OnlineShopBot:
         text = update.message.text.strip() if update.message.text else ""
         chat_id = update.message.chat_id
 
+        try:
+            await update.message.delete()
+        except:
+            pass
+        if 'msg_id' in state:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except:
+                pass
+
         if step == 'waiting_promo_code_name':
             state['promo_code'] = text.upper()
             state['step'] = 'waiting_promo_discount'
-            await context.bot.send_message(chat_id=chat_id,
-                                           text=self.get_text('admin_promo_ask_discount', code=state['promo_code']),
-                                           reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton(self.get_text('cancel_button'),
-                                                                      callback_data="admin_promo_menu")]]),
-                                           parse_mode="HTML")
+            m = await context.bot.send_message(chat_id=chat_id,
+                                               text=self.get_text('admin_promo_ask_discount', code=state['promo_code']),
+                                               reply_markup=InlineKeyboardMarkup(
+                                                   [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                          callback_data="admin_promo_menu")]]),
+                                               parse_mode="HTML")
+            state['msg_id'] = m.message_id
 
         elif step == 'waiting_promo_discount':
             try:
                 discount = int(text)
                 if not (1 <= discount <= 99): raise ValueError
-                cursor = self.conn.cursor()
-                cursor.execute("INSERT OR REPLACE INTO promocodes (code, discount) VALUES (?, ?)",
-                               (state['promo_code'], discount))
-                self.conn.commit()
-                await context.bot.send_message(chat_id=chat_id,
-                                               text=self.get_text('admin_promo_added', code=state['promo_code'],
-                                                                  discount=discount), reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_promo_menu")]]),
-                                               parse_mode="HTML")
-                self.user_states.pop(user_id, None)
+                state['promo_discount'] = discount
+                state['step'] = 'waiting_promo_uses'
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_promo_ask_uses'),
+                                                   reply_markup=InlineKeyboardMarkup(
+                                                       [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                              callback_data="admin_promo_menu")]]),
+                                                   parse_mode="HTML")
+                state['msg_id'] = m.message_id
             except ValueError:
-                await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_discount'),
-                                               parse_mode="HTML")
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_discount'),
+                                                   reply_markup=InlineKeyboardMarkup(
+                                                       [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                              callback_data="admin_promo_menu")]]),
+                                                   parse_mode="HTML")
+                state['msg_id'] = m.message_id
 
-        elif step == 'waiting_promo_delete':
-            cursor = self.conn.cursor()
-            cursor.execute("DELETE FROM promocodes WHERE code = ?", (text.upper(),))
-            if cursor.rowcount > 0:
-                await context.bot.send_message(chat_id=chat_id,
-                                               text=self.get_text('admin_promo_deleted', code=text.upper()),
-                                               reply_markup=InlineKeyboardMarkup(
-                                                   [[InlineKeyboardButton(self.get_text('back_button_3'),
-                                                                          callback_data="admin_promo_menu")]]),
-                                               parse_mode="HTML")
-            else:
-                await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_promo_not_found'),
-                                               reply_markup=InlineKeyboardMarkup(
-                                                   [[InlineKeyboardButton(self.get_text('back_button_3'),
-                                                                          callback_data="admin_promo_menu")]]),
-                                               parse_mode="HTML")
-            self.conn.commit()
-            self.user_states.pop(user_id, None)
+        elif step == 'waiting_promo_uses':
+            try:
+                max_uses = int(text)
+                if max_uses <= 0: raise ValueError
+                state['promo_max_uses'] = max_uses
+                state['step'] = 'waiting_promo_reusable'
+
+                kb = [
+                    [InlineKeyboardButton(self.get_text('btn_promo_once'), callback_data="admin_promo_reusable_0")],
+                    [InlineKeyboardButton(self.get_text('btn_promo_multi'), callback_data="admin_promo_reusable_1")],
+                    [InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_promo_menu")]
+                ]
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_promo_ask_reusable'),
+                                                   reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+                state['msg_id'] = m.message_id
+            except ValueError:
+                m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_uses'),
+                                                   reply_markup=InlineKeyboardMarkup(
+                                                       [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                              callback_data="admin_promo_menu")]]),
+                                                   parse_mode="HTML")
+                state['msg_id'] = m.message_id
+
+    async def admin_promo_set_reusable(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID: return
+        query = update.callback_query
+        user_id = update.effective_user.id
+        state = self.user_states.get(user_id)
+        if not state or state.get('step') != 'waiting_promo_reusable': return
+
+        is_reusable = int(query.data.split('_')[-1])
+        code = state.get('promo_code')
+        discount = state.get('promo_discount')
+        max_uses = state.get('promo_max_uses')
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "INSERT OR REPLACE INTO promocodes (code, discount, max_uses, current_uses, is_reusable) VALUES (?, ?, ?, 0, ?)",
+            (code, discount, max_uses, is_reusable)
+        )
+        self.conn.commit()
+
+        await query.edit_message_text(text=self.get_text('admin_promo_added', code=code, discount=discount),
+                                      reply_markup=InlineKeyboardMarkup(
+                                          [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                 callback_data="admin_promo_menu")]]),
+                                      parse_mode="HTML")
+        self.user_states.pop(user_id, None)
 
     # -------------------- PROMO CODES CLIENT --------------------
     async def ask_promo_code(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
         self.user_states.setdefault(update.effective_user.id, {})['step'] = 'waiting_user_promo'
-        await query.edit_message_text(self.get_text('ask_promo_code'), reply_markup=InlineKeyboardMarkup(
+        msg = await query.edit_message_text(self.get_text('ask_promo_code'), reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="cart")]]), parse_mode="HTML")
+        self.user_states[update.effective_user.id]['msg_id'] = msg.message_id
 
     async def handle_user_promo_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
+        state = self.user_states.get(user_id, {})
         text = update.message.text.strip().upper() if update.message.text else ""
         chat_id = update.message.chat_id
 
+        try:
+            await update.message.delete()
+        except:
+            pass
+        if 'msg_id' in state:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+            except:
+                pass
+
         cursor = self.conn.cursor()
-        cursor.execute("SELECT discount FROM promocodes WHERE code = ?", (text,))
+        cursor.execute("SELECT discount, max_uses, current_uses, is_reusable FROM promocodes WHERE code = ?", (text,))
         res = cursor.fetchone()
 
         if res:
-            self.user_states.setdefault(user_id, {})['active_promo'] = {'code': text, 'discount': res[0]}
-            self.user_states[user_id].pop('step', None)
-            await context.bot.send_message(chat_id=chat_id,
-                                           text=self.get_text('promo_applied_success', code=text, discount=res[0]),
-                                           parse_mode="HTML")
-            await self.show_cart(update, context)
+            discount, max_uses, current_uses, is_reusable = res
+            is_reusable = is_reusable or 0
+            if current_uses >= max_uses:
+                state['promo_msg'] = self.get_text('promo_limit_reached')
+            else:
+                if not is_reusable:
+                    cursor.execute("SELECT 1 FROM used_promocodes WHERE user_id = ? AND code = ?", (user_id, text))
+                    if cursor.fetchone():
+                        state['promo_msg'] = self.get_text('promo_already_used')
+                        state.pop('step', None)
+                        await self.show_cart(update, context)
+                        return
+
+                self.user_states.setdefault(user_id, {})['active_promo'] = {'code': text, 'discount': discount}
+                state['promo_msg'] = self.get_text('promo_applied_success', code=text, discount=discount)
         else:
-            await context.bot.send_message(chat_id=chat_id, text=self.get_text('promo_applied_error'),
-                                           reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
-                                                                      callback_data="cart")]]), parse_mode="HTML")
+            state['promo_msg'] = self.get_text('promo_applied_error')
+
+        state.pop('step', None)
+        await self.show_cart(update, context)
 
     async def admin_statistics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if int(update.effective_user.id) != int(ADMIN_ID): return await update.callback_query.answer(
@@ -2629,24 +2798,23 @@ class OnlineShopBot:
     # -------------------- INPUT HANDLERS (МАЙСТЕР-РОУТЕР) --------------------
     async def master_message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
+
+        if getattr(update.message, 'successful_payment', None): return
+
         user_id = update.effective_user.id
 
         if user_id in self.user_states:
             step = self.user_states[user_id].get('step', '')
 
-            # РОЗСИЛКА (Адмін)
             if step == 'waiting_broadcast_message':
                 return await self.handle_broadcast_input(update, context)
 
-            # ПРОМОКОДИ (Адмін)
-            if step in ['waiting_promo_code_name', 'waiting_promo_discount', 'waiting_promo_delete']:
+            if step in ['waiting_promo_code_name', 'waiting_promo_discount', 'waiting_promo_uses']:
                 return await self.handle_promo_input(update, context)
 
-            # ПРОМОКОДИ (Клієнт)
             if step == 'waiting_user_promo':
                 return await self.handle_user_promo_input(update, context)
 
-            # ТОВАРИ ТА ЧЕКАУТ
             if step.startswith('add_product') or step.startswith('edit_') or step.startswith(
                     'waiting_simple_') or step.startswith('waiting_var_') or step in ['waiting_product_image',
                                                                                       'waiting_variant_values',
@@ -3085,117 +3253,118 @@ class OnlineShopBot:
                                                parse_mode="HTML")
             state['msg_id'] = m.message_id
 
+    # -------------------- MAIN ROUTING --------------------
+    def main(self):
+        if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+            logger.critical("BOT_TOKEN not found. Please set it as an environment variable.")
+            return
 
-# -------------------- MAIN --------------------
+        application = Application.builder().token(BOT_TOKEN).build()
+
+        application.add_handler(CommandHandler("start", self.start))
+
+        application.add_handler(PreCheckoutQueryHandler(self.precheckout_callback))
+        application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, self.successful_payment_callback))
+
+        application.add_handler(
+            MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, self.master_message_handler))
+
+        application.add_handler(CallbackQueryHandler(self.show_main_menu, pattern=r'^main_menu$'))
+        application.add_handler(CallbackQueryHandler(self.show_help, pattern=r'^help$'))
+        application.add_handler(CallbackQueryHandler(self.show_catalog, pattern=r'^catalog(_page_\d+)?$'))
+        application.add_handler(CallbackQueryHandler(self.show_category_products, pattern=r'^category_'))
+        application.add_handler(CallbackQueryHandler(self.show_product, pattern=r'^product_'))
+        application.add_handler(CallbackQueryHandler(self.handle_product_action, pattern=r'^prod_(plus|minus)_'))
+
+        application.add_handler(CallbackQueryHandler(self.show_profile, pattern=r'^my_profile$'))
+        application.add_handler(CallbackQueryHandler(self.edit_phone, pattern=r'^edit_phone$'))
+        application.add_handler(CallbackQueryHandler(self.edit_email, pattern=r'^edit_email$'))
+        application.add_handler(CallbackQueryHandler(self.edit_address, pattern=r'^edit_address$'))
+        application.add_handler(CallbackQueryHandler(self.profile_delete_menu, pattern=r'^profile_delete_menu$'))
+        application.add_handler(CallbackQueryHandler(self.handle_delete_profile_data, pattern=r'^delete_profile_'))
+        application.add_handler(CallbackQueryHandler(self.edit_full_name, pattern=r'^edit_full_name$'))
+
+        application.add_handler(CallbackQueryHandler(self.show_cart, pattern=r'^(cart|my_cart)$'))
+        application.add_handler(CallbackQueryHandler(self.clear_cart, pattern=r'^clear_cart$'))
+        application.add_handler(CallbackQueryHandler(self.handle_cart_update, pattern=r'^cart_(plus|minus)_'))
+        application.add_handler(CallbackQueryHandler(self.add_to_cart, pattern=r'^add_to_cart_'))
+
+        application.add_handler(CallbackQueryHandler(self.ask_promo_code, pattern=r'^ask_promo_code$'))
+
+        application.add_handler(CallbackQueryHandler(self.checkout, pattern=r'^checkout$'))
+        application.add_handler(CallbackQueryHandler(self.use_profile_data, pattern=r'^use_profile_data$'))
+        application.add_handler(
+            CallbackQueryHandler(self.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
+        application.add_handler(CallbackQueryHandler(self.choose_payment, pattern=r'^pay_(cod|card|bank|online)$'))
+
+        application.add_handler(CallbackQueryHandler(self.handle_cancel_order, pattern=r'^cancel_order$'))
+        application.add_handler(CallbackQueryHandler(self.handle_checkout_back, pattern=r'^(back_to_|edit_)'))
+
+        application.add_handler(CallbackQueryHandler(self.show_my_orders, pattern=r'^my_orders$'))
+        application.add_handler(CallbackQueryHandler(self.handle_my_orders_pagination, pattern=r'^my_orders_page_\d+$'))
+        application.add_handler(CallbackQueryHandler(self.show_order_details, pattern=r'^order_details_'))
+        application.add_handler(CallbackQueryHandler(self.user_cancel_order, pattern=r'^user_cancel_'))
+
+        application.add_handler(CallbackQueryHandler(self.admin_panel, pattern=r'^admin_panel$'))
+        application.add_handler(CallbackQueryHandler(self.admin_statistics, pattern=r'^admin_statistics$'))
+        application.add_handler(CallbackQueryHandler(self.admin_revenue, pattern=r'^admin_revenue_chart$'))
+        application.add_handler(CallbackQueryHandler(self.handle_revenue_period, pattern=r'^rev_'))
+
+        application.add_handler(CallbackQueryHandler(self.admin_broadcast_prompt, pattern=r'^admin_broadcast_prompt$'))
+        application.add_handler(CallbackQueryHandler(self.admin_promo_menu, pattern=r'^admin_promo_menu$'))
+        application.add_handler(CallbackQueryHandler(self.admin_promo_add_prompt, pattern=r'^admin_promo_add_prompt$'))
+        application.add_handler(CallbackQueryHandler(self.admin_promo_del_prompt, pattern=r'^admin_promo_del_prompt$'))
+        application.add_handler(CallbackQueryHandler(self.admin_delete_promo_action, pattern=r'^admin_pdel_\d+$'))
+
+        # ВИПРАВЛЕНО: НОВИЙ ОБРОБНИК ДЛЯ ВИБОРУ ТИПУ ПРОМОКОДУ
+        application.add_handler(CallbackQueryHandler(self.admin_promo_set_reusable, pattern=r'^admin_promo_reusable_'))
+
+        application.add_handler(CallbackQueryHandler(self.admin_user_management, pattern=r'^admin_user_management$'))
+        application.add_handler(
+            CallbackQueryHandler(self.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
+        application.add_handler(CallbackQueryHandler(self.admin_user_block, pattern=r'^admin_user_block_'))
+
+        application.add_handler(CallbackQueryHandler(self.admin_all_orders, pattern=r'^admin_all_orders$'))
+        application.add_handler(
+            CallbackQueryHandler(self.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
+        application.add_handler(
+            CallbackQueryHandler(self.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
+
+        application.add_handler(
+            CallbackQueryHandler(self.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
+        application.add_handler(CallbackQueryHandler(self.admin_products_list, pattern=r'^admin_list_cat_'))
+        application.add_handler(CallbackQueryHandler(self.admin_handle_category_selection, pattern=r'^admin_set_cat_'))
+        application.add_handler(CallbackQueryHandler(self.admin_product_menu, pattern=r'^admin_prod_'))
+        application.add_handler(CallbackQueryHandler(self.admin_add_product, pattern=r'^admin_add_product$'))
+        application.add_handler(CallbackQueryHandler(self.admin_edit_field, pattern=r'^admin_edit_field_'))
+        application.add_handler(CallbackQueryHandler(self.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
+        application.add_handler(
+            CallbackQueryHandler(self.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
+
+        application.add_handler(CallbackQueryHandler(self.admin_image_menu, pattern=r'^admin_image_menu_'))
+        application.add_handler(CallbackQueryHandler(self.admin_image_set_prompt, pattern=r'^admin_image_set_'))
+        application.add_handler(CallbackQueryHandler(self.admin_image_delete, pattern=r'^admin_image_delete_'))
+        application.add_handler(
+            CallbackQueryHandler(self.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
+        application.add_handler(CallbackQueryHandler(self.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
+        application.add_handler(
+            CallbackQueryHandler(self.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
+
+        application.add_handler(CallbackQueryHandler(self.handle_variant_type_selection, pattern=r'^vartype_'))
+        application.add_handler(
+            CallbackQueryHandler(self.handle_variant_selection_user, pattern=r'^var_sel_|^cancel_selection$'))
+
+        application.add_error_handler(self.error_handler)
+
+        print("🛍️ Online store bot launched!")
+        print(f"👑 Admin ID: {ADMIN_ID}")
+        print("Press Ctrl+C to stop.")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
 def main():
-    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        logger.critical("BOT_TOKEN not found. Please set it as an environment variable.")
-        return
-
     bot = OnlineShopBot()
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # 1. БАЗОВІ КОМАНДИ ТА ПОВІДОМЛЕННЯ
-    application.add_handler(CommandHandler("start", bot.start))
-
-    # МАЙСТЕР-ОБРОБНИК ДЛЯ ВСЬОГО (ФОТО/ТЕКСТ/ВІДЕО)
-    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, bot.master_message_handler))
-
-    # 2. КЛІЄНТСЬКА ЧАСТИНА (Меню, Каталог, Профіль)
-    application.add_handler(CallbackQueryHandler(bot.show_main_menu, pattern=r'^main_menu$'))
-    application.add_handler(CallbackQueryHandler(bot.show_help, pattern=r'^help$'))
-    application.add_handler(CallbackQueryHandler(bot.show_catalog, pattern=r'^catalog(_page_\d+)?$'))
-    application.add_handler(CallbackQueryHandler(bot.show_category_products, pattern=r'^category_'))
-    application.add_handler(CallbackQueryHandler(bot.show_product, pattern=r'^product_'))
-    application.add_handler(CallbackQueryHandler(bot.handle_product_action, pattern=r'^prod_(plus|minus)_'))
-
-    application.add_handler(CallbackQueryHandler(bot.show_profile, pattern=r'^my_profile$'))
-    application.add_handler(CallbackQueryHandler(bot.edit_phone, pattern=r'^edit_phone$'))
-    application.add_handler(CallbackQueryHandler(bot.edit_email, pattern=r'^edit_email$'))
-    application.add_handler(CallbackQueryHandler(bot.edit_address, pattern=r'^edit_address$'))
-    application.add_handler(CallbackQueryHandler(bot.profile_delete_menu, pattern=r'^profile_delete_menu$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_delete_profile_data, pattern=r'^delete_profile_'))
-    application.add_handler(CallbackQueryHandler(bot.edit_full_name, pattern=r'^edit_full_name$'))
-
-    # 3. КОШИК ТА ОФОРМЛЕННЯ (Checkout)
-    application.add_handler(CallbackQueryHandler(bot.show_cart, pattern=r'^(cart|my_cart)$'))
-    application.add_handler(CallbackQueryHandler(bot.clear_cart, pattern=r'^clear_cart$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_cart_update, pattern=r'^cart_(plus|minus)_'))
-    application.add_handler(CallbackQueryHandler(bot.add_to_cart, pattern=r'^add_to_cart_'))
-
-    # Клієнтська частина ПРОМО
-    application.add_handler(CallbackQueryHandler(bot.ask_promo_code, pattern=r'^ask_promo_code$'))
-
-    application.add_handler(PreCheckoutQueryHandler(bot.precheckout_callback))
-    application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, bot.successful_payment_callback))
-
-    application.add_handler(CallbackQueryHandler(bot.checkout, pattern=r'^checkout$'))
-    application.add_handler(CallbackQueryHandler(bot.use_profile_data, pattern=r'^use_profile_data$'))
-    application.add_handler(
-        CallbackQueryHandler(bot.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
-    application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank|online)$'))
-
-    application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^(back_to_|edit_)'))
-
-    application.add_handler(CallbackQueryHandler(bot.show_my_orders, pattern=r'^my_orders$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_my_orders_pagination, pattern=r'^my_orders_page_\d+$'))
-    application.add_handler(CallbackQueryHandler(bot.show_order_details, pattern=r'^order_details_'))
-    application.add_handler(CallbackQueryHandler(bot.user_cancel_order, pattern=r'^user_cancel_'))
-
-    # 4. АДМІН-ПАНЕЛЬ
-    application.add_handler(CallbackQueryHandler(bot.admin_panel, pattern=r'^admin_panel$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_statistics, pattern=r'^admin_statistics$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_revenue, pattern=r'^admin_revenue_chart$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_revenue_period, pattern=r'^rev_'))
-
-    # Адмінська частина РОЗСИЛКА І ПРОМО
-    application.add_handler(CallbackQueryHandler(bot.admin_broadcast_prompt, pattern=r'^admin_broadcast_prompt$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_promo_menu, pattern=r'^admin_promo_menu$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_promo_add_prompt, pattern=r'^admin_promo_add_prompt$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_promo_del_prompt, pattern=r'^admin_promo_del_prompt$'))
-
-    application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
-    application.add_handler(CallbackQueryHandler(bot.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
-
-    application.add_handler(CallbackQueryHandler(bot.admin_all_orders, pattern=r'^admin_all_orders$'))
-    application.add_handler(
-        CallbackQueryHandler(bot.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
-    application.add_handler(
-        CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
-
-    # МЕНЮ ТОВАРІВ
-    application.add_handler(
-        CallbackQueryHandler(bot.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_products_list, pattern=r'^admin_list_cat_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_handle_category_selection, pattern=r'^admin_set_cat_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_product_menu, pattern=r'^admin_prod_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_add_product, pattern=r'^admin_add_product$'))
-    application.add_handler(CallbackQueryHandler(bot.admin_edit_field, pattern=r'^admin_edit_field_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
-    application.add_handler(
-        CallbackQueryHandler(bot.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
-
-    application.add_handler(CallbackQueryHandler(bot.admin_image_menu, pattern=r'^admin_image_menu_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_image_set_prompt, pattern=r'^admin_image_set_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_image_delete, pattern=r'^admin_image_delete_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
-    application.add_handler(CallbackQueryHandler(bot.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
-    application.add_handler(
-        CallbackQueryHandler(bot.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
-
-    application.add_handler(CallbackQueryHandler(bot.handle_variant_type_selection, pattern=r'^vartype_'))
-    application.add_handler(
-        CallbackQueryHandler(bot.handle_variant_selection_user, pattern=r'^var_sel_|^cancel_selection$'))
-
-    # ЗАПУСК
-    application.add_error_handler(bot.error_handler)
-
-    print("🛍️ Online store bot launched!")
-    print(f"👑 Admin ID: {ADMIN_ID}")
-    print("Press Ctrl+C to stop.")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    bot.main()
 
 
 if __name__ == '__main__':

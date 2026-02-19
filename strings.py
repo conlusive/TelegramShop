@@ -185,6 +185,7 @@ STRINGS = {
         'invoice_label': "Загальна сума",
         'invoice_creation_error': "⚠️ Помилка при створенні платежу. Спробуйте інший спосіб оплати.",
         'shipping_label_ukraine': "Доставка:",
+        'invoice_to_pay': "💰 До сплати: {amount}{symbol}",
 
         # --- 📋 ІСТОРІЯ ТА СТАТУСИ ЗАМОВЛЕНЬ ---
         'no_orders_yet': "🛒 <b>У вас ще немає замовлень.</b>",
@@ -432,7 +433,18 @@ STRINGS = {
         'admin_promo_added': "✅ Промокод <b>{code}</b> на знижку {discount}% успішно додано!",
         'admin_promo_deleted': "🗑 Промокод <b>{code}</b> видалено!",
         'admin_promo_not_found': "❌ Промокод не знайдено.",
-        'err_invalid_discount': "❌ Помилка: Введіть ціле число від 1 до 99.",
+        'admin_promo_ask_uses': "Введіть максимальну кількість використань для промокоду (наприклад: 100):",
+        'admin_promo_del_select': "🎟 <b>Видалення промокоду</b>\n\nВиберіть промокод, який хочете видалити:",
+        'promo_limit_reached': "❌ Цей промокод більше не дійсний (вичерпано ліміт).",
+        'promo_already_used': "❌ Ви вже використовували цей промокод раніше. Один користувач = одне використання!",
+        'err_invalid_discount': "❌ <b>Неправильний формат знижки!</b>\n\nОчікується ціле число від 1 до 99.\n\n<b>Приклад:</b> <code>15</code>",
+        'err_invalid_uses': "❌ <b>Неправильний формат кількості!</b>\n\nОчікується ціле число більше 0.\n\n<b>Приклад:</b> <code>100</code>",
+        'promo_item_detailed': "• <code>{code}</code> — {discount}% (Залишилось: {left}) <b>[{reusable_text}]</b>",
+        'admin_promo_ask_reusable': "🎟 <b>Тип промокоду</b>\n\nЧи може один користувач використати цей промокод кілька разів?",
+        'btn_promo_once': "Лише 1 раз",
+        'btn_promo_multi': "Кілька разів",
+        'promo_reusable_once': "1 раз/юзер",
+        'promo_reusable_multi': "∞ раз/юзер",
 
         # --- ПРОМОКОДИ (КЛІЄНТ) ---
         'cart_promo_btn': "🎟 Ввести промокод",
@@ -440,6 +452,7 @@ STRINGS = {
         'promo_applied_success': "✅ Промокод <b>{code}</b> успішно застосовано! Знижка {discount}%",
         'promo_applied_error': "❌ Промокод недійсний або його не існує.",
         'cart_discount_info': "🎟 Знижка ({discount}%): -{discount_amount}{currency_symbol}\n",
+        'order_promo_info': "\n🎟 <b>Промокод:</b> <code>{code}</code>",
     },
 
     'INTERNATIONAL': {
@@ -635,6 +648,7 @@ STRINGS = {
         'invoice_label': "Total Amount",
         'invoice_creation_error': "⚠️ Error creating invoice. Please try another payment method.",
         'shipping_label_international': "📍 Shipping:",
+        'invoice_to_pay': "💰 To pay: {amount}{symbol}",
 
         # --- 📋 ORDER HISTORY & STATUSES ---
         'no_orders_yet': "🛒 <b>You have no orders yet.</b>",
@@ -881,7 +895,18 @@ STRINGS = {
         'admin_promo_added': "✅ Promo code <b>{code}</b> for {discount}% off added successfully!",
         'admin_promo_deleted': "🗑 Promo code <b>{code}</b> deleted!",
         'admin_promo_not_found': "❌ Promo code not found.",
-        'err_invalid_discount': "❌ Error: Please enter an integer between 1 and 99.",
+        'admin_promo_ask_uses': "Enter maximum uses for the promo code (e.g., 100):",
+        'admin_promo_del_select': "🎟 <b>Delete Promo Code</b>\n\nSelect a promo code to delete:",
+        'promo_limit_reached': "❌ This promo code is no longer valid (limit reached).",
+        'promo_already_used': "❌ You have already used this promo code. One use per user!",
+        'err_invalid_discount': "❌ <b>Invalid discount format!</b>\n\nExpected an integer between 1 and 99.\n\n<b>Example:</b> <code>15</code>",
+        'err_invalid_uses': "❌ <b>Invalid quantity format!</b>\n\nExpected an integer greater than 0.\n\n<b>Example:</b> <code>100</code>",
+        'promo_item_detailed': "• <code>{code}</code> — {discount}% (Left: {left}) <b>[{reusable_text}]</b>",
+        'admin_promo_ask_reusable': "🎟 <b>Promo Code Type</b>\n\nCan a user use this promo code multiple times?",
+        'btn_promo_once': "Only once",
+        'btn_promo_multi': "Multiple times",
+        'promo_reusable_once': "1 use/user",
+        'promo_reusable_multi': "∞ uses/user",
 
         # --- PROMO CODES (CLIENT) ---
         'cart_promo_btn': "🎟 Enter Promo Code",
@@ -889,5 +914,6 @@ STRINGS = {
         'promo_applied_success': "✅ Promo code <b>{code}</b> applied! Discount: {discount}%",
         'promo_applied_error': "❌ Invalid or non-existent promo code.",
         'cart_discount_info': "🎟 Discount ({discount}%): -{discount_amount}{currency_symbol}\n",
+        'order_promo_info': "\n🎟 <b>Promo code:</b> <code>{code}</code>",
     }
 }
