@@ -920,8 +920,8 @@ class OnlineShopBot:
             'enter_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'enter_address_international'))
 
     async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._edit_user_profile_attribute(update, context, "phone", self.get_text('enter_phone',
-                                                                                        example="+380501234567" if SHIPPING_MODE == 'UKRAINE' else "+1234567890"))
+        await self._edit_user_profile_attribute(update, context, "phone", self.get_text('enter_phone', example=self.get_text('ex_phone_profile')))
+
 
     async def profile_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1236,7 +1236,7 @@ class OnlineShopBot:
         elif not state.get('phone'):
             state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4',
                                                                                    total_steps="4",
-                                                                                   example="+380..." if SHIPPING_MODE == 'UKRAINE' else "+12345..."), "back_to_shipping"
+                                                                                   example=self.get_text('example_phone_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('example_phone_international')), "back_to_shipping"
         else:
             return await self.show_order_summary(context, chat_id, user_id)
 
@@ -1320,7 +1320,7 @@ class OnlineShopBot:
                           'missing_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'missing_address_international') if "address" in missing else "",
                       self.get_text('missing_phone') if "phone" in missing else ""]
             labels = [l for l in labels if l]
-            promo_header = f"{self.get_text(f'welcome_promo_{len(missing)}')}\n⚠️ <b>Заповніть ці дані:</b> {', '.join(labels)}\n<code>────────────────────</code>\n\n"
+            promo_header = f"{self.get_text(f'welcome_promo_{len(missing)}')}\n{self.get_text('promo_fill_in_details', labels=', '.join(labels))}\n"
 
         summary_text = promo_header + self.get_text('confirm_details',
                                                     full_name=self.escape_html(state.get('full_name')),
@@ -1356,13 +1356,13 @@ class OnlineShopBot:
 
         edit_map = {
             "edit_check_name": ("full_name", self.get_text('summary_name_label'), "waiting_full_name",
-                                "<i>John Doe</i>"),
+                                self.get_text('example_full_name')),
             "edit_check_email": ("email", self.get_text('summary_email_label'), "waiting_email",
-                                 "<i>user@gmail.com</i>"),
+                                 self.get_text('example_email')),
             "edit_check_address": ("address", self.get_text('summary_address_label'), "waiting_shipping",
-                                   "<i>Київ, Нова Пошта #15</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>Germany...</i>"),
+                                   self.get_text('example_address_ukraine') if SHIPPING_MODE == 'UKRAINE' else self.get_text('example_address_international')),
             "edit_check_phone": ("phone", self.get_text('summary_phone_label'), "waiting_phone",
-                                 "<i>+380...</i>" if SHIPPING_MODE == 'UKRAINE' else "<i>+123...</i>")
+                                 self.get_text('example_phone_ukraine_checkout') if SHIPPING_MODE == 'UKRAINE' else self.get_text('example_phone_international_checkout'))
         }
 
         if query.data in edit_map:
@@ -1597,9 +1597,9 @@ class OnlineShopBot:
             cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
                            (max(0, p_stock - quantity), new_variants_json, product_id))
 
-        payment_method = payment_method_override or state.get('payment', 'Unknown')
+        payment_method = payment_method_override or state.get('payment', self.get_text('payment_unknown'))
         full_name = state.get('full_name', update.effective_user.full_name)
-        email, address, phone = state.get('email', '—'), state.get('address', '—'), state.get('phone', '—')
+        email, address, phone = state.get('email', self.get_text('not_specified_dash')), state.get('address', self.get_text('not_specified_dash')), state.get('phone', self.get_text('not_specified_dash'))
 
         cursor.execute(
             "INSERT INTO orders (user_id, user_name, full_name, products, total_amount, phone, address, payment_method, email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1760,9 +1760,9 @@ class OnlineShopBot:
                       'shipped': self.get_text('status_shipped'), 'delivered': self.get_text('status_delivered'),
                       'cancelled': self.get_text('status_cancelled')}
         text = self.get_text('order_details_text', order_id=order['id'], user_name=self.escape_html(order['user_name']),
-                             email=self.escape_html(order['email'] or '—'),
-                             phone=self.escape_html(order['phone'] or '—'), address=self.escape_html(order['address']),
-                             payment_method=self.escape_html(order['payment_method'] or '—'),
+                             email=self.escape_html(order['email'] or self.get_text('not_specified_dash')),
+                             phone=self.escape_html(order['phone'] or self.get_text('not_specified_dash')), address=self.escape_html(order['address']),
+                             payment_method=self.escape_html(order['payment_method'] or self.get_text('not_specified_dash')),
                              products_text=products_text, total_amount=order['total_amount'],
                              status_display=status_map.get(order['status'], order['status']),
                              date=self.format_date(order['created_at']))
@@ -1835,9 +1835,9 @@ class OnlineShopBot:
                 pass
 
         sorted_sales = sorted(product_sales.items(), key=lambda x: x[1], reverse=True)
-        top_text = "\n".join([f"🔥 {name}: {qty} pcs" for name, qty in sorted_sales[:5]]) if sorted_sales[
+        top_text = "\n".join([f"🔥 {name}: {qty}{self.get_text('pcs_unit')}" for name, qty in sorted_sales[:5]]) if sorted_sales[
             :5] else self.get_text('no_data')
-        bottom_text = "\n".join([f"🧊 {name}: {qty} pcs" for name, qty in sorted_sales[-5:]]) if sorted_sales[
+        bottom_text = "\n".join([f"🧊 {name}: {qty}{self.get_text('pcs_unit')}" for name, qty in sorted_sales[-5:]]) if sorted_sales[
             -5:] else self.get_text('no_data')
 
         text = self.get_text('admin_stats_text', total_revenue=total_revenue or 0, total_orders=total_orders,
@@ -2259,7 +2259,7 @@ class OnlineShopBot:
         if update.effective_user.id != ADMIN_ID: return
         query = update.callback_query
         match = re.match(r"admin_image_menu_(\d+)", query.data)
-        if not match: return await query.answer("❌ Invalid request")
+        if not match: return await query.answer(self.get_text('invalid_request'))
 
         product_id = int(match.group(1))
         self.conn.row_factory = sqlite3.Row

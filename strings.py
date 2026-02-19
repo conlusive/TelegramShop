@@ -203,7 +203,7 @@ STRINGS = {
         'order_update_notification_ukraine': "📦 <b>Замовлення #{order_id} оновлено</b>\n\n🆕 Новий статус: <b>{display_status}</b>\n\nДякуємо за покупку! ❤️",
 
         # --- 👑 АДМІН: ГОЛОВНА ТА СТАТИСТИКА ---
-        'admin_welcome': "👑 <b>Панель адміністратора</b>\n\nЗ поверненням, {safe_name}! ⚡️\nВсе під контролем. Який план на сьогодні?\n\n👇 <b>Центр керування:</b>",
+        'admin_welcome': "👑 <b>Адмін</b>\n\nЗ поверненням, {safe_name}! ⚡️\nВсе під контролем. Який план на сьогодні?\n\n👇 <b>Центр керування:</b>",
         'admin_panel_header': "👑 **ПАНЕЛЬ АДМІНІСТРАТОРА**\n\n👇 **Панель приладів:**",
         'admin_panel_button_2': "🔙 Панель адміністратора",
         'admin_panel_button_3': "🔙 Панель адміністратора",
@@ -214,7 +214,7 @@ STRINGS = {
         'stats_button': "📊 Статистика",
         'revenue_button': "📈 Дохід",
         'users_button': "👥 Користувачі",
-        'admin_stats_text': "👑 <b>СТАТИСТИКА АДМІНІСТРАТОРА</b>\n\n💰 <b>Загальний дохід:</b> {total_revenue}{currency_symbol}\n📦 <b>Всього замовлень:</b> {total_orders} (🟡 {pending_orders} нових)\n👥 <b>Користувачі:</b> {total_users} ({active_buyers} активних покупців)\n\n🏆 <b>Топ-5 бестселерів:</b>\n{top_text}\n\n📉 <b>Топ-5 найгірших продажів:</b>\n{bottom_text}\n\n<i>*Статистика на основі підтверджених/доставлених замовлень</i>",
+        'admin_stats_text': "👑 <b>СТАТИСТИКА</b>\n\n💰 <b>Загальний дохід:</b> {total_revenue}{currency_symbol}\n📦 <b>Всього замовлень:</b> {total_orders} (🟡 {pending_orders} нових)\n👥 <b>Користувачі:</b> {total_users} ({active_buyers} активних покупців)\n\n🏆 <b>Топ-5 бестселерів:</b>\n{top_text}\n\n📉 <b>Топ-5 найгірших продажів:</b>\n{bottom_text}\n\n<i>*Статистика на основі підтверджених/доставлених замовлень</i>",
         'no_data': 'Немає даних',
         'financial_report': "💰 <b>ФІНАНСОВИЙ ЗВІТ</b> ({label})\n\n💵 <b>Загальний дохід:</b> {total_rev}{currency_symbol}\n💳 <b>Середній чек:</b> {avg_check}{currency_symbol}\n📦 <b>Кількість продажів:</b> {total_orders}\n\n⏳ <b>Дохід в очікуванні:</b> {pending_rev}{currency_symbol}\n<i>*Враховуються лише підтверджені/доставлені замовлення</i>",
         'all_time': "за весь час",

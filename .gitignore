@@ -8,7 +8,6 @@ venv/
 .idea/
 .DS_Store
 
-shop.db/
 *.db
 
 dom.py
