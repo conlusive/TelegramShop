@@ -583,7 +583,7 @@ STRINGS = {
         'back_to_summary_btn': "🔙 Back to Summary",
         'ex_name': "<i>John Doe</i>",
         'ex_email': "<i>user@example.com</i>",
-        'ex_address': "<i>Germany, Berlin...</i>",
+        'ex_address': "<i>Germany, Berlin, Hauptstraße 10, 10115</i>",
         'ex_phone': "<i>+123...</i>",
         'unit_pcs': "pcs",
 

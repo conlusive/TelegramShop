@@ -920,7 +920,7 @@ class OnlineShopBot:
             'enter_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'enter_address_international'))
 
     async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._edit_user_profile_attribute(update, context, "phone", self.get_text('enter_phone', example=self.get_text('ex_phone_profile')))
+        await self._edit_user_profile_attribute(update, context, "phone", self.get_text('enter_phone', example=self.get_text('ex_phone')))
 
 
     async def profile_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1441,7 +1441,7 @@ class OnlineShopBot:
             total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_data)
             telegram_amount = int(total_amount * 100)
 
-            description = f"{self.get_text('invoice_desc')}\n💰 До сплати: {total_amount} {CURRENCY_SYMBOL}"
+            description = f"{self.get_text('invoice_desc')}\n💰 До сплати: {total_amount}{CURRENCY_SYMBOL}"
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('pay_button_text'), pay=True)],
                                              [InlineKeyboardButton(self.get_text('back_button_2'),
                                                                    callback_data="back_to_payment")],
