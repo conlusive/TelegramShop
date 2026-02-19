@@ -2,6 +2,7 @@ import logging
 import json
 import sqlite3
 import time
+import asyncio
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -175,6 +176,21 @@ class OnlineShopBot:
                               INTEGER
                               DEFAULT
                               0
+                          )''')
+
+        # ТАБЛИЦЯ ДЛЯ ПРОМОКОДІВ
+        cursor.execute('''CREATE TABLE IF NOT EXISTS promocodes
+                          (
+                              id
+                              INTEGER
+                              PRIMARY
+                              KEY
+                              AUTOINCREMENT,
+                              code
+                              TEXT
+                              UNIQUE,
+                              discount
+                              INTEGER
                           )''')
 
         self._add_column_if_not_exists(cursor, "products", "emoji", "TEXT")
@@ -651,8 +667,8 @@ class OnlineShopBot:
             [InlineKeyboardButton(
                 self.get_text('cart_button_count', in_cart=in_cart) if in_cart > 0 else self.get_text('cart_button'),
                 callback_data="cart"),
-             InlineKeyboardButton(self.get_text('back_button'),
-                                  callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")]
+                InlineKeyboardButton(self.get_text('back_button'),
+                                     callback_data=f"category_{product['category']}_{prod_page}_{cat_page}")]
         ]
 
         try:
@@ -920,8 +936,8 @@ class OnlineShopBot:
             'enter_address_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'enter_address_international'))
 
     async def edit_phone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self._edit_user_profile_attribute(update, context, "phone", self.get_text('enter_phone', example=self.get_text('ex_phone')))
-
+        await self._edit_user_profile_attribute(update, context, "phone",
+                                                self.get_text('enter_phone', example=self.get_text('ex_phone')))
 
     async def profile_delete_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -960,7 +976,9 @@ class OnlineShopBot:
         state = self.user_states.get(user_id)
         if not state: return
 
-        text, msg, chat_id = update.message.text.strip(), update.message, update.message.chat_id
+        text = update.message.text.strip() if update.message.text else ""
+        msg = update.message
+        chat_id = update.message.chat_id
         try:
             await msg.delete()
         except:
@@ -988,8 +1006,9 @@ class OnlineShopBot:
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
         elif state['step'] == 'waiting_phone_profile':
             if not (
-            re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$",
-                                                                                                text)): return await self._send_error(
+                    re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(
+                        r"^\+\d{10,15}$",
+                        text)): return await self._send_error(
                 chat_id, 'err_invalid_phone', error_kb, state, context)
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
         elif state['step'] == 'waiting_address_profile':
@@ -1009,8 +1028,9 @@ class OnlineShopBot:
 
     # -------------------- CART --------------------
     async def show_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
+        query = getattr(update, "callback_query", None)
         user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
         cursor = self.conn.cursor()
         cursor.execute(
             'SELECT c.id, p.name, p.price, c.quantity, p.emoji, c.selected_options, p.variants, p.id FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
@@ -1023,16 +1043,20 @@ class OnlineShopBot:
                         [InlineKeyboardButton(self.get_text('my_orders_button_2'), callback_data="my_orders")],
                         [InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")]]
             try:
-                if query.message.photo:
+                if query and getattr(query.message, 'photo', None):
                     await query.message.delete()
-                    await context.bot.send_message(chat_id=query.message.chat_id, text=text,
+                    await context.bot.send_message(chat_id=chat_id, text=text,
                                                    reply_markup=InlineKeyboardMarkup(keyboard),
                                                    parse_mode=ParseMode.HTML)
-                else:
+                elif query:
                     await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
                                                   parse_mode=ParseMode.HTML)
+                else:
+                    await context.bot.send_message(chat_id=chat_id, text=text,
+                                                   reply_markup=InlineKeyboardMarkup(keyboard),
+                                                   parse_mode=ParseMode.HTML)
             except Exception:
-                await context.bot.send_message(chat_id=query.message.chat_id, text=text,
+                await context.bot.send_message(chat_id=chat_id, text=text,
                                                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
             return
 
@@ -1047,7 +1071,22 @@ class OnlineShopBot:
                              InlineKeyboardButton(f"{name} ({quantity})", callback_data=f"product_{product_id}"),
                              InlineKeyboardButton("➕", callback_data=f"cart_plus_{cart_id}")])
 
-        text += self.get_text('cart_total', total_amount=total_amount).replace('$', CURRENCY_SYMBOL)
+        # Застосування промокоду
+        discount_amount = 0
+        active_promo = self.user_states.get(user_id, {}).get('active_promo')
+        if active_promo:
+            discount_amount = total_amount * (active_promo['discount'] / 100.0)
+            total_amount -= discount_amount
+            text += f"\n" + self.get_text('cart_discount_info', discount=active_promo['discount'],
+                                          discount_amount=round(discount_amount, 2))
+
+        text += self.get_text('cart_total', total_amount=round(total_amount, 2)).replace('$', CURRENCY_SYMBOL)
+
+        promo_btn = []
+        if not active_promo:
+            promo_btn = [[InlineKeyboardButton(self.get_text('cart_promo_btn'), callback_data="ask_promo_code")]]
+
+        keyboard.extend(promo_btn)
         keyboard.extend([
             [InlineKeyboardButton(self.get_text('checkout_button'), callback_data="checkout")],
             [InlineKeyboardButton(self.get_text('clear_cart_button'), callback_data="clear_cart"),
@@ -1056,21 +1095,25 @@ class OnlineShopBot:
         ])
 
         try:
-            if query.message.photo:
+            if query and getattr(query.message, 'photo', None):
                 await query.message.delete()
-                await context.bot.send_message(chat_id=query.message.chat_id, text=text,
+                await context.bot.send_message(chat_id=chat_id, text=text,
                                                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
-            else:
+            elif query:
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
                                               parse_mode=ParseMode.HTML)
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=text,
+                                               reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
         except Exception:
-            await context.bot.send_message(chat_id=query.message.chat_id, text=text,
+            await context.bot.send_message(chat_id=chat_id, text=text,
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
     async def handle_cart_update(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         try:
-            action, cart_id = query.data.rsplit("_", 1); cart_id = int(cart_id)
+            action, cart_id = query.data.rsplit("_", 1);
+            cart_id = int(cart_id)
         except:
             return
 
@@ -1157,6 +1200,7 @@ class OnlineShopBot:
         items_count = cursor.fetchone()[0]
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
+        self.user_states.setdefault(user_id, {}).pop('active_promo', None)
         await update.callback_query.answer(self.get_text('cart_cleared', items_count=items_count))
         await self.show_cart(update, context)
 
@@ -1173,7 +1217,7 @@ class OnlineShopBot:
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
-        self.user_states[user_id] = {'step': 'waiting_full_name'}
+        self.user_states.setdefault(user_id, {})['step'] = 'waiting_full_name'
         keyboard = []
         if user_data and any(user_data): keyboard.append(
             [InlineKeyboardButton(self.get_text('use_profile_data_button'), callback_data="use_profile_data")])
@@ -1197,8 +1241,9 @@ class OnlineShopBot:
         if not user_data: return await self.checkout(update, context)
 
         full_name, email, address, phone = user_data
-        self.user_states[user_id] = {'full_name': full_name, 'email': email, 'address': address, 'phone': phone,
-                                     'msg_id': query.message.message_id, 'from_profile': True}
+        self.user_states.setdefault(user_id, {}).update(
+            {'full_name': full_name, 'email': email, 'address': address, 'phone': phone,
+             'msg_id': query.message.message_id, 'from_profile': True})
 
         if full_name and email and address and phone:
             try:
@@ -1218,30 +1263,40 @@ class OnlineShopBot:
             state['is_editing_single'] = False
             return await self.show_order_summary(context, chat_id, user_id)
 
-        header = self.get_text('checkout_profile_loaded_header') if state.get('from_profile') else self.get_text('checkout_header')
+        header = self.get_text('checkout_profile_loaded_header') if state.get('from_profile') else self.get_text(
+            'checkout_header')
 
         if not state.get('full_name'):
-            state['step'], text, back_cb = 'waiting_full_name', header + self.get_text('checkout_step_1_of_4', total_steps="4"), "cart"
+            state['step'], text, back_cb = 'waiting_full_name', header + self.get_text('checkout_step_1_of_4',
+                                                                                       total_steps="4"), "cart"
         elif not state.get('email'):
-            state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4', total_steps="4"), "back_to_name"
+            state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4',
+                                                                                   total_steps="4"), "back_to_name"
         elif not state.get('address'):
             state['step'] = 'waiting_shipping'
-            text = header + self.get_text('checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international', total_steps="4")
+            text = header + self.get_text(
+                'checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international',
+                total_steps="4")
             back_cb = "back_to_email"
         elif not state.get('phone'):
-            # Більше ніяких перевірок — словник сам віддасть потрібний приклад телефону!
-            state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4', total_steps="4", example=self.get_text('ex_phone')), "back_to_shipping"
+            state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4',
+                                                                                   total_steps="4",
+                                                                                   example=self.get_text(
+                                                                                       'ex_phone')), "back_to_shipping"
         else:
             return await self.show_order_summary(context, chat_id, user_id)
 
         kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
-                                   [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]])
-        if update.callback_query:
+                                   [InlineKeyboardButton(self.get_text('cancel_order_button'),
+                                                         callback_data="cancel_order")]])
+        if getattr(update, "callback_query", None):
             await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
         else:
             if 'msg_id' in state:
-                try: await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-                except: pass
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
+                except:
+                    pass
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
@@ -1271,7 +1326,7 @@ class OnlineShopBot:
                                                parse_mode="HTML")
             state['msg_id'] = m.message_id
 
-        text = msg.text.strip()
+        text = msg.text.strip() if msg.text else ""
         is_edit = state.get('is_editing_single', False)
 
         if state['step'] == 'waiting_full_name':
@@ -1284,14 +1339,15 @@ class OnlineShopBot:
             state['email'] = text
         elif state['step'] == 'waiting_shipping':
             is_valid = (text.count(',') >= 1 or len(text.split()) >= 3) if SHIPPING_MODE == 'UKRAINE' else (
-                        text.count(',') >= 3 and any(c.isdigit() for c in text.split(',')[-1]))
+                    text.count(',') >= 3 and any(c.isdigit() for c in text.split(',')[-1]))
             if not is_valid: return await send_err('err_invalid_address',
                                                    "confirm_details_back" if is_edit else "back_to_email")
             state['address'] = text
         elif state['step'] == 'waiting_phone':
             if not (
-            re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$",
-                                                                                                text)): return await send_err(
+                    re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(
+                        r"^\+\d{10,15}$",
+                        text)): return await send_err(
                 'err_invalid_phone', "confirm_details_back" if is_edit else "back_to_shipping")
             state['phone'] = text
             return await self.show_order_summary(context, chat_id, user_id)
@@ -1334,28 +1390,39 @@ class OnlineShopBot:
         state = self.user_states.get(user_id)
         if not state: return
 
-        # Ідеально чистий код без жодних перевірок на SHIPPING_MODE
         edit_map = {
-            "edit_check_name": ("full_name", self.get_text('summary_name_label'), "waiting_full_name", self.get_text('ex_name')),
-            "edit_check_email": ("email", self.get_text('summary_email_label'), "waiting_email", self.get_text('ex_email')),
-            "edit_check_address": ("address", self.get_text('summary_address_label'), "waiting_shipping", self.get_text('ex_address')),
-            "edit_check_phone": ("phone", self.get_text('summary_phone_label'), "waiting_phone", self.get_text('ex_phone'))
+            "edit_check_name": ("full_name", self.get_text('summary_name_label'), "waiting_full_name",
+                                self.get_text('ex_name')),
+            "edit_check_email": ("email", self.get_text('summary_email_label'), "waiting_email",
+                                 self.get_text('ex_email')),
+            "edit_check_address": ("address", self.get_text('summary_address_label'), "waiting_shipping",
+                                   self.get_text('ex_address')),
+            "edit_check_phone": ("phone", self.get_text('summary_phone_label'), "waiting_phone",
+                                 self.get_text('ex_phone'))
         }
 
         if query.data in edit_map:
             field_key, display_name, next_step, example = edit_map[query.data]
             state['step'], state['is_editing_single'] = next_step, True
             text = f"<b>{self.get_text('edit_field_title', field=display_name)}</b>\n\n<b>{self.get_text('current_value_label')}</b> <code>{self.escape_html(state.get(field_key, self.get_text('not_set')))}</code>\n\n<b>{self.get_text('example_label')}</b> {example}\n\n{self.get_text('enter_new_value_prompt')}"
-            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_to_summary_btn'), callback_data="confirm_details_back")]]), parse_mode="HTML")
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_to_summary_btn'), callback_data="confirm_details_back")]]),
+                                          parse_mode="HTML")
             return
 
-        if query.data == "back_to_name": state['full_name'] = None
-        elif query.data == "back_to_email": state['email'] = None
-        elif query.data == "back_to_shipping": state['address'] = None
-        elif query.data == "back_to_phone_input": state['phone'] = None
+        if query.data == "back_to_name":
+            state['full_name'] = None
+        elif query.data == "back_to_email":
+            state['email'] = None
+        elif query.data == "back_to_shipping":
+            state['address'] = None
+        elif query.data == "back_to_phone_input":
+            state['phone'] = None
         elif query.data == "back_to_payment":
-            try: await query.message.delete()
-            except: pass
+            try:
+                await query.message.delete()
+            except:
+                pass
             return await self.send_payment_keyboard(context, query.message.chat_id, user_id)
 
         await self.continue_checkout_flow(update, context)
@@ -1425,6 +1492,11 @@ class OnlineShopBot:
             (user_id,))
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
+        # Застосування знижки для оффлайн оплат
+        active_promo = self.user_states.get(user_id, {}).get('active_promo')
+        if active_promo:
+            total_amount -= total_amount * (active_promo['discount'] / 100.0)
+
         method_name = self.get_text('method_card_courier') if query.data == "pay_card" else self.get_text('method_cod')
         await self.finalize_order(update, context, method_name, total_amount)
 
@@ -1439,15 +1511,20 @@ class OnlineShopBot:
             if not cart_data: return await context.bot.send_message(chat_id=chat_id, text=self.get_text('cart_empty_3'))
 
             total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_data)
-            telegram_amount = int(total_amount * 100)
 
-            description = f"{self.get_text('invoice_desc')}\n💰 До сплати: {total_amount}{CURRENCY_SYMBOL}"
+            # Застосування промокоду для інвойсу
+            active_promo = self.user_states.get(user_id, {}).get('active_promo')
+            if active_promo:
+                total_amount -= total_amount * (active_promo['discount'] / 100.0)
+
+            telegram_amount = int(round(total_amount, 2) * 100)
+
+            description = f"{self.get_text('invoice_desc')}\n💰 До сплати: {round(total_amount, 2)}{CURRENCY_SYMBOL}"
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('pay_button_text'), pay=True)],
                                              [InlineKeyboardButton(self.get_text('back_button_2'),
                                                                    callback_data="back_to_payment")],
                                              [InlineKeyboardButton(self.get_text('cancel_order_button'),
                                                                    callback_data="cancel_order")]])
-
 
             provider_key = 'PORTMONE' if SHIPPING_MODE == 'UKRAINE' else 'REDSYS'
 
@@ -1496,7 +1573,7 @@ class OnlineShopBot:
                              pre_calc_total=None):
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
-        query = update.callback_query
+        query = getattr(update, "callback_query", None)
         state = self.user_states.setdefault(user_id, {})
         state['payment'] = payment_method
 
@@ -1569,7 +1646,14 @@ class OnlineShopBot:
             cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
                            (max(0, p_stock - quantity), new_variants_json, product_id))
 
-        # ВИПРАВЛЕНО: 'payment_unknown' та 'not_specified_dash' беруться зі strings.py
+        # Застосування знижки в базі
+        active_promo = state.get('active_promo')
+        if active_promo:
+            total_amount -= total_amount * (active_promo['discount'] / 100.0)
+            state.pop('active_promo', None)  # Очищаємо промо після використання
+
+        total_amount = round(total_amount, 2)
+
         payment_method = payment_method_override or state.get('payment', self.get_text('payment_unknown'))
         full_name = state.get('full_name', update.effective_user.full_name)
         email = state.get('email', self.get_text('not_specified_dash'))
@@ -1658,7 +1742,6 @@ class OnlineShopBot:
             try:
                 products_list = []
                 for p in json.loads(order["products"]):
-                    # ВИПРАВЛЕНО: Правильний регулярний вираз без подвійних слешів
                     clean_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', self.get_text('product'))))
                     products_list.append(f"{p.get('emoji', '📦')} {clean_name}")
                 products_str = ", ".join(products_list)
@@ -1722,22 +1805,23 @@ class OnlineShopBot:
             for p in json.loads(order["products"]):
                 opts_str = f" ({', '.join([str(v) for v in p.get('selected_options', {}).values()])})" if p.get(
                     'selected_options') else ""
-                # ВИПРАВЛЕНО: Правильний регулярний вираз без подвійних слешів
                 clean_name = re.sub(r'\s*\(?x\d+\)?\)*$', '', str(p.get('name', self.get_text('unknown'))))
                 products_text += f"{p.get('emoji', '📦')} {self.escape_html(clean_name)}{self.escape_html(opts_str)} x{p.get('quantity', 1)} = <b>{p.get('total', 0)}{CURRENCY_SYMBOL}</b>\n"
         except Exception as e:
             logger.error(f"Помилка розбору товарів: {e}")
             products_text = "\n".join(
                 [f"📦 {self.escape_html(line)}" for line in str(order["products"]).split('\n') if line.strip()]) if \
-            order["products"] else self.get_text('items_info_unavailable')
+                order["products"] else self.get_text('items_info_unavailable')
 
         status_map = {'pending': self.get_text('status_pending'), 'confirmed': self.get_text('status_confirmed'),
                       'shipped': self.get_text('status_shipped'), 'delivered': self.get_text('status_delivered'),
                       'cancelled': self.get_text('status_cancelled')}
         text = self.get_text('order_details_text', order_id=order['id'], user_name=self.escape_html(order['user_name']),
                              email=self.escape_html(order['email'] or self.get_text('not_specified_dash')),
-                             phone=self.escape_html(order['phone'] or self.get_text('not_specified_dash')), address=self.escape_html(order['address']),
-                             payment_method=self.escape_html(order['payment_method'] or self.get_text('not_specified_dash')),
+                             phone=self.escape_html(order['phone'] or self.get_text('not_specified_dash')),
+                             address=self.escape_html(order['address']),
+                             payment_method=self.escape_html(
+                                 order['payment_method'] or self.get_text('not_specified_dash')),
                              products_text=products_text, total_amount=order['total_amount'],
                              status_display=status_map.get(order['status'], order['status']),
                              date=self.format_date(order['created_at']))
@@ -1780,15 +1864,184 @@ class OnlineShopBot:
     async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID: return await update.callback_query.answer(
             self.get_text('access_denied'))
+        # ДОДАНО НОВІ КНОПКИ БРОАДКАСТУ ТА ПРОМОКОДІВ
         keyboard = [[InlineKeyboardButton(self.get_text('all_orders_button'), callback_data="admin_all_orders")],
                     [InlineKeyboardButton(self.get_text('products_button'), callback_data="admin_products")],
                     [InlineKeyboardButton(self.get_text('stats_button'), callback_data="admin_statistics"),
                      InlineKeyboardButton(self.get_text('revenue_button'), callback_data="admin_revenue_chart")],
                     [InlineKeyboardButton(self.get_text('users_button'), callback_data="admin_user_management")],
+                    [InlineKeyboardButton(self.get_text('admin_broadcast_button'),
+                                          callback_data="admin_broadcast_prompt"),
+                     InlineKeyboardButton(self.get_text('admin_promo_button'), callback_data="admin_promo_menu")],
                     [InlineKeyboardButton(self.get_text('main_menu_button_3'), callback_data="main_menu")]]
         await update.callback_query.edit_message_text(self.get_text('admin_panel_header'),
                                                       reply_markup=InlineKeyboardMarkup(keyboard),
                                                       parse_mode=ParseMode.MARKDOWN)
+
+    # -------------------- ADMIN BROADCAST (РОЗСИЛКА) --------------------
+    async def admin_broadcast_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID: return
+        self.user_states[update.effective_user.id] = {'step': 'waiting_broadcast_message'}
+        await update.callback_query.edit_message_text(self.get_text('admin_broadcast_prompt'),
+                                                      reply_markup=InlineKeyboardMarkup(
+                                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                                 callback_data="admin_panel")]]),
+                                                      parse_mode="HTML")
+
+    async def handle_broadcast_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if user_id != ADMIN_ID: return
+
+        await update.message.reply_text(self.get_text('admin_broadcast_started'), parse_mode="HTML")
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT user_id FROM users")
+        users = cursor.fetchall()
+
+        success, failed = 0, 0
+        for (uid,) in users:
+            if uid == ADMIN_ID: continue
+            try:
+                await update.message.copy(chat_id=uid)
+                success += 1
+                await asyncio.sleep(0.05)  # Захист від спам-лімітів Телеграму
+            except Exception:
+                failed += 1
+
+        self.user_states.pop(user_id, None)
+        await context.bot.send_message(chat_id=update.effective_chat.id,
+                                       text=self.get_text('admin_broadcast_finished', success=success, failed=failed),
+                                       parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]]))
+
+    # -------------------- PROMO CODES ADMIN --------------------
+    async def admin_promo_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID: return
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT code, discount FROM promocodes")
+        promos = cursor.fetchall()
+
+        promo_list = ""
+        if not promos:
+            promo_list = self.get_text('promo_no_active')
+        else:
+            for code, discount in promos:
+                promo_list += self.get_text('promo_item', code=code, discount=discount) + "\n"
+
+        keyboard = [
+            [InlineKeyboardButton(self.get_text('admin_promo_add_btn'), callback_data="admin_promo_add_prompt")],
+            [InlineKeyboardButton(self.get_text('admin_promo_del_btn'), callback_data="admin_promo_del_prompt")],
+            [InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]
+        ]
+
+        try:
+            await update.callback_query.edit_message_text(self.get_text('admin_promo_menu', promo_list=promo_list),
+                                                          reply_markup=InlineKeyboardMarkup(keyboard),
+                                                          parse_mode="HTML")
+        except:
+            pass
+
+    async def admin_promo_add_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID: return
+        self.user_states[update.effective_user.id] = {'step': 'waiting_promo_code_name'}
+        await update.callback_query.edit_message_text(self.get_text('admin_promo_ask_code'),
+                                                      reply_markup=InlineKeyboardMarkup(
+                                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                                 callback_data="admin_promo_menu")]]),
+                                                      parse_mode="HTML")
+
+    async def admin_promo_del_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_user.id != ADMIN_ID: return
+        self.user_states[update.effective_user.id] = {'step': 'waiting_promo_delete'}
+        await update.callback_query.edit_message_text(self.get_text('admin_promo_ask_del'),
+                                                      reply_markup=InlineKeyboardMarkup(
+                                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                                 callback_data="admin_promo_menu")]]),
+                                                      parse_mode="HTML")
+
+    async def handle_promo_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        state = self.user_states[user_id]
+        step = state.get('step')
+        text = update.message.text.strip() if update.message.text else ""
+        chat_id = update.message.chat_id
+
+        if step == 'waiting_promo_code_name':
+            state['promo_code'] = text.upper()
+            state['step'] = 'waiting_promo_discount'
+            await context.bot.send_message(chat_id=chat_id,
+                                           text=self.get_text('admin_promo_ask_discount', code=state['promo_code']),
+                                           reply_markup=InlineKeyboardMarkup(
+                                               [[InlineKeyboardButton(self.get_text('cancel_button'),
+                                                                      callback_data="admin_promo_menu")]]),
+                                           parse_mode="HTML")
+
+        elif step == 'waiting_promo_discount':
+            try:
+                discount = int(text)
+                if not (1 <= discount <= 99): raise ValueError
+                cursor = self.conn.cursor()
+                cursor.execute("INSERT OR REPLACE INTO promocodes (code, discount) VALUES (?, ?)",
+                               (state['promo_code'], discount))
+                self.conn.commit()
+                await context.bot.send_message(chat_id=chat_id,
+                                               text=self.get_text('admin_promo_added', code=state['promo_code'],
+                                                                  discount=discount), reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_promo_menu")]]),
+                                               parse_mode="HTML")
+                self.user_states.pop(user_id, None)
+            except ValueError:
+                await context.bot.send_message(chat_id=chat_id, text=self.get_text('err_invalid_discount'),
+                                               parse_mode="HTML")
+
+        elif step == 'waiting_promo_delete':
+            cursor = self.conn.cursor()
+            cursor.execute("DELETE FROM promocodes WHERE code = ?", (text.upper(),))
+            if cursor.rowcount > 0:
+                await context.bot.send_message(chat_id=chat_id,
+                                               text=self.get_text('admin_promo_deleted', code=text.upper()),
+                                               reply_markup=InlineKeyboardMarkup(
+                                                   [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                          callback_data="admin_promo_menu")]]),
+                                               parse_mode="HTML")
+            else:
+                await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_promo_not_found'),
+                                               reply_markup=InlineKeyboardMarkup(
+                                                   [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                          callback_data="admin_promo_menu")]]),
+                                               parse_mode="HTML")
+            self.conn.commit()
+            self.user_states.pop(user_id, None)
+
+    # -------------------- PROMO CODES CLIENT --------------------
+    async def ask_promo_code(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context): return
+        query = update.callback_query
+        self.user_states.setdefault(update.effective_user.id, {})['step'] = 'waiting_user_promo'
+        await query.edit_message_text(self.get_text('ask_promo_code'), reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="cart")]]), parse_mode="HTML")
+
+    async def handle_user_promo_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        text = update.message.text.strip().upper() if update.message.text else ""
+        chat_id = update.message.chat_id
+
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT discount FROM promocodes WHERE code = ?", (text,))
+        res = cursor.fetchone()
+
+        if res:
+            self.user_states.setdefault(user_id, {})['active_promo'] = {'code': text, 'discount': res[0]}
+            self.user_states[user_id].pop('step', None)
+            await context.bot.send_message(chat_id=chat_id,
+                                           text=self.get_text('promo_applied_success', code=text, discount=res[0]),
+                                           parse_mode="HTML")
+            await self.show_cart(update, context)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=self.get_text('promo_applied_error'),
+                                           reply_markup=InlineKeyboardMarkup(
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                      callback_data="cart")]]), parse_mode="HTML")
 
     async def admin_statistics(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if int(update.effective_user.id) != int(ADMIN_ID): return await update.callback_query.answer(
@@ -1879,7 +2132,7 @@ class OnlineShopBot:
             try:
                 chat = await context.bot.get_chat(user_id)
                 user_display = f"@{chat.username}" if chat.username else (
-                            chat.first_name or self.get_text('user_id', user_id=user_id))
+                        chat.first_name or self.get_text('user_id', user_id=user_id))
             except:
                 user_display = self.get_text('user_id', user_id=user_id)
 
@@ -1922,7 +2175,7 @@ class OnlineShopBot:
     async def admin_all_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
         query = update.callback_query
         if int(update.effective_user.id) not in (
-        ADMIN_ID if isinstance(ADMIN_ID, list) else [ADMIN_ID]): return await query.answer(
+                ADMIN_ID if isinstance(ADMIN_ID, list) else [ADMIN_ID]): return await query.answer(
             self.get_text('access_denied_not_admin'), show_alert=True)
 
         self.conn.row_factory = sqlite3.Row
@@ -2054,7 +2307,8 @@ class OnlineShopBot:
             category, page = category_override, 1
         else:
             try:
-                parts = query.data.split("_"); page, category = int(parts[-1]), "_".join(parts[3:-1])
+                parts = query.data.split("_");
+                page, category = int(parts[-1]), "_".join(parts[3:-1])
             except:
                 return await query.answer(self.get_text('error_parsing_category'))
 
@@ -2100,7 +2354,9 @@ class OnlineShopBot:
             if product_id_override:
                 product_id = int(product_id_override)
             elif query:
-                parts = query.data.split("_"); product_id = int(parts[2]); origin_page = int(parts[3]) if len(
+                parts = query.data.split("_");
+                product_id = int(parts[2]);
+                origin_page = int(parts[3]) if len(
                     parts) >= 4 else 1
             else:
                 return
@@ -2370,13 +2626,27 @@ class OnlineShopBot:
         await query.answer(self.get_text('product_deleted', name=row[0]))
         await self.admin_products_list(update, context, category_override=row[1])
 
-    # -------------------- INPUT HANDLERS --------------------
-    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # -------------------- INPUT HANDLERS (МАЙСТЕР-РОУТЕР) --------------------
+    async def master_message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
         user_id = update.effective_user.id
 
         if user_id in self.user_states:
             step = self.user_states[user_id].get('step', '')
+
+            # РОЗСИЛКА (Адмін)
+            if step == 'waiting_broadcast_message':
+                return await self.handle_broadcast_input(update, context)
+
+            # ПРОМОКОДИ (Адмін)
+            if step in ['waiting_promo_code_name', 'waiting_promo_discount', 'waiting_promo_delete']:
+                return await self.handle_promo_input(update, context)
+
+            # ПРОМОКОДИ (Клієнт)
+            if step == 'waiting_user_promo':
+                return await self.handle_user_promo_input(update, context)
+
+            # ТОВАРИ ТА ЧЕКАУТ
             if step.startswith('add_product') or step.startswith('edit_') or step.startswith(
                     'waiting_simple_') or step.startswith('waiting_var_') or step in ['waiting_product_image',
                                                                                       'waiting_variant_values',
@@ -2387,7 +2657,8 @@ class OnlineShopBot:
             elif step.startswith('waiting_'):
                 await self.handle_checkout_input(update, context)
         else:
-            await update.message.reply_text(self.get_text('use_start'))
+            if update.message and update.message.text:
+                await update.message.reply_text(self.get_text('use_start'))
 
     async def handle_edit_field_input(self, update, context, state, input_value, msg):
         user_id, chat_id = update.effective_user.id, update.effective_chat.id
@@ -2826,9 +3097,9 @@ def main():
 
     # 1. БАЗОВІ КОМАНДИ ТА ПОВІДОМЛЕННЯ
     application.add_handler(CommandHandler("start", bot.start))
-    application.add_handler(MessageHandler(filters.PHOTO, bot.handle_admin_product_input))
-    application.add_handler(MessageHandler(filters.CONTACT, bot.handle_checkout_input))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text))
+
+    # МАЙСТЕР-ОБРОБНИК ДЛЯ ВСЬОГО (ФОТО/ТЕКСТ/ВІДЕО)
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, bot.master_message_handler))
 
     # 2. КЛІЄНТСЬКА ЧАСТИНА (Меню, Каталог, Профіль)
     application.add_handler(CallbackQueryHandler(bot.show_main_menu, pattern=r'^main_menu$'))
@@ -2851,6 +3122,10 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.clear_cart, pattern=r'^clear_cart$'))
     application.add_handler(CallbackQueryHandler(bot.handle_cart_update, pattern=r'^cart_(plus|minus)_'))
     application.add_handler(CallbackQueryHandler(bot.add_to_cart, pattern=r'^add_to_cart_'))
+
+    # Клієнтська частина ПРОМО
+    application.add_handler(CallbackQueryHandler(bot.ask_promo_code, pattern=r'^ask_promo_code$'))
+
     application.add_handler(PreCheckoutQueryHandler(bot.precheckout_callback))
     application.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, bot.successful_payment_callback))
 
@@ -2861,7 +3136,6 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.choose_payment, pattern=r'^pay_(cod|card|bank|online)$'))
 
     application.add_handler(CallbackQueryHandler(bot.handle_cancel_order, pattern=r'^cancel_order$'))
-    # ВИПРАВЛЕНО ДУБЛЮВАННЯ В HANDLERS
     application.add_handler(CallbackQueryHandler(bot.handle_checkout_back, pattern=r'^(back_to_|edit_)'))
 
     application.add_handler(CallbackQueryHandler(bot.show_my_orders, pattern=r'^my_orders$'))
@@ -2875,6 +3149,12 @@ def main():
     application.add_handler(CallbackQueryHandler(bot.admin_revenue, pattern=r'^admin_revenue_chart$'))
     application.add_handler(CallbackQueryHandler(bot.handle_revenue_period, pattern=r'^rev_'))
 
+    # Адмінська частина РОЗСИЛКА І ПРОМО
+    application.add_handler(CallbackQueryHandler(bot.admin_broadcast_prompt, pattern=r'^admin_broadcast_prompt$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_promo_menu, pattern=r'^admin_promo_menu$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_promo_add_prompt, pattern=r'^admin_promo_add_prompt$'))
+    application.add_handler(CallbackQueryHandler(bot.admin_promo_del_prompt, pattern=r'^admin_promo_del_prompt$'))
+
     application.add_handler(CallbackQueryHandler(bot.admin_user_management, pattern=r'^admin_user_management$'))
     application.add_handler(CallbackQueryHandler(bot.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
     application.add_handler(CallbackQueryHandler(bot.admin_user_block, pattern=r'^admin_user_block_'))
@@ -2885,7 +3165,7 @@ def main():
     application.add_handler(
         CallbackQueryHandler(bot.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
 
-    # ВИПРАВЛЕНО ДУБЛЮВАННЯ МЕНЮ ТОВАРІВ
+    # МЕНЮ ТОВАРІВ
     application.add_handler(
         CallbackQueryHandler(bot.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
     application.add_handler(CallbackQueryHandler(bot.admin_products_list, pattern=r'^admin_list_cat_'))

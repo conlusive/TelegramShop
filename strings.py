@@ -411,6 +411,35 @@ STRINGS = {
         'admin_ex_default': "Опція=К-сть=Ціна",
         'payment_unknown': "Невідомо",
         'not_specified_dash': "—",
+
+
+         # --- БРОАДКАСТ (РОЗСИЛКА) ---
+        'admin_broadcast_button': "📢 Розсилка",
+        'admin_broadcast_prompt': "📢 <b>Розсилка всім користувачам</b>\n\nНадішліть повідомлення (текст, фото або відео), яке отримають всі клієнти бота. Або натисніть Скасувати.",
+        'admin_broadcast_started': "⏳ Розсилка розпочалася. Це може зайняти деякий час...",
+        'admin_broadcast_finished': "✅ <b>Розсилку завершено!</b>\n\nУспішно доставлено: {success}\nЗаблокували бота: {failed}",
+
+        # --- ПРОМОКОДИ ---
+        'admin_promo_button': "🎟 Промокоди",
+        'admin_promo_menu': "🎟 <b>Керування промокодами</b>\n\nАктивні промокоди:\n{promo_list}\n\nВиберіть дію:",
+        'promo_no_active': "Немає активних промокодов",
+        'promo_item': "• <code>{code}</code> — {discount}%",
+        'admin_promo_add_btn': "➕ Додати промокод",
+        'admin_promo_del_btn': "🗑 Видалити промокод",
+        'admin_promo_ask_code': "Введіть новий промокод (наприклад: WELCOME10):",
+        'admin_promo_ask_discount': "Введіть відсоток знижки для <b>{code}</b> (число від 1 до 99):",
+        'admin_promo_ask_del': "Введіть промокод, який хочете видалити:",
+        'admin_promo_added': "✅ Промокод <b>{code}</b> на знижку {discount}% успішно додано!",
+        'admin_promo_deleted': "🗑 Промокод <b>{code}</b> видалено!",
+        'admin_promo_not_found': "❌ Промокод не знайдено.",
+        'err_invalid_discount': "❌ Помилка: Введіть ціле число від 1 до 99.",
+
+        # --- ПРОМОКОДИ (КЛІЄНТ) ---
+        'cart_promo_btn': "🎟 Ввести промокод",
+        'ask_promo_code': "🎟 <b>Введення промокоду</b>\n\nНадішліть ваш промокод у чат:",
+        'promo_applied_success': "✅ Промокод <b>{code}</b> успішно застосовано! Знижка {discount}%",
+        'promo_applied_error': "❌ Промокод недійсний або його не існує.",
+        'cart_discount_info': "🎟 Знижка ({discount}%): -{discount_amount}{currency_symbol}\n",
     },
 
     'INTERNATIONAL': {
@@ -832,5 +861,33 @@ STRINGS = {
         'admin_ex_default': "Option=Qty=Price",
         'payment_unknown': "Unknown",
         'not_specified_dash': "—",
+
+        # --- BROADCAST ---
+        'admin_broadcast_button': "📢 Broadcast",
+        'admin_broadcast_prompt': "📢 <b>Broadcast to all users</b>\n\nSend the message (text, photo, or video) that all bot clients will receive. Or press Cancel.",
+        'admin_broadcast_started': "⏳ Broadcast started. This may take a while...",
+        'admin_broadcast_finished': "✅ <b>Broadcast finished!</b>\n\nSuccessfully delivered: {success}\nBlocked the bot: {failed}",
+
+        # --- PROMO CODES ---
+        'admin_promo_button': "🎟 Promo codes",
+        'admin_promo_menu': "🎟 <b>Promo Code Management</b>\n\nActive promo codes:\n{promo_list}\n\nSelect an action:",
+        'promo_no_active': "No active promo codes",
+        'promo_item': "• <code>{code}</code> — {discount}%",
+        'admin_promo_add_btn': "➕ Add promo code",
+        'admin_promo_del_btn': "🗑 Delete promo code",
+        'admin_promo_ask_code': "Enter new promo code (e.g., WELCOME10):",
+        'admin_promo_ask_discount': "Enter discount percentage for <b>{code}</b> (number 1-99):",
+        'admin_promo_ask_del': "Enter the promo code you want to delete:",
+        'admin_promo_added': "✅ Promo code <b>{code}</b> for {discount}% off added successfully!",
+        'admin_promo_deleted': "🗑 Promo code <b>{code}</b> deleted!",
+        'admin_promo_not_found': "❌ Promo code not found.",
+        'err_invalid_discount': "❌ Error: Please enter an integer between 1 and 99.",
+
+        # --- PROMO CODES (CLIENT) ---
+        'cart_promo_btn': "🎟 Enter Promo Code",
+        'ask_promo_code': "🎟 <b>Enter Promo Code</b>\n\nSend your promo code in the chat:",
+        'promo_applied_success': "✅ Promo code <b>{code}</b> applied! Discount: {discount}%",
+        'promo_applied_error': "❌ Invalid or non-existent promo code.",
+        'cart_discount_info': "🎟 Discount ({discount}%): -{discount_amount}{currency_symbol}\n",
     }
 }
