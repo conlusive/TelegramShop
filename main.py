@@ -512,7 +512,7 @@ class OnlineShopBot:
                 promo_block = self.get_text('missing_fields_info', promo=promo, missing_labels=', '.join(labels))
 
                 parts = base_welcome.split("\n\n", 1)
-                welcome_text = f"{parts[0]}\n{promo_block}\n\n{parts[1]}" if len(
+                welcome_text = f"{parts[0]}\n\n{promo_block}\n\n{parts[1]}" if len(
                     parts) > 1 else f"{promo_block}\n\n{base_welcome}"
             else:
                 welcome_text = base_welcome

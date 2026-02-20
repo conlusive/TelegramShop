@@ -98,9 +98,9 @@ STRINGS = {
         'back_to_catalog_button': "🛍 Продовжити покупки",
 
         # --- ПРОФІЛЬ ---
-        'profile_details': "👤 <b>Ваш профіль</b>\n\n<b>Ім'я:</b> {name}\n<b>Телефон:</b> {phone}\n<b>Email:</b> {email}\n<b>{shipping_label}:</b> {address}",
-        'shipping_label_ukraine': "Доставка (Пошта)",
-        'shipping_label_profile_ukraine': "Доставка (Пошта)",
+        'profile_details': "👤 <b>Ваш профіль</b>\n\nІм'я: {name}\nEmail: {email}\n{shipping_label}: {address}\nТелефон: {phone}",
+        'shipping_label_ukraine': "Доставка",
+        'shipping_label_profile_ukraine': "Доставка",
         'edit_name_button': "✏️ Змінити ім'я",
         'edit_email_button': "📧 Змінити Email",
         'edit_shipping_info_button': "📍 Змінити адресу",
@@ -145,7 +145,7 @@ STRINGS = {
         'enter_new_value_prompt': "Надішліть нове значення в чат:",
         'summary_name_label': "Ім'я",
         'summary_email_label': "Електронна пошта",
-        'summary_address_label': "Доставка (Пошта)",
+        'summary_address_label': "Доставка",
         'summary_phone_label': "Телефон",
         'ex_name': "<i>Шевченко Тарас</i>",
         'ex_email': "<i>user@gmail.com</i>",
@@ -175,7 +175,7 @@ STRINGS = {
         'no_orders_yet': "У вас ще немає замовлень.",
         'your_orders_header': "📦 <b>Ваші замовлення</b> (Стор. {page}/{total_pages})\n\n",
         'order_items': "Товари",
-        'order_summary_line': "🧾 <b>Замовлення #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}₴ | {status_text} | 📅 {date}\n\n",
+        'order_summary_line': "🧾 <b>Замовлення #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}₴ | {status_text} | 📅 {date}\n───────────────────────────\n",
         'details_button': "Деталі #{order_id}",
         'order_not_found': "Замовлення не знайдено.",
         'items_info_unavailable': "Інформація про товари недоступна",
@@ -484,7 +484,7 @@ STRINGS = {
         'back_to_catalog_button': "🛍 Continue Shopping",
 
         # --- PROFILE ---
-        'profile_details': "👤 <b>Your Profile</b>\n\n<b>Name:</b> {name}\n<b>Phone:</b> {phone}\n<b>Email:</b> {email}\n<b>{shipping_label}:</b> {address}",
+        'profile_details': "👤 <b>Your Profile</b>\n\nName: {name}\nEmail: {email}\n{shipping_label}: {address}\nPhone: {phone}",
         'shipping_label_international': "Shipping Address",
         'shipping_label_profile_international': "Shipping Address",
         'edit_name_button': "✏️ Edit Name",
@@ -559,7 +559,7 @@ STRINGS = {
         'no_orders_yet': "You have no orders yet.",
         'your_orders_header': "📦 <b>Your Orders</b> (Page {page}/{total_pages})\n\n",
         'order_items': "Items",
-        'order_summary_line': "🧾 <b>Order #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}$ | {status_text} | 📅 {date}\n\n",
+        'order_summary_line': "🧾 <b>Order #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}$ | {status_text} | 📅 {date}\n───────────────────────────\n",
         'details_button': "Details #{order_id}",
         'order_not_found': "Order not found.",
         'items_info_unavailable': "Items info unavailable",
