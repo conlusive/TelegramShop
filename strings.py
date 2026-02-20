@@ -148,7 +148,7 @@ STRINGS = {
         'summary_address_label': "Доставка (Пошта)",
         'summary_phone_label': "Телефон",
         'ex_name': "<i>Шевченко Тарас</i>",
-        'ex_email': "<i>taras@gmail.com</i>",
+        'ex_email': "<i>user@gmail.com</i>",
         'ex_address': "<i>Київ, Нова Пошта 15</i>",
         'back_to_summary_btn': "⬅️ Назад до перевірки",
 

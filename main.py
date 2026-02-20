@@ -1062,10 +1062,13 @@ class OnlineShopBot:
         msg = update.message
         chat_id = update.message.chat_id
 
+        # ПИЛОСОС: Видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
             pass
+
+        # Видаляємо старе повідомлення бота з проханням ввести дані
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
@@ -1081,23 +1084,31 @@ class OnlineShopBot:
             if len(text.split()) < 2: return await self._send_error(chat_id, 'err_invalid_name', error_kb, state,
                                                                     context)
             cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
+
         elif state['step'] == 'waiting_email_profile':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text): return await self._send_error(chat_id,
                                                                                                   'err_invalid_email',
                                                                                                   error_kb, state,
                                                                                                   context)
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
+
         elif state['step'] == 'waiting_phone_profile':
             if not (
-                    re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(
-                        r"^\+\d{10,15}$",
-                        text)): return await self._send_error(
-                chat_id, 'err_invalid_phone', error_kb, state, context)
+            re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$",
+                                                                                                text)):
+                return await self._send_error(chat_id, 'err_invalid_phone', error_kb, state, context)
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
+
         elif state['step'] == 'waiting_address_profile':
-            is_valid = (text.count(',') >= 1 or len(text.split()) >= 3) if SHIPPING_MODE == 'UKRAINE' else text.count(
-                ',') >= 3
-            if not is_valid: return await self._send_error(chat_id, 'err_invalid_address', error_kb, state, context)
+            # ВИДАЛЕНО локальний import re
+            # Розбиваємо текст на частини (слова), ігноруючи коми та пробіли
+            tokens = [w for w in re.split(r'[,\s]+', text) if w]
+
+            # Та сама жорстка перевірка: мінімум 3 слова і хоча б одна цифра
+            is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
+
+            if not is_valid:
+                return await self._send_error(chat_id, 'err_invalid_address', error_kb, state, context)
             cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
 
         self.conn.commit()
@@ -1363,39 +1374,38 @@ class OnlineShopBot:
             state['is_editing_single'] = False
             return await self.show_order_summary(context, chat_id, user_id)
 
-        header = self.get_text('checkout_profile_loaded_header') if state.get('from_profile') else self.get_text(
-            'checkout_header')
+        header = self.get_text('checkout_profile_loaded_header') if state.get('from_profile') else self.get_text('checkout_header')
 
         if not state.get('full_name'):
-            state['step'], text, back_cb = 'waiting_full_name', header + self.get_text('checkout_step_1_of_4',
-                                                                                       total_steps="4"), "cart"
+            state['step'], text, back_cb = 'waiting_full_name', header + self.get_text('checkout_step_1_of_4', total_steps="4"), "cart"
         elif not state.get('email'):
-            state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4',
-                                                                                   total_steps="4"), "back_to_name"
+            state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4', total_steps="4"), "back_to_name"
         elif not state.get('address'):
             state['step'] = 'waiting_shipping'
-            text = header + self.get_text(
-                'checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international',
-                total_steps="4")
+            text = header + self.get_text('checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international', total_steps="4")
             back_cb = "back_to_email"
         elif not state.get('phone'):
-            state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4',
-                                                                                   total_steps="4",
-                                                                                   example=self.get_text(
-                                                                                       'ex_phone')), "back_to_shipping"
+            state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4', total_steps="4", example=self.get_text('ex_phone')), "back_to_shipping"
         else:
             return await self.show_order_summary(context, chat_id, user_id)
 
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
-                                   [InlineKeyboardButton(self.get_text('cancel_order_button'),
-                                                         callback_data="cancel_order")]])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
+            [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
+        ])
+
         if getattr(update, "callback_query", None):
             await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
+            state['msg_id'] = update.callback_query.message.message_id
         else:
+            # 2. ПИЛОСОС: Замість створення нового повідомлення, ми просто підміняємо текст старого
             if 'msg_id' in state:
                 try:
-                    await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-                except:
+                    await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text, reply_markup=kb, parse_mode="HTML")
+                    return
+                except Exception as e:
+                    if "Message is not modified" in str(e):
+                        return
                     pass
             m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
@@ -1406,24 +1416,31 @@ class OnlineShopBot:
         if user_id not in self.user_states: return
         state, msg, chat_id = self.user_states[user_id], update.message, update.message.chat_id
 
+        # ПИЛОСОС: Видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
             pass
-        if 'msg_id' in state:
-            try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except:
-                pass
 
         async def send_err(key, cb):
-            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text(key),
-                                               reply_markup=InlineKeyboardMarkup(
-                                                   [[InlineKeyboardButton(self.get_text('back_button_2'),
-                                                                          callback_data=cb)],
-                                                    [InlineKeyboardButton(self.get_text('cancel_order_button'),
-                                                                          callback_data="cancel_order")]]),
-                                               parse_mode="HTML")
+            text = self.get_text(key)
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=cb)],
+                [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
+            ])
+            # Намагаємось відредагувати поточне повідомлення (щоб не слати нове)
+            if 'msg_id' in state:
+                try:
+                    await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text,
+                                                        reply_markup=kb, parse_mode="HTML")
+                    return
+                except Exception as e:
+                    # Якщо користувач ввів неправильно вдруге, текст помилки не змінюється.
+                    # Telegram видає помилку "Message is not modified". Ми її ігноруємо!
+                    if "Message is not modified" in str(e):
+                        return
+                    pass
+            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = m.message_id
 
         text = msg.text.strip() if msg.text else ""
@@ -1433,22 +1450,28 @@ class OnlineShopBot:
             if len(text.split()) < 2: return await send_err('err_invalid_name',
                                                             "confirm_details_back" if is_edit else "cart")
             state['full_name'] = text
+
         elif state['step'] == 'waiting_email':
             if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text): return await send_err('err_invalid_email',
                                                                                           "confirm_details_back" if is_edit else "back_to_name")
             state['email'] = text
+
         elif state['step'] == 'waiting_shipping':
-            is_valid = (text.count(',') >= 1 or len(text.split()) >= 3) if SHIPPING_MODE == 'UKRAINE' else (
-                    text.count(',') >= 3 and any(c.isdigit() for c in text.split(',')[-1]))
-            if not is_valid: return await send_err('err_invalid_address',
-                                                   "confirm_details_back" if is_edit else "back_to_email")
+            # Розбиваємо текст на частини (слова), ігноруючи коми та пробіли
+            tokens = [w for w in re.split(r'[,\s]+', text) if w]
+
+            # Жорстка перевірка: мінімум 3 слова (Місто, Пошта, Відділення) + обов'язкова цифра
+            is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
+
+            if not is_valid:
+                return await send_err('err_invalid_address', "confirm_details_back" if is_edit else "back_to_email")
             state['address'] = text
+
         elif state['step'] == 'waiting_phone':
             if not (
-                    re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(
-                        r"^\+\d{10,15}$",
-                        text)): return await send_err(
-                'err_invalid_phone', "confirm_details_back" if is_edit else "back_to_shipping")
+            re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$",
+                                                                                                text)):
+                return await send_err('err_invalid_phone', "confirm_details_back" if is_edit else "back_to_shipping")
             state['phone'] = text
             return await self.show_order_summary(context, chat_id, user_id)
 
