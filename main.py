@@ -1081,15 +1081,15 @@ class OnlineShopBot:
             [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="my_profile")]])
 
         if state['step'] == 'waiting_full_name_profile':
-            if len(text.split()) < 2: return await self._send_error(chat_id, 'err_invalid_name', error_kb, state,
-                                                                    context)
+            # Динамічна перевірка: ПІБ для України, Ім'я+Прізвище для інших
+            min_words = 3 if SHIPPING_MODE == 'UKRAINE' else 2
+            if len(text.split()) < min_words:
+                return await self._send_error(chat_id, 'err_invalid_name', error_kb, state, context)
             cursor.execute("UPDATE users SET full_name = ? WHERE user_id = ?", (text, user_id))
 
         elif state['step'] == 'waiting_email_profile':
-            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text): return await self._send_error(chat_id,
-                                                                                                  'err_invalid_email',
-                                                                                                  error_kb, state,
-                                                                                                  context)
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text):
+                return await self._send_error(chat_id, 'err_invalid_email', error_kb, state, context)
             cursor.execute("UPDATE users SET email = ? WHERE user_id = ?", (text, user_id))
 
         elif state['step'] == 'waiting_phone_profile':
@@ -1100,11 +1100,10 @@ class OnlineShopBot:
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
 
         elif state['step'] == 'waiting_address_profile':
-            # ВИДАЛЕНО локальний import re
             # Розбиваємо текст на частини (слова), ігноруючи коми та пробіли
             tokens = [w for w in re.split(r'[,\s]+', text) if w]
 
-            # Та сама жорстка перевірка: мінімум 3 слова і хоча б одна цифра
+            # Жорстка перевірка: мінімум 3 слова і хоча б одна цифра
             is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
 
             if not is_valid:
@@ -1447,8 +1446,10 @@ class OnlineShopBot:
         is_edit = state.get('is_editing_single', False)
 
         if state['step'] == 'waiting_full_name':
-            if len(text.split()) < 2: return await send_err('err_invalid_name',
-                                                            "confirm_details_back" if is_edit else "cart")
+            # Для України вимагаємо 3 слова (ПІБ), для інших - 2 слова (Ім'я та Прізвище)
+            min_words = 3 if SHIPPING_MODE == 'UKRAINE' else 2
+            if len(text.split()) < min_words:
+                return await send_err('err_invalid_name', "confirm_details_back" if is_edit else "cart")
             state['full_name'] = text
 
         elif state['step'] == 'waiting_email':
@@ -2735,7 +2736,8 @@ class OnlineShopBot:
             msg_text = self.get_text('editing_variants_instructions', current_text=current_text)
         else:
             current_val = product[field] if product[field] is not None else self.get_text('not_set')
-            display_name = {"name": self.get_text('summary_name_label'), "description": self.get_text('desc'),
+            # ВИПРАВЛЕНО ТУТ: Жорстко вказуємо "Назва" для товарів замість підтягування "ПІБ"
+            display_name = {"name": "Назва" if SHIPPING_MODE == 'UKRAINE' else "Name", "description": self.get_text('desc'),
                             "price": self.get_text('price'), "stock": self.get_text('stock'),
                             "emoji": self.get_text('emoji'), "category": self.get_text('category')}.get(field,
                                                                                                         field.capitalize())
@@ -2983,7 +2985,8 @@ class OnlineShopBot:
             return await send_error(self.get_text('error_db', e=e))
 
         self.user_states.pop(user_id, None)
-        display_field = {"name": self.get_text('summary_name_label'), "price": self.get_text('price'),
+        # ВИПРАВЛЕНО ТУТ ТАКОЖ:
+        display_field = {"name": "Назва" if SHIPPING_MODE == 'UKRAINE' else "Name", "price": self.get_text('price'),
                          "stock": self.get_text('stock'), "variants": self.get_text('variants')}.get(field,
                                                                                                      str(field).capitalize())
         await context.bot.send_message(chat_id=chat_id,
