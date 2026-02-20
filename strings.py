@@ -38,7 +38,7 @@ STRINGS = {
         'err_invalid_name': "❌ <b>Неправильний формат імені!</b>\nВведіть Прізвище та Ім'я.\n\n<b>Приклад:</b> <i>Шевченко Тарас</i>",
         'err_invalid_email': "❌ <b>Неправильний email!</b>\nВведіть коректну електронну адресу.\n\n<b>Приклад:</b> <i>user@gmail.com</i>",
         'err_invalid_phone': "❌ <b>Неправильний номер телефону!</b>\nФормат: +380...\n\n<b>Приклад:</b> <i>+380501234567</i>",
-        'err_invalid_address': "❌ <b>Неправильний формат адреси!</b>\nВведіть Місто та Відділення Нової Пошти.\n\n<b>Приклад:</b> <i>Київ, відділення 15</i>",
+        'err_invalid_address': "❌ <b>Неправильний формат!</b>\nВведіть Місто, назву пошти та номер відділення.\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
         'err_invalid_number': "❌ <b>Помилка!</b>\nВведіть коректне число.\n\n<b>Приклад:</b> <code>{ex_val}</code>",
         'err_variant_format': "❌ <b>Неправильний формат варіантів!</b>\n\nУведено: {val}\nДотримуйтесь формату: Тип:Опція=К-сть=Ціна",
         'err_invalid_discount': "❌ <b>Неправильний формат знижки!</b>\nОчікується ціле число від 1 до 99.\n\n<b>Приклад:</b> <code>15</code>",
@@ -99,8 +99,8 @@ STRINGS = {
 
         # --- ПРОФІЛЬ ---
         'profile_details': "👤 <b>Ваш профіль</b>\n\n<b>Ім'я:</b> {name}\n<b>Телефон:</b> {phone}\n<b>Email:</b> {email}\n<b>{shipping_label}:</b> {address}",
-        'shipping_label_profile_ukraine': "Доставка (НП)",
-        'shipping_label_profile_international': "Адреса доставки",
+        'shipping_label_ukraine': "Доставка (Пошта)",
+        'shipping_label_profile_ukraine': "Доставка (Пошта)",
         'edit_name_button': "✏️ Змінити ім'я",
         'edit_email_button': "📧 Змінити Email",
         'edit_shipping_info_button': "📍 Змінити адресу",
@@ -108,7 +108,7 @@ STRINGS = {
         'delete_data_button': "🗑 Видалити дані",
         'enter_full_name': "👤 Введіть ваше <b>Прізвище та Ім'я</b>:",
         'enter_email': "📧 Введіть ваш <b>Email</b>:",
-        'enter_address_ukraine': "📍 Введіть ваше <b>Місто та Відділення Нової Пошти</b>:",
+        'enter_address_ukraine': "📍 Введіть ваше <b>Місто, пошту та номер відділення</b>:",
         'enter_phone': "📱 Введіть ваш <b>Номер телефону</b>:\n\n<i>Приклад: {example}</i>",
         'ex_phone': "+380501234567",
         'profile_delete_title': "🗑 <b>Які дані ви хочете видалити?</b>",
@@ -127,10 +127,10 @@ STRINGS = {
         'loading_profile_data': "Завантажуємо дані...",
         'checkout_profile_loaded_header': "⚡️ <b>Швидке оформлення</b>\n\n",
         'checkout_header': "📝 <b>Оформлення замовлення</b>\n\n",
-        'checkout_step_1_of_4': "Крок 1/{total_steps}: Введіть ваше <b>Прізвище та Ім'я</b>.",
-        'checkout_step_2_of_4': "Крок 2/{total_steps}: Введіть ваш <b>Email</b>.",
-        'checkout_step_3_of_4_ukraine': "Крок 3/{total_steps}: Введіть ваше <b>Місто та Відділення Нової Пошти</b>.",
-        'checkout_step_4_of_4': "Крок 4/{total_steps}: Введіть ваш <b>Номер телефону</b>.\n<i>Приклад: {example}</i>",
+        'checkout_step_1_of_4': "Крок 1/{total_steps}: Введіть ваше <b>Прізвище та Ім'я</b>.\n\n<b>Приклад:</b> <i>Шевченко Тарас</i>",
+        'checkout_step_2_of_4': "Крок 2/{total_steps}: Введіть ваш <b>Email</b>.\n\n<b>Приклад:</b> <i>user@gmail.com</i>",
+        'checkout_step_3_of_4_ukraine': "Крок 3/{total_steps}: Введіть ваше <b>Місто, пошту та номер відділення</b>.\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
+        'checkout_step_4_of_4': "Крок 4/{total_steps}: Введіть ваш <b>Номер телефону</b>.\n\n<b>Приклад:</b> <i>{example}</i>",
 
         'confirm_details': "🔍 <b>Підтвердьте ваші дані:</b>\n\n👤 <b>Ім'я:</b> {full_name}\n📧 <b>Email:</b> {email}\n📍 <b>Доставка:</b> {address}\n📱 <b>Телефон:</b> {phone}",
         'summary_edit_name_btn': "👤 Ім'я",
@@ -145,11 +145,11 @@ STRINGS = {
         'enter_new_value_prompt': "Надішліть нове значення в чат:",
         'summary_name_label': "Ім'я",
         'summary_email_label': "Електронна пошта",
-        'summary_address_label': "Адреса доставки",
+        'summary_address_label': "Доставка (Пошта)",
         'summary_phone_label': "Телефон",
         'ex_name': "<i>Шевченко Тарас</i>",
         'ex_email': "<i>taras@gmail.com</i>",
-        'ex_address': "<i>Київ, НП №1</i>",
+        'ex_address': "<i>Київ, Нова Пошта 15</i>",
         'back_to_summary_btn': "⬅️ Назад до перевірки",
 
         # --- ОПЛАТА ---
@@ -165,9 +165,11 @@ STRINGS = {
         'invoice_creation_error': "❌ Виникла помилка при створенні рахунку. Спробуйте інший спосіб.",
         'order_cancelled_2': "Оформлення скасовано.",
         'order_failed_cart_empty': "❌ Ваше замовлення не створено, кошик порожній.",
-        'receipt': "{bold_start}Чек замовлення #{order_id}{bold_end}\n\n👤 {user_name}\n📱 {phone}\n📍 {address}\n💳 {payment}\n\n{products_text}\n{bold_start}Разом: {total}{symbol}{bold_end}",
+
+        # Чек без дублювання номера замовлення
+        'receipt': "📅 {date}\n👤 {bold_start}Клієнт:{bold_end} {user_name}\n📧 {bold_start}Email:{bold_end} {email}\n📱 {bold_start}Телефон:{bold_end} {phone}\n📍 {bold_start}Доставка:{bold_end} {address}\n💳 {bold_start}Оплата:{bold_end} {payment}\n\n📦 {bold_start}Товари:{bold_end}\n{products_text}\n{bold_start}Разом до сплати: {total}{symbol}{bold_end}",
         'receipt_discount': "🎟 <b>Знижка:</b> -{amount}{symbol}\n",
-        'order_promo_info': "🎟 <b>Промокод:</b> <code>{code}</code>\n",
+        'order_promo_info': "\n🎟 <b>Промокод:</b> <code>{code}</code>\n",
 
         # --- ІСТОРІЯ ЗАМОВЛЕНЬ ---
         'no_orders_yet': "У вас ще немає замовлень.",
@@ -369,6 +371,18 @@ STRINGS = {
         'payment_notification_ukraine': "Оплата",
         'admin_new_order_notification': "{region_header}\n🧾 Замовлення #{order_id}\n\n👤 <b>Клієнт:</b> {full_name}\n📱 <b>Телефон:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{items_str}\n💰 <b>Сума:</b> {total_amount}₴",
         'failed_to_notify_admin': "Failed to send order notification to admin {admin}: {e}",
+
+        # --- СИСТЕМНІ ПРОМО / ПРОФІЛЬ ---
+        'missing_fields_info': "⚠️ <b>Увага:</b> Заповніть {missing_labels} у профілі, щоб {promo}",
+        'welcome_promo_1': "робити покупки швидше!",
+        'welcome_promo_2': "швидше оформляти замовлення!",
+        'welcome_promo_3': "отримувати персональні знижки!",
+        'welcome_promo_4': "мати повний доступ до всіх функцій!",
+        'missing_name': "Ім'я",
+        'missing_email': "Email",
+        'missing_phone': "Телефон",
+        'missing_address_ukraine': "Доставка",
+        'missing_address_international': "Адресу доставки",
     },
 
     'INTERNATIONAL': {
@@ -410,7 +424,7 @@ STRINGS = {
         'err_invalid_name': "❌ <b>Invalid name format!</b>\nEnter First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
         'err_invalid_email': "❌ <b>Invalid email!</b>\nEnter a correct email address.\n\n<b>Example:</b> <i>user@example.com</i>",
         'err_invalid_phone': "❌ <b>Invalid phone number!</b>\nFormat: +123...\n\n<b>Example:</b> <i>+1234567890</i>",
-        'err_invalid_address': "❌ <b>Invalid address format!</b>\nEnter full shipping address.\n\n<b>Example:</b> <i>NY, Main St 15</i>",
+        'err_invalid_address': "❌ <b>Invalid address format!</b>\nEnter City, Postal Service, and Branch/Zip code.\n\n<b>Example:</b> <i>Berlin, DHL, Branch 15</i>",
         'err_invalid_number': "❌ <b>Error!</b>\nEnter a valid number.\n\n<b>Example:</b> <code>{ex_val}</code>",
         'err_variant_format': "❌ <b>Invalid variant format!</b>\n\nEntered: {val}\nFormat: Type:Option=Qty=Price",
         'err_invalid_discount': "❌ <b>Invalid discount format!</b>\nExpected integer between 1 and 99.\n\n<b>Example:</b> <code>15</code>",
@@ -471,6 +485,7 @@ STRINGS = {
 
         # --- PROFILE ---
         'profile_details': "👤 <b>Your Profile</b>\n\n<b>Name:</b> {name}\n<b>Phone:</b> {phone}\n<b>Email:</b> {email}\n<b>{shipping_label}:</b> {address}",
+        'shipping_label_international': "Shipping Address",
         'shipping_label_profile_international': "Shipping Address",
         'edit_name_button': "✏️ Edit Name",
         'edit_email_button': "📧 Edit Email",
@@ -479,7 +494,7 @@ STRINGS = {
         'delete_data_button': "🗑 Delete Data",
         'enter_full_name': "👤 Enter your <b>First and Last Name</b>:",
         'enter_email': "📧 Enter your <b>Email</b>:",
-        'enter_address_international': "📍 Enter your <b>Full Shipping Address</b>:",
+        'enter_address_international': "📍 Enter your <b>City, Postal Service, and Branch/Zip code</b>:",
         'enter_phone': "📱 Enter your <b>Phone Number</b>:\n\n<i>Example: {example}</i>",
         'ex_phone': "+1234567890",
         'profile_delete_title': "🗑 <b>Which data to delete?</b>",
@@ -498,10 +513,10 @@ STRINGS = {
         'loading_profile_data': "Loading data...",
         'checkout_profile_loaded_header': "⚡️ <b>Quick Checkout</b>\n\n",
         'checkout_header': "📝 <b>Checkout</b>\n\n",
-        'checkout_step_1_of_4': "Step 1/{total_steps}: Enter your <b>First and Last Name</b>.",
-        'checkout_step_2_of_4': "Step 2/{total_steps}: Enter your <b>Email</b>.",
-        'checkout_step_3_of_4_international': "Step 3/{total_steps}: Enter your <b>Full Shipping Address</b>.",
-        'checkout_step_4_of_4': "Step 4/{total_steps}: Enter your <b>Phone Number</b>.\n<i>Example: {example}</i>",
+        'checkout_step_1_of_4': "Step 1/{total_steps}: Enter your <b>First and Last Name</b>.\n\n<b>Example:</b> <i>John Doe</i>",
+        'checkout_step_2_of_4': "Step 2/{total_steps}: Enter your <b>Email</b>.\n\n<b>Example:</b> <i>john@example.com</i>",
+        'checkout_step_3_of_4_international': "Step 3/{total_steps}: Enter your <b>City, Postal Service, and Branch/Zip code</b>.\n\n<b>Example:</b> <i>Berlin, DHL, Branch 15</i>",
+        'checkout_step_4_of_4': "Step 4/{total_steps}: Enter your <b>Phone Number</b>.\n\n<b>Example:</b> <i>{example}</i>",
 
         'confirm_details': "🔍 <b>Confirm your details:</b>\n\n👤 <b>Name:</b> {full_name}\n📧 <b>Email:</b> {email}\n📍 <b>Shipping:</b> {address}\n📱 <b>Phone:</b> {phone}",
         'summary_edit_name_btn': "👤 Name",
@@ -520,7 +535,7 @@ STRINGS = {
         'summary_phone_label': "Phone",
         'ex_name': "<i>John Doe</i>",
         'ex_email': "<i>john@example.com</i>",
-        'ex_address': "<i>USA, NY...</i>",
+        'ex_address': "<i>Berlin, DHL, Branch 15</i>",
         'back_to_summary_btn': "⬅️ Back to Review",
 
         # --- PAYMENT ---
@@ -534,9 +549,11 @@ STRINGS = {
         'invoice_creation_error': "❌ Error creating invoice. Try another method.",
         'order_cancelled_2': "Checkout cancelled.",
         'order_failed_cart_empty': "❌ Order failed, cart is empty.",
-        'receipt': "{bold_start}Order Receipt #{order_id}{bold_end}\n\n👤 {user_name}\n📱 {phone}\n📍 {address}\n💳 {payment}\n\n{products_text}\n{bold_start}Total: {total}{symbol}{bold_end}",
+
+        # Receipt without duplicated Order #
+        'receipt': "📅 {date}\n👤 {bold_start}Client:{bold_end} {user_name}\n📧 {bold_start}Email:{bold_end} {email}\n📱 {bold_start}Phone:{bold_end} {phone}\n📍 {bold_start}Shipping:{bold_end} {address}\n💳 {bold_start}Payment:{bold_end} {payment}\n\n📦 {bold_start}Items:{bold_end}\n{products_text}\n{bold_start}Total: {total}{symbol}{bold_end}",
         'receipt_discount': "🎟 <b>Discount:</b> -{amount}{symbol}\n",
-        'order_promo_info': "🎟 <b>Promo code:</b> <code>{code}</code>\n",
+        'order_promo_info': "\n🎟 <b>Promo code:</b> <code>{code}</code>\n",
 
         # --- ORDER HISTORY ---
         'no_orders_yet': "You have no orders yet.",
@@ -738,5 +755,17 @@ STRINGS = {
         'payment_notification_international': "Payment",
         'admin_new_order_notification': "{region_header}\n🧾 Order #{order_id}\n\n👤 <b>Client:</b> {full_name}\n📱 <b>Phone:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Items:</b>\n{items_str}\n💰 <b>Total:</b> {total_amount}$",
         'failed_to_notify_admin': "Failed to notify admin {admin}: {e}",
+
+        # --- SYSTEM PROMO / PROFILE ---
+        'missing_fields_info': "⚠️ <b>Attention:</b> Fill in {missing_labels} in your profile to {promo}",
+        'welcome_promo_1': "shop faster!",
+        'welcome_promo_2': "checkout faster!",
+        'welcome_promo_3': "get personal discounts!",
+        'welcome_promo_4': "have full access to all features!",
+        'missing_name': "Name",
+        'missing_email': "Email",
+        'missing_phone': "Phone",
+        'missing_address_ukraine': "Shipping",
+        'missing_address_international': "Shipping Address",
     }
 }

@@ -271,20 +271,23 @@ class OnlineShopBot:
 
         bold_start, bold_end = ("<b>", "</b>") if receipt_format == 'html' else ("**", "**")
         escaper = self.escape_html if receipt_format == 'html' else self.escape_md
-        product_line_format = "▫️ {emoji} {name}{opts}\n   {quantity} x {price}{symbol} = " + bold_start + "{total}{symbol}" + bold_end + "\n"
+
+        # Оновлений формат рядка товару (як на 2-му скріншоті)
+        product_line_format = "{emoji} {name}{opts} x{quantity} = " + bold_start + "{total}{symbol}" + bold_end + "\n"
 
         products_text = ""
         calc_subtotal = 0
 
         for item in products_list:
-            opts_str = f" ({', '.join([str(v) for v in item['selected_options'].items()])})" if item.get(
+            # ВИПРАВЛЕНО: Використовуємо .values() замість .items(), щоб було (41), а не (('ShoeSize', '41'))
+            opts_str = f" ({', '.join([str(v) for v in item.get('selected_options', {}).values()])})" if item.get(
                 'selected_options') else ""
             item_total = item.get('total', 0)
             calc_subtotal += item_total
 
             products_text += product_line_format.format(
-                emoji=item.get('emoji', '📦'), name=escaper(item.get('name', self.get_text('product'))),
-                opts=escaper(opts_str), quantity=item.get('quantity', 1), price=item.get('price', 0),
+                emoji=item.get('emoji', '📦'), name=escaper(item.get('name', self.get_text('unknown'))),
+                opts=escaper(opts_str), quantity=item.get('quantity', 1),
                 total=item_total, symbol=CURRENCY_SYMBOL
             )
 
@@ -867,23 +870,33 @@ class OnlineShopBot:
         for i in range(0, len(row), 2): final_keyboard.append(row[i:i + 2])
         final_keyboard.append([InlineKeyboardButton(self.get_text('cancel_button'), callback_data="cancel_selection")])
 
-        text = self.get_text('select_variant', current_key=current_key)
+        # --- Виправлення для перекладу та відображення тегів ---
+        # Локалізуємо назву ключа (наприклад, ShoeSize -> Розмір взуття)
+        v_type_localized = self.get_text(f'type_{current_key}')
+        if v_type_localized == f"_type_{current_key}_":
+            v_type_localized = current_key
+
+        text = self.get_text('select_variant', current_key=v_type_localized)
         query = update.callback_query
+
         try:
             if query.message.photo:
+                # Змінено на ParseMode.HTML
                 await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(final_keyboard),
-                                                 parse_mode=ParseMode.MARKDOWN)
+                                                 parse_mode=ParseMode.HTML)
             else:
+                # Змінено на ParseMode.HTML
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(final_keyboard),
-                                              parse_mode=ParseMode.MARKDOWN)
+                                              parse_mode=ParseMode.HTML)
         except Exception:
             try:
                 await query.message.delete()
             except:
                 pass
+            # Змінено на ParseMode.HTML
             await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                                            reply_markup=InlineKeyboardMarkup(final_keyboard),
-                                           parse_mode=ParseMode.MARKDOWN)
+                                           parse_mode=ParseMode.HTML)
 
     async def handle_variant_selection_user(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -1293,16 +1306,27 @@ class OnlineShopBot:
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
 
-        self.user_states.setdefault(user_id, {})['step'] = 'waiting_full_name'
-        keyboard = []
-        if user_data and any(user_data): keyboard.append(
-            [InlineKeyboardButton(self.get_text('use_profile_data_button'), callback_data="use_profile_data")])
-        keyboard.extend([[InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="cart")],
-                         [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]])
+        # Перевіряємо, чи є хоча б одне збережене поле (щоб не було глухого кута)
+        has_saved_data = user_data and any(user_data)
 
-        await query.edit_message_text(text=self.get_text('checkout_step_1'),
-                                      reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-        self.user_states[user_id]['msg_id'] = query.message.message_id
+        if has_saved_data:
+            # Дані є — показуємо кнопку "Використати мій профіль"
+            self.user_states.setdefault(user_id, {})['step'] = 'waiting_full_name'
+            keyboard = [
+                [InlineKeyboardButton(self.get_text('use_profile_data_button'), callback_data="use_profile_data")],
+                [InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="cart")],
+                [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
+            ]
+            await query.edit_message_text(text=self.get_text('checkout_step_1'),
+                                          reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+            self.user_states[user_id]['msg_id'] = query.message.message_id
+        else:
+            # Даних немає — відразу переходимо до Кроку 1 (введення імені)
+            self.user_states.setdefault(user_id, {})
+            self.user_states[user_id].update({
+                'full_name': None, 'email': None, 'address': None, 'phone': None, 'from_profile': False
+            })
+            await self.continue_checkout_flow(update, context)
 
     async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
