@@ -17,8 +17,10 @@ from dom import (
     SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, CURRENCY_CODE
 )
 
-# -------------------- РОЗУМНА ОБРОБКА МУЛЬТИ-АДМІНІВ --------------------
-# Перетворюємо ADMIN_ID на список, навіть якщо це одне число або рядок через кому
+# ==================== ЛІЦЕНЗІЯ ТА АДМІНИ ====================
+
+LICENSE_TYPE = "Basic" # "Basic" , "Pro"
+
 if isinstance(ADMIN_ID, str):
     ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
 elif isinstance(ADMIN_ID, int):
@@ -28,6 +30,10 @@ elif isinstance(ADMIN_ID, list):
 else:
     ADMIN_IDS = []
 
+if LICENSE_TYPE == "Basic" and len(ADMIN_IDS) > 1:
+    print("⚠️ NOTE: The 'Basic' license only supports 1 administrator. Only the first one is left.")
+    ADMIN_IDS = [ADMIN_IDS[0]]
+
 # -------------------- LOGGING --------------------
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -36,6 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ITEMS_PER_PAGE = 5
+ADMIN_ITEMS_PER_PAGE = 10
 
 
 class OnlineShopBot:
@@ -45,8 +52,16 @@ class OnlineShopBot:
 
     def get_text(self, key, **kwargs):
         lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
+        # Автоматично передаємо обидва варіанти символів у кожен текст
         kwargs.setdefault('currency_symbol', CURRENCY_SYMBOL)
-        return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
+        kwargs.setdefault('symbol', CURRENCY_SYMBOL)
+
+        try:
+            return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
+        except KeyError as e:
+            # Захист від падінь: якщо в тексті є зайва змінна, бот не впаде, а просто виведе текст
+            logger.error(f"Помилка форматування тексту для ключа '{key}': не вистачає змінної {e}")
+            return STRINGS[lang].get(key, f"_{key}_").replace(f"{{{e.args[0]}}}", "")
 
     # -------------------- DATABASE --------------------
     def _add_column_if_not_exists(self, cursor, table_name: str, column_name: str, column_type: str):
@@ -422,7 +437,6 @@ class OnlineShopBot:
         cursor.execute("UPDATE orders SET status = 'cancelled' WHERE id = ?", (order_id,))
         self.conn.commit()
 
-        # Повідомляємо всіх адмінів про скасування
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(chat_id=admin_id,
@@ -1797,13 +1811,6 @@ class OnlineShopBot:
 
         text = self.get_text('your_orders_header', page=page + 1, total_pages=total_pages)
         keyboard = []
-        status_emoji = {
-            'pending': self.get_text('emoji_pending'),
-            'confirmed': self.get_text('emoji_confirmed'),
-            'shipped': self.get_text('emoji_shipped'),
-            'delivered': self.get_text('emoji_delivered'),
-            'cancelled': self.get_text('emoji_cancelled')
-        }
         status_map = {'pending': self.get_text('status_pending'),
                       'confirmed': self.get_text('status_confirmed'),
                       'shipped': self.get_text('status_shipped'),
@@ -1823,7 +1830,7 @@ class OnlineShopBot:
 
             if len(products_str) > 35: products_str = products_str[:32] + "..."
 
-            display_status = f"{status_emoji.get(order['status'], '⚪')} {status_map.get(order['status'], order['status'])}"
+            display_status = status_map.get(order['status'], order['status'])
 
             text += self.get_text('order_summary_line', order_id=order['id'],
                                   products_str=self.escape_html(products_str), total_amount=order['total_amount'],
@@ -1895,18 +1902,11 @@ class OnlineShopBot:
                 [f"📦 {self.escape_html(line)}" for line in str(order["products"]).split('\n') if line.strip()]) if \
                 order["products"] else self.get_text('items_info_unavailable')
 
-        status_emoji = {
-            'pending': self.get_text('emoji_pending'),
-            'confirmed': self.get_text('emoji_confirmed'),
-            'shipped': self.get_text('emoji_shipped'),
-            'delivered': self.get_text('emoji_delivered'),
-            'cancelled': self.get_text('emoji_cancelled')
-        }
         status_map = {'pending': self.get_text('status_pending'), 'confirmed': self.get_text('status_confirmed'),
                       'shipped': self.get_text('status_shipped'), 'delivered': self.get_text('status_delivered'),
                       'cancelled': self.get_text('status_cancelled')}
 
-        display_status = f"{status_emoji.get(order['status'], '⚪')} {status_map.get(order['status'], order['status'])}"
+        display_status = status_map.get(order['status'], order['status'])
 
         text = self.get_text('order_details_text', order_id=order['id'], user_name=self.escape_html(order['user_name']),
                              email=self.escape_html(order['email'] or self.get_text('not_specified_dash')),
@@ -2338,9 +2338,10 @@ class OnlineShopBot:
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
-        total_pages = max(1, (total_users - 1) // ITEMS_PER_PAGE + 1)
+        total_pages = max(1, (total_users - 1) // ADMIN_ITEMS_PER_PAGE + 1)
 
-        cursor.execute("SELECT user_id, blocked FROM users LIMIT ? OFFSET ?", (ITEMS_PER_PAGE, page * ITEMS_PER_PAGE))
+        cursor.execute("SELECT user_id, blocked FROM users LIMIT ? OFFSET ?",
+                       (ADMIN_ITEMS_PER_PAGE, page * ADMIN_ITEMS_PER_PAGE))
         keyboard = []
         for user_id, blocked in cursor.fetchall():
             try:
@@ -2395,11 +2396,11 @@ class OnlineShopBot:
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) as total FROM orders")
         total_orders = cursor.fetchone()["total"]
-        total_pages = max(1, (total_orders - 1) // ITEMS_PER_PAGE + 1) if total_orders else 1
+        total_pages = max(1, (total_orders - 1) // ADMIN_ITEMS_PER_PAGE + 1) if total_orders else 1
 
         cursor.execute(
             'SELECT id, user_name, total_amount, status, created_at FROM orders ORDER BY id DESC LIMIT ? OFFSET ?',
-            (ITEMS_PER_PAGE, page * ITEMS_PER_PAGE))
+            (ADMIN_ITEMS_PER_PAGE, page * ADMIN_ITEMS_PER_PAGE))
         orders = cursor.fetchall()
 
         if not orders: return await query.edit_message_text(self.get_text('no_orders_in_db'),
@@ -2409,16 +2410,10 @@ class OnlineShopBot:
 
         text = self.get_text('all_orders_header', page=page + 1, total_pages=total_pages)
         keyboard = []
-        status_emoji = {
-            'pending': self.get_text('emoji_pending'),
-            'confirmed': self.get_text('emoji_confirmed'),
-            'shipped': self.get_text('emoji_shipped'),
-            'delivered': self.get_text('emoji_delivered'),
-            'cancelled': self.get_text('emoji_cancelled')
-        }
 
         for o in orders:
-            text += f"{status_emoji.get(o['status'], '⚪')} <code>#{o['id']}</code> | {o['user_name']} | {o['total_amount']}{CURRENCY_SYMBOL} | {self.format_date(o['created_at'])}\n"
+            status_text = self.get_text('status_' + o['status'])
+            text += f"{status_text} <code>#{o['id']}</code> | {o['user_name']} | {o['total_amount']}{CURRENCY_SYMBOL} | {self.format_date(o['created_at'])}\n"
             keyboard.append([InlineKeyboardButton(self.get_text('details_button_2', order_id=o['id']),
                                                   callback_data=f"order_details_{o['id']}_{page}")])
 
@@ -2456,18 +2451,16 @@ class OnlineShopBot:
 
         cursor.execute("UPDATE orders SET status = ? WHERE id = ?", (new_status, order_id))
         self.conn.commit()
-        await query.answer(self.get_text('status_updated', new_status=new_status))
+
+        status_localized = self.get_text('status_' + new_status)
+        await query.answer(self.get_text('status_updated', new_status=status_localized))
 
         try:
             cursor.execute("SELECT user_id FROM orders WHERE id = ?", (order_id,))
             if row := cursor.fetchone():
-                display_status = {'confirmed': self.get_text('status_confirmed'),
-                                  'shipped': self.get_text('status_shipped'),
-                                  'delivered': self.get_text('status_delivered'),
-                                  'cancelled': self.get_text('status_cancelled')}.get(new_status, new_status)
                 msg_text = self.get_text(
                     'order_update_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'order_update_notification_international',
-                    order_id=order_id, display_status=display_status)
+                    order_id=order_id, display_status=status_localized)
                 await context.bot.send_message(chat_id=row[0], text=msg_text, parse_mode="HTML")
         except Exception as e:
             logger.error(self.get_text('failed_to_notify_user', e=e))
@@ -3413,7 +3406,7 @@ class OnlineShopBot:
 
         application.add_error_handler(self.error_handler)
 
-        print("🛍️ Online store bot launched!")
+        print(f"🛍️ Online store bot launched! License: {LICENSE_TYPE}")
         print(f"👑 Admin IDs: {ADMIN_IDS}")
         print("Press Ctrl+C to stop.")
         application.run_polling(allowed_updates=Update.ALL_TYPES)
