@@ -52,14 +52,12 @@ class OnlineShopBot:
 
     def get_text(self, key, **kwargs):
         lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
-        # Автоматично передаємо обидва варіанти символів у кожен текст
         kwargs.setdefault('currency_symbol', CURRENCY_SYMBOL)
         kwargs.setdefault('symbol', CURRENCY_SYMBOL)
 
         try:
             return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
         except KeyError as e:
-            # Захист від падінь: якщо в тексті є зайва змінна, бот не впаде, а просто виведе текст
             logger.error(f"Помилка форматування тексту для ключа '{key}': не вистачає змінної {e}")
             return STRINGS[lang].get(key, f"_{key}_").replace(f"{{{e.args[0]}}}", "")
 
@@ -271,15 +269,12 @@ class OnlineShopBot:
 
         bold_start, bold_end = ("<b>", "</b>") if receipt_format == 'html' else ("**", "**")
         escaper = self.escape_html if receipt_format == 'html' else self.escape_md
-
-        # Оновлений формат рядка товару (як на 2-му скріншоті)
         product_line_format = "{emoji} {name}{opts} x{quantity} = " + bold_start + "{total}{symbol}" + bold_end + "\n"
 
         products_text = ""
         calc_subtotal = 0
 
         for item in products_list:
-            # ВИПРАВЛЕНО: Використовуємо .values() замість .items(), щоб було (41), а не (('ShoeSize', '41'))
             opts_str = f" ({', '.join([str(v) for v in item.get('selected_options', {}).values()])})" if item.get(
                 'selected_options') else ""
             item_total = item.get('total', 0)
@@ -869,9 +864,6 @@ class OnlineShopBot:
 
         for i in range(0, len(row), 2): final_keyboard.append(row[i:i + 2])
         final_keyboard.append([InlineKeyboardButton(self.get_text('cancel_button'), callback_data="cancel_selection")])
-
-        # --- Виправлення для перекладу та відображення тегів ---
-        # Локалізуємо назву ключа (наприклад, ShoeSize -> Розмір взуття)
         v_type_localized = self.get_text(f'type_{current_key}')
         if v_type_localized == f"_type_{current_key}_":
             v_type_localized = current_key
@@ -881,11 +873,9 @@ class OnlineShopBot:
 
         try:
             if query.message.photo:
-                # Змінено на ParseMode.HTML
                 await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(final_keyboard),
                                                  parse_mode=ParseMode.HTML)
             else:
-                # Змінено на ParseMode.HTML
                 await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(final_keyboard),
                                               parse_mode=ParseMode.HTML)
         except Exception:
@@ -893,7 +883,6 @@ class OnlineShopBot:
                 await query.message.delete()
             except:
                 pass
-            # Змінено на ParseMode.HTML
             await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                                            reply_markup=InlineKeyboardMarkup(final_keyboard),
                                            parse_mode=ParseMode.HTML)
@@ -1062,13 +1051,11 @@ class OnlineShopBot:
         msg = update.message
         chat_id = update.message.chat_id
 
-        # ПИЛОСОС: Видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
             pass
 
-        # Видаляємо старе повідомлення бота з проханням ввести дані
         if 'msg_id' in state:
             try:
                 await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
@@ -1081,7 +1068,6 @@ class OnlineShopBot:
             [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="my_profile")]])
 
         if state['step'] == 'waiting_full_name_profile':
-            # Динамічна перевірка: ПІБ для України, Ім'я+Прізвище для інших
             min_words = 3 if SHIPPING_MODE == 'UKRAINE' else 2
             if len(text.split()) < min_words:
                 return await self._send_error(chat_id, 'err_invalid_name', error_kb, state, context)
@@ -1100,10 +1086,8 @@ class OnlineShopBot:
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
 
         elif state['step'] == 'waiting_address_profile':
-            # Розбиваємо текст на частини (слова), ігноруючи коми та пробіли
-            tokens = [w for w in re.split(r'[,\s]+', text) if w]
 
-            # Жорстка перевірка: мінімум 3 слова і хоча б одна цифра
+            tokens = [w for w in re.split(r'[,\s]+', text) if w]
             is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
 
             if not is_valid:
@@ -1315,12 +1299,9 @@ class OnlineShopBot:
 
         cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
         user_data = cursor.fetchone()
-
-        # Перевіряємо, чи є хоча б одне збережене поле (щоб не було глухого кута)
         has_saved_data = user_data and any(user_data)
 
         if has_saved_data:
-            # Дані є — показуємо кнопку "Використати мій профіль"
             self.user_states.setdefault(user_id, {})['step'] = 'waiting_full_name'
             keyboard = [
                 [InlineKeyboardButton(self.get_text('use_profile_data_button'), callback_data="use_profile_data")],
@@ -1397,7 +1378,7 @@ class OnlineShopBot:
             await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
             state['msg_id'] = update.callback_query.message.message_id
         else:
-            # 2. ПИЛОСОС: Замість створення нового повідомлення, ми просто підміняємо текст старого
+
             if 'msg_id' in state:
                 try:
                     await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text, reply_markup=kb, parse_mode="HTML")
@@ -1415,7 +1396,6 @@ class OnlineShopBot:
         if user_id not in self.user_states: return
         state, msg, chat_id = self.user_states[user_id], update.message, update.message.chat_id
 
-        # ПИЛОСОС: Видаляємо повідомлення користувача
         try:
             await msg.delete()
         except:
@@ -1427,15 +1407,12 @@ class OnlineShopBot:
                 [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=cb)],
                 [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
             ])
-            # Намагаємось відредагувати поточне повідомлення (щоб не слати нове)
             if 'msg_id' in state:
                 try:
                     await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text,
                                                         reply_markup=kb, parse_mode="HTML")
                     return
                 except Exception as e:
-                    # Якщо користувач ввів неправильно вдруге, текст помилки не змінюється.
-                    # Telegram видає помилку "Message is not modified". Ми її ігноруємо!
                     if "Message is not modified" in str(e):
                         return
                     pass
@@ -1446,7 +1423,6 @@ class OnlineShopBot:
         is_edit = state.get('is_editing_single', False)
 
         if state['step'] == 'waiting_full_name':
-            # Для України вимагаємо 3 слова (ПІБ), для інших - 2 слова (Ім'я та Прізвище)
             min_words = 3 if SHIPPING_MODE == 'UKRAINE' else 2
             if len(text.split()) < min_words:
                 return await send_err('err_invalid_name', "confirm_details_back" if is_edit else "cart")
@@ -1458,10 +1434,7 @@ class OnlineShopBot:
             state['email'] = text
 
         elif state['step'] == 'waiting_shipping':
-            # Розбиваємо текст на частини (слова), ігноруючи коми та пробіли
             tokens = [w for w in re.split(r'[,\s]+', text) if w]
-
-            # Жорстка перевірка: мінімум 3 слова (Місто, Пошта, Відділення) + обов'язкова цифра
             is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
 
             if not is_valid:
@@ -2024,31 +1997,40 @@ class OnlineShopBot:
     # -------------------- ADMIN BROADCAST (РОЗСИЛКА) --------------------
     async def admin_broadcast_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if int(update.effective_user.id) not in ADMIN_IDS: return
-        self.user_states[update.effective_user.id] = {'step': 'waiting_broadcast_message'}
-        await update.callback_query.edit_message_text(self.get_text('admin_broadcast_prompt'),
-                                                      reply_markup=InlineKeyboardMarkup(
-                                                          [[InlineKeyboardButton(self.get_text('cancel_button'),
-                                                                                 callback_data="admin_panel")]]),
-                                                      parse_mode="HTML")
+        query = update.callback_query
+
+        self.user_states[update.effective_user.id] = {
+            'step': 'waiting_broadcast_message',
+            'msg_id': query.message.message_id
+        }
+
+        await query.edit_message_text(
+            self.get_text('admin_broadcast_prompt'),
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="admin_panel")]]
+            ),
+            parse_mode="HTML"
+        )
 
     async def handle_broadcast_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        state = self.user_states[user_id]
-        if int(user_id) not in ADMIN_IDS: return
+        state = self.user_states.get(user_id)
+        if not state or int(user_id) not in ADMIN_IDS: return
         chat_id = update.effective_chat.id
 
-        try:
-            await update.message.delete()
-        except:
-            pass
         if 'msg_id' in state:
             try:
-                await context.bot.delete_message(chat_id=chat_id, message_id=state['msg_id'])
-            except:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=state['msg_id'],
+                    text=self.get_text('admin_broadcast_started'),
+                    parse_mode="HTML"
+                )
+            except Exception:
                 pass
-
-        m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_broadcast_started'),
-                                           parse_mode="HTML")
+        else:
+            m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_broadcast_started'), parse_mode="HTML")
+            state['msg_id'] = m.message_id
 
         cursor = self.conn.cursor()
         cursor.execute("SELECT user_id FROM users")
@@ -2056,24 +2038,33 @@ class OnlineShopBot:
 
         success, failed = 0, 0
         for (uid,) in users:
-            if int(uid) in ADMIN_IDS: continue
             try:
-                await update.message.copy(chat_id=uid)
+                await update.message.copy(chat_id=int(uid))
                 success += 1
                 await asyncio.sleep(0.05)
             except Exception:
                 failed += 1
 
-        self.user_states.pop(user_id, None)
         try:
-            await m.delete()
-        except:
+            await update.message.delete()
+        except Exception:
             pass
 
-        await context.bot.send_message(chat_id=chat_id,
-                                       text=self.get_text('admin_broadcast_finished', success=success, failed=failed),
-                                       parse_mode="HTML", reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]]))
+        finish_text = self.get_text('admin_broadcast_finished', success=success, failed=failed)
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_to_admin_panel_button'), callback_data="admin_panel")]])
+
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=state['msg_id'],
+                text=finish_text,
+                reply_markup=kb,
+                parse_mode="HTML"
+            )
+        except Exception:
+            await context.bot.send_message(chat_id=chat_id, text=finish_text, reply_markup=kb, parse_mode="HTML")
+
+        self.user_states.pop(user_id, None)
 
     # -------------------- PROMO CODES ADMIN --------------------
     async def admin_promo_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3394,8 +3385,7 @@ class OnlineShopBot:
 
         application.add_handler(CallbackQueryHandler(self.checkout, pattern=r'^checkout$'))
         application.add_handler(CallbackQueryHandler(self.use_profile_data, pattern=r'^use_profile_data$'))
-        application.add_handler(
-            CallbackQueryHandler(self.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
+        application.add_handler(CallbackQueryHandler(self.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
         application.add_handler(CallbackQueryHandler(self.choose_payment, pattern=r'^pay_(cod|card|bank|online)$'))
 
         application.add_handler(CallbackQueryHandler(self.handle_cancel_order, pattern=r'^cancel_order$'))
@@ -3420,39 +3410,31 @@ class OnlineShopBot:
         application.add_handler(CallbackQueryHandler(self.admin_promo_set_reusable, pattern=r'^admin_promo_reusable_'))
 
         application.add_handler(CallbackQueryHandler(self.admin_user_management, pattern=r'^admin_user_management$'))
-        application.add_handler(
-            CallbackQueryHandler(self.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
+        application.add_handler(CallbackQueryHandler(self.handle_admin_user_pagination, pattern=r'^admin_user_page_\d+$'))
         application.add_handler(CallbackQueryHandler(self.admin_user_block, pattern=r'^admin_user_block_'))
 
         application.add_handler(CallbackQueryHandler(self.admin_all_orders, pattern=r'^admin_all_orders$'))
-        application.add_handler(
-            CallbackQueryHandler(self.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
-        application.add_handler(
-            CallbackQueryHandler(self.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
+        application.add_handler(CallbackQueryHandler(self.handle_admin_all_orders_pagination, pattern=r'^admin_all_orders_page_\d+$'))
+        application.add_handler(CallbackQueryHandler(self.admin_order_status_change, pattern=r'^admin_(confirm|ship|deliver|cancel)'))
 
-        application.add_handler(
-            CallbackQueryHandler(self.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
+        application.add_handler(CallbackQueryHandler(self.admin_categories_menu, pattern=r'^admin_products$|^admin_cat_page_'))
         application.add_handler(CallbackQueryHandler(self.admin_products_list, pattern=r'^admin_list_cat_'))
         application.add_handler(CallbackQueryHandler(self.admin_handle_category_selection, pattern=r'^admin_set_cat_'))
         application.add_handler(CallbackQueryHandler(self.admin_product_menu, pattern=r'^admin_prod_'))
         application.add_handler(CallbackQueryHandler(self.admin_add_product, pattern=r'^admin_add_product$'))
         application.add_handler(CallbackQueryHandler(self.admin_edit_field, pattern=r'^admin_edit_field_'))
         application.add_handler(CallbackQueryHandler(self.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
-        application.add_handler(
-            CallbackQueryHandler(self.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
+        application.add_handler(CallbackQueryHandler(self.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
 
         application.add_handler(CallbackQueryHandler(self.admin_image_menu, pattern=r'^admin_image_menu_'))
         application.add_handler(CallbackQueryHandler(self.admin_image_set_prompt, pattern=r'^admin_image_set_'))
         application.add_handler(CallbackQueryHandler(self.admin_image_delete, pattern=r'^admin_image_delete_'))
-        application.add_handler(
-            CallbackQueryHandler(self.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
+        application.add_handler(CallbackQueryHandler(self.admin_handle_variant_decision, pattern=r'^admin_decision_vars_'))
         application.add_handler(CallbackQueryHandler(self.admin_wizard_cancel, pattern=r'^admin_wizard_cancel$'))
-        application.add_handler(
-            CallbackQueryHandler(self.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
+        application.add_handler(CallbackQueryHandler(self.admin_back_to_variant_types, pattern=r'^admin_step_variants_init$'))
 
         application.add_handler(CallbackQueryHandler(self.handle_variant_type_selection, pattern=r'^vartype_'))
-        application.add_handler(
-            CallbackQueryHandler(self.handle_variant_selection_user, pattern=r'^var_sel_|^cancel_selection$'))
+        application.add_handler(CallbackQueryHandler(self.handle_variant_selection_user, pattern=r'^var_sel_|^cancel_selection$'))
 
         application.add_error_handler(self.error_handler)
 
