@@ -1730,7 +1730,6 @@ class OnlineShopBot:
         user_id = update.effective_user.id
         state = self.user_states.get(user_id, {})
         cursor = self.conn.cursor()
-
         cursor.execute(
             'SELECT c.id, p.name, p.price, c.quantity, p.emoji, c.selected_options, p.variants, p.id, p.stock FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
             (user_id,))
@@ -1747,24 +1746,31 @@ class OnlineShopBot:
                 {"product_id": product_id, "name": name, "price": real_price, "quantity": quantity, "total": item_total,
                  "emoji": emoji, "selected_options": sel_opts})
 
-            new_variants_json = variants_json
-            if variants_json and sel_opts:
-                try:
-                    v_data, changed = json.loads(variants_json), False
-                    for key, val in sel_opts.items():
-                        if key in v_data and isinstance(v_data[key], dict) and val in v_data[key]:
-                            if isinstance(v_data[key][val], dict) and 'qty' in v_data[key][val]:
-                                v_data[key][val]['qty'] = max(0, v_data[key][val]['qty'] - quantity)
-                                changed = True
-                            elif isinstance(v_data[key][val], int):
-                                v_data[key][val] = max(0, v_data[key][val] - quantity)
-                                changed = True
-                    if changed: new_variants_json = json.dumps(v_data, ensure_ascii=False)
-                except Exception as e:
-                    logger.error(f"Error deducting variants stock: {e}")
+            cursor.execute("SELECT stock, variants FROM products WHERE id = ?", (product_id,))
+            fresh_prod = cursor.fetchone()
 
-            cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
-                           (max(0, p_stock - quantity), new_variants_json, product_id))
+            if fresh_prod:
+                curr_stock, curr_variants_json = fresh_prod
+                new_variants_json = curr_variants_json
+
+                if curr_variants_json and sel_opts:
+                    try:
+                        v_data, changed = json.loads(curr_variants_json), False
+                        for key, val in sel_opts.items():
+                            if key in v_data and isinstance(v_data[key], dict) and val in v_data[key]:
+                                if isinstance(v_data[key][val], dict) and 'qty' in v_data[key][val]:
+                                    v_data[key][val]['qty'] = max(0, v_data[key][val]['qty'] - quantity)
+                                    changed = True
+                                elif isinstance(v_data[key][val], int):
+                                    v_data[key][val] = max(0, v_data[key][val] - quantity)
+                                    changed = True
+                        if changed:
+                            new_variants_json = json.dumps(v_data, ensure_ascii=False)
+                    except Exception as e:
+                        logger.error(f"Error deducting variants stock: {e}")
+
+                cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
+                               (max(0, curr_stock - quantity), new_variants_json, product_id))
 
         active_promo = state.get('active_promo')
         promo_code_used = None

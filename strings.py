@@ -137,7 +137,7 @@ STRINGS = {
         'summary_edit_email_btn': "📧 Email",
         'summary_edit_address_btn': "📍 Доставка",
         'summary_edit_phone_btn': "📱 Телефон",
-        'summary_confirm_btn': "✅ Усе вірно, перейти до оплати",
+        'summary_confirm_btn': "✅ Усе правильно, перейти до оплати",
 
         'edit_field_title': "Редагування: {field}",
         'current_value_label': "Поточне значення:",
@@ -367,7 +367,7 @@ STRINGS = {
 
         # --- НОВІ ЗАМОВЛЕННЯ ДЛЯ АДМІНА ---
         'new_order_notification_ukraine': "🔔 <b>НОВЕ ЗАМОВЛЕННЯ!</b>",
-        'delivery_notification_ukraine': "Нова Пошта",
+        'delivery_notification_ukraine': "Адреса",
         'payment_notification_ukraine': "Оплата",
         'admin_new_order_notification': "{region_header}\n🧾 Замовлення #{order_id}\n\n👤 <b>Клієнт:</b> {full_name}\n📱 <b>Телефон:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{items_str}\n💰 <b>Сума:</b> {total_amount}₴",
         'failed_to_notify_admin': "Failed to send order notification to admin {admin}: {e}",
@@ -565,7 +565,7 @@ STRINGS = {
         'no_orders_yet': "You have no orders yet.",
         'your_orders_header': "📦 <b>Your Orders</b> (Page {page}/{total_pages})\n\n",
         'order_items': "Items",
-        'order_summary_line': "🧾 <b>Order #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}$ | {status_text} | 📅 {date}\n───────────────────────────\n",
+        'order_summary_line': "🧾 <b>Order #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}$ | {status_text} | 📅 {date}\n─────────────────────\n",
         'details_button': "Details #{order_id}",
         'order_not_found': "Order not found.",
         'items_info_unavailable': "Items info unavailable",
