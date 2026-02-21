@@ -1086,12 +1086,15 @@ class OnlineShopBot:
             cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (text, user_id))
 
         elif state['step'] == 'waiting_address_profile':
-
             tokens = [w for w in re.split(r'[,\s]+', text) if w]
-            is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
-
+            if SHIPPING_MODE == 'UKRAINE':
+                is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
+                err_key = 'err_invalid_address'
+            else:
+                is_valid = len(tokens) >= 4 and bool(re.search(r'\d', text))
+                err_key = 'err_invalid_address_int'
             if not is_valid:
-                return await self._send_error(chat_id, 'err_invalid_address', error_kb, state, context)
+                return await self._send_error(chat_id, err_key, error_kb, state, context)
             cursor.execute("UPDATE users SET address = ? WHERE user_id = ?", (text, user_id))
 
         self.conn.commit()
@@ -1305,7 +1308,7 @@ class OnlineShopBot:
             self.user_states.setdefault(user_id, {})['step'] = 'waiting_full_name'
             keyboard = [
                 [InlineKeyboardButton(self.get_text('use_profile_data_button'), callback_data="use_profile_data")],
-                [InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="cart")],
+                [InlineKeyboardButton(self.get_text('enter_manually_button'), callback_data="checkout_manual")],
                 [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
             ]
             await query.edit_message_text(text=self.get_text('checkout_step_1'),
@@ -1318,6 +1321,17 @@ class OnlineShopBot:
                 'full_name': None, 'email': None, 'address': None, 'phone': None, 'from_profile': False
             })
             await self.continue_checkout_flow(update, context)
+
+    async def checkout_manual(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context): return
+        query = update.callback_query
+        user_id = query.from_user.id
+
+        self.user_states.setdefault(user_id, {})
+        self.user_states[user_id].update({
+            'full_name': None, 'email': None, 'address': None, 'phone': None, 'from_profile': False
+        })
+        await self.continue_checkout_flow(update, context)
 
     async def use_profile_data(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1433,12 +1447,17 @@ class OnlineShopBot:
                                                                                           "confirm_details_back" if is_edit else "back_to_name")
             state['email'] = text
 
+
         elif state['step'] == 'waiting_shipping':
             tokens = [w for w in re.split(r'[,\s]+', text) if w]
-            is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
-
+            if SHIPPING_MODE == 'UKRAINE':
+                is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
+                err_key = 'err_invalid_address'
+            else:
+                is_valid = len(tokens) >= 4 and bool(re.search(r'\d', text))
+                err_key = 'err_invalid_address_int'
             if not is_valid:
-                return await send_err('err_invalid_address', "confirm_details_back" if is_edit else "back_to_email")
+                return await send_err(err_key, "confirm_details_back" if is_edit else "back_to_email")
             state['address'] = text
 
         elif state['step'] == 'waiting_phone':
@@ -3459,6 +3478,9 @@ class OnlineShopBot:
 
         application.add_handler(CallbackQueryHandler(self.handle_variant_type_selection, pattern=r'^vartype_'))
         application.add_handler(CallbackQueryHandler(self.handle_variant_selection_user, pattern=r'^var_sel_|^cancel_selection$'))
+        application.add_handler(CallbackQueryHandler(self.checkout, pattern=r'^checkout$'))
+        application.add_handler(CallbackQueryHandler(self.use_profile_data, pattern=r'^use_profile_data$'))
+        application.add_handler(CallbackQueryHandler(self.checkout_manual, pattern=r'^checkout_manual$'))
 
         application.add_error_handler(self.error_handler)
 

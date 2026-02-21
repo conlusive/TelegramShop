@@ -388,6 +388,7 @@ STRINGS = {
         'new_settings': "нові налаштування",
         'success_updated': "✅ <b>{field}</b> успішно оновлено на:\n<code>{val}</code>",
         'alert_has_variants': "⚠️ Цей товар має варіанти!\nЗмінюйте ціну та наявність у розділі '🔀 Варіанти'.",
+        'enter_manually_button': "✍️ Ввести дані вручну",
     },
 
     'INTERNATIONAL': {
@@ -426,14 +427,14 @@ STRINGS = {
         'cancelled': "Action cancelled",
 
         # --- INPUT ERRORS (ADMIN & CLIENT) ---
-        'err_invalid_name': "❌ <b>Invalid name format!</b>\nEnter First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
-        'err_invalid_email': "❌ <b>Invalid email!</b>\nEnter a correct email address.\n\n<b>Example:</b> <i>user@example.com</i>",
+        'err_invalid_name': "❌ <b>Invalid name format!</b>\n\nEnter First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
+        'err_invalid_email': "❌ <b>Invalid email!</b>\n\nEnter a correct email address.\n\n<b>Example:</b> <i>user@example.com</i>",
         'err_invalid_phone': "❌ <b>Invalid phone number!</b>\n\nFormat: +123...\n\n<b>Example:</b> <i>+1234567890</i>",
-        'err_invalid_address': "❌ <b>Invalid address format!</b>\nEnter City, Postal Service, and Branch/Zip code.\n\n<b>Example:</b> <i>Berlin, DHL, Branch 15</i>",
-        'err_invalid_number': "❌ <b>Error!</b>\nEnter a valid number.\n\n<b>Example:</b> <code>{ex_val}</code>",
-        'err_variant_format': "❌ <b>Invalid variant format!</b>\n\nEntered: {val}\nFormat: Type:Option=Qty=Price",
-        'err_invalid_discount': "❌ <b>Invalid discount format!</b>\nExpected integer between 1 and 99.\n\n<b>Example:</b> <code>15</code>",
-        'err_invalid_uses': "❌ <b>Invalid quantity format!</b>\nExpected integer > 0.\n\n<b>Example:</b> <code>100</code>",
+        'err_invalid_address': "❌ <b>Invalid address format!</b>\n\nEnter your <b>Full Shipping Address</b>Enter Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>:\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
+        'err_invalid_number': "❌ <b>Error!</b>\n\nEnter a valid number.\n\n<b>Example:</b> <code>{ex_val}</code>",
+        'err_variant_format': "❌ <b>Invalid variant format!</b>\n\nEntered: {val}\n\nFormat: Type:Option=Qty=Price",
+        'err_invalid_discount': "❌ <b>Invalid discount format!</b>\n\nExpected integer between 1 and 99.\n\n<b>Example:</b> <code>15</code>",
+        'err_invalid_uses': "❌ <b>Invalid quantity format!</b>\n\nExpected integer > 0.\n\n<b>Example:</b> <code>100</code>",
 
         # --- USER MENU ---
         'product_catalog_button': "🛍 Catalog",
@@ -497,9 +498,9 @@ STRINGS = {
         'edit_shipping_info_button': "📍 Edit Address",
         'edit_phone_button': "📱 Edit Phone",
         'delete_data_button': "🗑 Delete Data",
-        'enter_full_name': "👤 Enter your <b>First and Last Name</b>:",
-        'enter_email': "📧 Enter your <b>Email</b>:",
-        'enter_address_international': "📍 Enter your <b>City, Postal Service, and Branch/Zip code</b>:",
+        'enter_full_name': "👤 Enter your <b>First and Last Name</b>:\n\n<b>Example:</b> <i>John Doe</i>",
+        'enter_email': "📧 Enter your <b>Email</b>:\n\n<b>Example:</b> <i>user@gmail.com</i>",
+        'enter_address_international': "📍 Enter your <b>Full Shipping Address</b>\n\nCountry, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>:\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'enter_phone': "📱 Enter your <b>Phone Number</b>:\n\n<i>Example: {example}</i>",
         'ex_phone': "+1234567890",
         'profile_delete_title': "🗑 <b>Which data to delete?</b>",
@@ -519,8 +520,8 @@ STRINGS = {
         'checkout_profile_loaded_header': "⚡️ <b>Quick Checkout</b>\n\n",
         'checkout_header': "📝 <b>Checkout</b>\n\n",
         'checkout_step_1_of_4': "Step 1/{total_steps}: Enter your <b>First and Last Name</b>.\n\n<b>Example:</b> <i>John Doe</i>",
-        'checkout_step_2_of_4': "Step 2/{total_steps}: Enter your <b>Email</b>.\n\n<b>Example:</b> <i>john@example.com</i>",
-        'checkout_step_3_of_4_international': "Step 3/{total_steps}: Enter your <b>City, Postal Service, and Branch/Zip code</b>.\n\n<b>Example:</b> <i>Berlin, DHL, Branch 15</i>",
+        'checkout_step_2_of_4': "Step 2/{total_steps}: Enter your <b>Email</b>.\n\n<b>Example:</b> <i>user@example.com</i>",
+        'checkout_step_3_of_4_international': "Step 3/{total_steps}: Enter your <b>Full Shipping Address</b>.\n\n<b>Format:</b>Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'checkout_step_4_of_4': "Step 4/{total_steps}: Enter your <b>Phone Number</b>.\n\n<b>Example:</b> <i>{example}</i>",
 
         'confirm_details': "🔍 <b>Confirm your details:</b>\n\n👤 <b>Name:</b> {full_name}\n📧 <b>Email:</b> {email}\n📍 <b>Shipping:</b> {address}\n📱 <b>Phone:</b> {phone}",
@@ -539,8 +540,8 @@ STRINGS = {
         'summary_address_label': "Shipping Address",
         'summary_phone_label': "Phone",
         'ex_name': "<i>John Doe</i>",
-        'ex_email': "<i>john@example.com</i>",
-        'ex_address': "<i>Berlin, DHL, Branch 15</i>",
+        'ex_email': "<i>user@example.com</i>",
+        'ex_address': "<i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'back_to_summary_btn': "🔙️ Back to Review",
 
         # --- PAYMENT ---
@@ -576,14 +577,14 @@ STRINGS = {
         'order_canceled': "Order cancelled.",
 
         # --- ORDER STATUSES ---
-        'status_pending': "Pending",
-        'status_confirmed': "Confirmed",
-        'status_shipped': "Shipped",
-        'status_delivered': "Delivered",
-        'status_cancelled': "Cancelled",
+        'status_pending': "🟡 Pending",
+        'status_confirmed': "🔵 Confirmed",
+        'status_shipped': "🟠 Shipped",
+        'status_delivered': "🟢 Delivered",
+        'status_cancelled': "🔴 Cancelled",
 
         # --- ADMIN PANEL ---
-        'admin_welcome': "👋 Hello Admin {safe_name}! Manage your store below 👇",
+        'admin_welcome': "👋 Hello Admin {safe_name}!\n\nManage your store below 👇",
         'admin_panel_button': "⚙️ Admin Panel",
         'admin_panel_header': "⚙️ *Admin Panel*\nSelect section:",
         'all_orders_button': "📦 All Orders",
@@ -777,5 +778,8 @@ STRINGS = {
         'new_settings': "new settings",
         'success_updated': "✅ <b>{field}</b> successfully updated to:\n<code>{val}</code>",
         'alert_has_variants': "⚠️ This product has variants!\nEdit price and stock in '🔀 Variants'.",
+        'enter_manually_button': "✍️ Enter manually",
+        'err_invalid_address_int': "❌ <b>Invalid address format!</b>\n\nEnter Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
+
     }
 }
