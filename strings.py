@@ -383,6 +383,11 @@ STRINGS = {
         'missing_phone': "Телефон",
         'missing_address_ukraine': "Доставка",
         'missing_address_international': "Адресу доставки",
+
+        'prod_name': "Назва",
+        'new_settings': "нові налаштування",
+        'success_updated': "✅ <b>{field}</b> успішно оновлено на:\n<code>{val}</code>",
+        'alert_has_variants': "⚠️ Цей товар має варіанти!\nЗмінюйте ціну та наявність у розділі '🔀 Варіанти'.",
     },
 
     'INTERNATIONAL': {
@@ -423,7 +428,7 @@ STRINGS = {
         # --- INPUT ERRORS (ADMIN & CLIENT) ---
         'err_invalid_name': "❌ <b>Invalid name format!</b>\nEnter First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
         'err_invalid_email': "❌ <b>Invalid email!</b>\nEnter a correct email address.\n\n<b>Example:</b> <i>user@example.com</i>",
-        'err_invalid_phone': "❌ <b>Invalid phone number!</b>\nFormat: +123...\n\n<b>Example:</b> <i>+1234567890</i>",
+        'err_invalid_phone': "❌ <b>Invalid phone number!</b>\n\nFormat: +123...\n\n<b>Example:</b> <i>+1234567890</i>",
         'err_invalid_address': "❌ <b>Invalid address format!</b>\nEnter City, Postal Service, and Branch/Zip code.\n\n<b>Example:</b> <i>Berlin, DHL, Branch 15</i>",
         'err_invalid_number': "❌ <b>Error!</b>\nEnter a valid number.\n\n<b>Example:</b> <code>{ex_val}</code>",
         'err_variant_format': "❌ <b>Invalid variant format!</b>\n\nEntered: {val}\nFormat: Type:Option=Qty=Price",
@@ -502,7 +507,7 @@ STRINGS = {
         'delete_email_btn': "Email",
         'delete_shipping_int_btn': "Shipping Address",
         'delete_phone_btn': "Phone",
-        'back_to_profile_btn': "⬅️ Back to Profile",
+        'back_to_profile_btn': "🔙️ Back to Profile",
         'data_deleted': "✅ Data ({display_name}) deleted.",
 
         # --- CHECKOUT ---
@@ -536,7 +541,7 @@ STRINGS = {
         'ex_name': "<i>John Doe</i>",
         'ex_email': "<i>john@example.com</i>",
         'ex_address': "<i>Berlin, DHL, Branch 15</i>",
-        'back_to_summary_btn': "⬅️ Back to Review",
+        'back_to_summary_btn': "🔙️ Back to Review",
 
         # --- PAYMENT ---
         'payment_step_header_int': "💳 <b>Choose payment method:</b>",
@@ -565,7 +570,7 @@ STRINGS = {
         'items_info_unavailable': "Items info unavailable",
         'order_details_text': "🧾 <b>Order #{order_id}</b>\n📅 {date}\n\n👤 <b>Client:</b> {user_name}\n📧 <b>Email:</b> {email}\n📱 <b>Phone:</b> {phone}\n📍 <b>Shipping:</b> {address}\n💳 <b>Payment:</b> {payment_method}\n\n📦 <b>Items:</b>\n{products_text}\n<b>Total: {total_amount}$</b>\n\nStatus: {status_display}",
         'cancel_order_button_3': "❌ Cancel Order",
-        'back_to_list_button': "⬅️ Back to list",
+        'back_to_list_button': "🔙 Back to list",
         'order_already_delivered_or_canceled': "Order already processed or cancelled.",
         'customer_canceled_order': "🚨 Client cancelled order #{order_id}.",
         'order_canceled': "Order cancelled.",
@@ -591,12 +596,12 @@ STRINGS = {
         'no_orders_in_db': "No orders in database yet.",
         'all_orders_header': "📦 <b>All Orders</b> (Page {page}/{total_pages})\n\n",
         'details_button_2': "Details #{order_id}",
-        'back_to_admin_button': "⬅️ To Panel",
+        'back_to_admin_button': "🔙 To Panel",
         'confirm_button': "Confirm",
         'sent_button': "Ship",
         'delivered_button': "Deliver",
         'cancel_button_2': "Cancel",
-        'back_to_all_orders_button': "⬅️ All Orders",
+        'back_to_all_orders_button': "🔙️ All Orders",
         'status_updated': "✅ Status updated to: {new_status}",
         'order_update_notification_international': "🔔 <b>Order #{order_id} status updated!</b>\n\nNew status: <b>{display_status}</b>",
 
@@ -606,7 +611,7 @@ STRINGS = {
         'select_category_to_edit': "Select category:",
         'category_button_count': "{cat_name} ({count})",
         'add_product_button': "➕ Add Product",
-        'back_to_admin_panel_button': "⬅️ Admin Panel",
+        'back_to_admin_panel_button': "🔙️ Admin Panel",
         'category_header_2': "📂 *{category}* (Page {page}/{total_pages})\n\n",
         'back_to_categories_button': "📁 To Categories",
         'product_not_found_2': "Product not found.",
@@ -660,7 +665,7 @@ STRINGS = {
         'finish_skip_variant': "✅ Finish / Skip",
         'add_variants_before_finishing': "Add at least one variant!",
         'variant_input_prompt': "Enter values for <b>{v_type}</b>.\nFormat: <code>Option=Qty=Price</code>\n\nExample: <code>{example}</code>",
-        'back_to_types_btn': "⬅️ To Types",
+        'back_to_types_btn': "🔙️ To Types",
         'type_Size': "Size",
         'type_Color': "Color",
         'type_Memory': "Memory",
@@ -695,7 +700,7 @@ STRINGS = {
         'add_photo_button': "➕ Add Photo",
         'change_photo_button': "🔄 Change Photo",
         'delete_photo_button': "🗑 Delete Photo",
-        'back_to_editing_button': "⬅️ Back to edit",
+        'back_to_editing_button': "🔙 Back to edit",
         'send_product_image': "Send new photo (or link):",
         'cancel_button_3': "❌ Cancel",
         'image_deleted': "Photo deleted.",
@@ -723,9 +728,9 @@ STRINGS = {
         'user_id': "ID: {user_id}",
         'block_button': "🚫 Block",
         'unblock_button': "✅ Unblock",
-        'admin_panel_button_2': "⬅️ Admin Panel",
+        'admin_panel_button_2': "🔙️ Admin Panel",
         'admin_broadcast_button': "📢 Broadcast",
-        'admin_broadcast_prompt': "📢 <b>Broadcast</b>\n\nSend message (text, photo, video) for all users. Or press Cancel.",
+        'admin_broadcast_prompt': "📢 <b>Broadcast</b>\n\nSend message (text, photo, video) for all users or press Cancel.",
         'admin_broadcast_started': "⏳ Broadcast started...",
         'admin_broadcast_finished': "✅ <b>Broadcast done!</b>\n\nDelivered: {success}\nBlocked bot: {failed}",
 
@@ -767,5 +772,10 @@ STRINGS = {
         'missing_phone': "Phone",
         'missing_address_ukraine': "Shipping",
         'missing_address_international': "Shipping Address",
+
+        'prod_name': "Name",
+        'new_settings': "new settings",
+        'success_updated': "✅ <b>{field}</b> successfully updated to:\n<code>{val}</code>",
+        'alert_has_variants': "⚠️ This product has variants!\nEdit price and stock in '🔀 Variants'.",
     }
 }

@@ -2715,6 +2715,13 @@ class OnlineShopBot:
 
         if not product: return await query.answer(self.get_text('product_not_found_2'))
 
+        if field in ['price', 'stock'] and product['variants']:
+            try:
+                if json.loads(product['variants']):
+                    return await query.answer(self.get_text('alert_has_variants'), show_alert=True)
+            except:
+                pass
+
         if field == "variants":
             current_text = self.get_text('none')
             if product['variants']:
@@ -2727,11 +2734,16 @@ class OnlineShopBot:
             msg_text = self.get_text('editing_variants_instructions', current_text=current_text)
         else:
             current_val = product[field] if product[field] is not None else self.get_text('not_set')
-            # ВИПРАВЛЕНО ТУТ: Жорстко вказуємо "Назва" для товарів замість підтягування "ПІБ"
-            display_name = {"name": "Назва" if SHIPPING_MODE == 'UKRAINE' else "Name", "description": self.get_text('desc'),
-                            "price": self.get_text('price'), "stock": self.get_text('stock'),
-                            "emoji": self.get_text('emoji'), "category": self.get_text('category')}.get(field,
-                                                                                                        field.capitalize())
+
+            display_name = {
+                "name": self.get_text('prod_name'),
+                "description": self.get_text('desc'),
+                "price": self.get_text('price'),
+                "stock": self.get_text('stock'),
+                "emoji": self.get_text('emoji'),
+                "category": self.get_text('category')
+            }.get(field, field.capitalize())
+
             msg_text = f"<b>{self.get_text('edit_field_title', field=display_name)}</b>\n\n<b>{self.get_text('current_value_label')}</b> <code>{current_val}</code>\n\n{self.get_text('enter_new_value_prompt')}"
 
         self.user_states[update.effective_user.id] = {'step': 'edit_product_field', 'product_id': product_id,
@@ -2976,16 +2988,28 @@ class OnlineShopBot:
             return await send_error(self.get_text('error_db', e=e))
 
         self.user_states.pop(user_id, None)
-        # ВИПРАВЛЕНО ТУТ ТАКОЖ:
-        display_field = {"name": "Назва" if SHIPPING_MODE == 'UKRAINE' else "Name", "price": self.get_text('price'),
-                         "stock": self.get_text('stock'), "variants": self.get_text('variants')}.get(field,
-                                                                                                     str(field).capitalize())
-        await context.bot.send_message(chat_id=chat_id,
-                                       text=self.get_text('status_updated', new_status=f"<b>{display_field}</b>"),
-                                       reply_markup=InlineKeyboardMarkup(
-                                           [[InlineKeyboardButton(self.get_text('back_button_3'),
-                                                                  callback_data=f"admin_prod_{product_id}")]]),
-                                       parse_mode="HTML")
+
+        display_field = {
+            "name": self.get_text('prod_name'),
+            "description": self.get_text('desc'),
+            "price": self.get_text('price'),
+            "stock": self.get_text('stock'),
+            "category": self.get_text('category'),
+            "emoji": self.get_text('emoji'),
+            "variants": self.get_text('variants')
+        }.get(field, str(field).capitalize())
+
+        display_value = self.get_text('new_settings') if field == 'variants' else str(input_value).strip()
+
+        success_msg = self.get_text('success_updated', field=display_field, val=self.escape_html(display_value))
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=success_msg,
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_prod_{product_id}")]]),
+            parse_mode="HTML"
+        )
 
     async def handle_admin_product_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
