@@ -8,7 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, \
-    PreCheckoutQueryHandler
+    PreCheckoutQueryHandler, TypeHandler
 from telegram.constants import ParseMode
 from strings import STRINGS
 from dom import (
@@ -50,6 +50,42 @@ class OnlineShopBot:
         self.init_database()
         self.user_states = {}
         self.user_promos = {}
+        self.load_states_from_db()
+
+    def load_states_from_db(self):
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT user_id, state_data, promo_data FROM bot_states")
+        for uid, s_data, p_data in cursor.fetchall():
+            if s_data:
+                try:
+                    self.user_states[uid] = json.loads(s_data)
+                except:
+                    pass
+            if p_data:
+                try:
+                    self.user_promos[uid] = json.loads(p_data)
+                except:
+                    pass
+
+    async def auto_save_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.effective_user: return
+        user_id = update.effective_user.id
+
+        s_data = json.dumps(self.user_states.get(user_id), ensure_ascii=False) if user_id in self.user_states else None
+        p_data = json.dumps(self.user_promos.get(user_id), ensure_ascii=False) if user_id in self.user_promos else None
+
+        cursor = self.conn.cursor()
+        if s_data is None and p_data is None:
+            cursor.execute("DELETE FROM bot_states WHERE user_id = ?", (user_id,))
+        else:
+            cursor.execute("SELECT user_id FROM bot_states WHERE user_id = ?", (user_id,))
+            if cursor.fetchone():
+                cursor.execute("UPDATE bot_states SET state_data = ?, promo_data = ? WHERE user_id = ?",
+                               (s_data, p_data, user_id))
+            else:
+                cursor.execute("INSERT INTO bot_states (user_id, state_data, promo_data) VALUES (?, ?, ?)",
+                               (user_id, s_data, p_data))
+        self.conn.commit()
 
     def get_text(self, key, **kwargs):
         lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
@@ -59,7 +95,7 @@ class OnlineShopBot:
         try:
             return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
         except KeyError as e:
-            logger.error(f"Помилка форматування тексту для ключа '{key}': не вистачає змінної {e}")
+            logger.error(f"Text formatting error for key '{key}': missing variable {e}")
             return STRINGS[lang].get(key, f"_{key}_").replace(f"{{{e.args[0]}}}", "")
 
     # -------------------- DATABASE --------------------
@@ -253,6 +289,17 @@ class OnlineShopBot:
         self._add_column_if_not_exists(cursor, "promocodes", "is_reusable", "INTEGER DEFAULT 0")
         self._add_column_if_not_exists(cursor, "products", "is_active", "INTEGER DEFAULT 1")
         self._add_column_if_not_exists(cursor, "products", "images", "TEXT")
+        cursor.execute('''CREATE TABLE IF NOT EXISTS bot_states
+                          (
+                              user_id
+                              INTEGER
+                              PRIMARY
+                              KEY,
+                              state_data
+                              TEXT,
+                              promo_data
+                              TEXT
+                          )''')
 
         self.conn.commit()
 
@@ -3744,6 +3791,8 @@ class OnlineShopBot:
         application.add_handler(CallbackQueryHandler(self.checkout, pattern=r'^checkout$'))
         application.add_handler(CallbackQueryHandler(self.use_profile_data, pattern=r'^use_profile_data$'))
         application.add_handler(CallbackQueryHandler(self.checkout_manual, pattern=r'^checkout_manual$'))
+
+        application.add_handler(TypeHandler(Update, self.auto_save_state), group=1)
 
         application.add_error_handler(self.error_handler)
 
