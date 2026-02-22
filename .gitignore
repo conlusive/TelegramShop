@@ -11,3 +11,5 @@ venv/
 *.db
 
 dom.py
+
+test_bot.py
