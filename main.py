@@ -1,6 +1,6 @@
 import logging
 import json
-import sqlite3
+import aiosqlite
 import time
 import asyncio
 import re
@@ -47,108 +47,65 @@ ADMIN_ITEMS_PER_PAGE = 10
 
 class OnlineShopBot:
     def __init__(self):
-        self.init_database()
         self.user_states = {}
         self.user_promos = {}
-        self.load_states_from_db()
+        self.conn = None  # База підключиться асинхронно при старті
 
-    def load_states_from_db(self):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT user_id, state_data, promo_data FROM bot_states")
-        for uid, s_data, p_data in cursor.fetchall():
-            if s_data:
-                try:
-                    self.user_states[uid] = json.loads(s_data)
-                except:
-                    pass
-            if p_data:
-                try:
-                    self.user_promos[uid] = json.loads(p_data)
-                except:
-                    pass
+    async def post_init(self, application: Application):
+        """Викликається автоматично ядром Telegram перед запуском бота"""
+        await self.init_database()
+        await self.load_states_from_db()
 
-    async def auto_save_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not update.effective_user: return
-        user_id = update.effective_user.id
-
-        s_data = json.dumps(self.user_states.get(user_id), ensure_ascii=False) if user_id in self.user_states else None
-        p_data = json.dumps(self.user_promos.get(user_id), ensure_ascii=False) if user_id in self.user_promos else None
-
-        cursor = self.conn.cursor()
-        if s_data is None and p_data is None:
-            cursor.execute("DELETE FROM bot_states WHERE user_id = ?", (user_id,))
-        else:
-            cursor.execute("SELECT user_id FROM bot_states WHERE user_id = ?", (user_id,))
-            if cursor.fetchone():
-                cursor.execute("UPDATE bot_states SET state_data = ?, promo_data = ? WHERE user_id = ?",
-                               (s_data, p_data, user_id))
-            else:
-                cursor.execute("INSERT INTO bot_states (user_id, state_data, promo_data) VALUES (?, ?, ?)",
-                               (user_id, s_data, p_data))
-        self.conn.commit()
-
-    def get_text(self, key, **kwargs):
-        lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
-        kwargs.setdefault('currency_symbol', CURRENCY_SYMBOL)
-        kwargs.setdefault('symbol', CURRENCY_SYMBOL)
-
-        try:
-            return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
-        except KeyError as e:
-            logger.error(f"Text formatting error for key '{key}': missing variable {e}")
-            return STRINGS[lang].get(key, f"_{key}_").replace(f"{{{e.args[0]}}}", "")
-
-    # -------------------- DATABASE --------------------
-    def _add_column_if_not_exists(self, cursor, table_name: str, column_name: str, column_type: str):
-        cursor.execute(f"PRAGMA table_info({table_name})")
-        columns = [row[1] for row in cursor.fetchall()]
+    async def _add_column_if_not_exists(self, cursor, table_name: str, column_name: str, column_type: str):
+        await cursor.execute(f"PRAGMA table_info({table_name})")
+        columns = [row[1] for row in await cursor.fetchall()]
         if column_name not in columns:
             try:
-                cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+                await cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
                 logger.info(self.get_text('column_added', column_name=column_name, table_name=table_name))
             except Exception as e:
                 logger.error(self.get_text('error_adding_column', column_name=column_name, table_name=table_name, e=e))
 
-    def init_database(self):
-        self.conn = sqlite3.connect(DB_NAME, check_same_thread=False)
-        cursor = self.conn.cursor()
+    async def init_database(self):
+        self.conn = await aiosqlite.connect(DB_NAME)
+        self.conn.row_factory = aiosqlite.Row
+        cursor = await self.conn.cursor()
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS products
-                          (
-                              id
-                              INTEGER
-                              PRIMARY
-                              KEY
-                              AUTOINCREMENT,
-                              name
-                              TEXT
-                              NOT
-                              NULL,
-                              description
-                              TEXT,
-                              price
-                              REAL
-                              NOT
-                              NULL,
-                              image_url
-                              TEXT,
-                              category
-                              TEXT,
-                              stock
-                              INTEGER
-                              DEFAULT
-                              0,
-                              emoji
-                              TEXT,
-                              variants
-                              TEXT,
-                              created_at
-                              TIMESTAMP
-                              DEFAULT
-                              CURRENT_TIMESTAMP
-                          )''')
-
-        cursor.execute('''CREATE TABLE IF NOT EXISTS cart
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS products
+                                (
+                                    id
+                                    INTEGER
+                                    PRIMARY
+                                    KEY
+                                    AUTOINCREMENT,
+                                    name
+                                    TEXT
+                                    NOT
+                                    NULL,
+                                    description
+                                    TEXT,
+                                    price
+                                    REAL
+                                    NOT
+                                    NULL,
+                                    image_url
+                                    TEXT,
+                                    category
+                                    TEXT,
+                                    stock
+                                    INTEGER
+                                    DEFAULT
+                                    0,
+                                    emoji
+                                    TEXT,
+                                    variants
+                                    TEXT,
+                                    created_at
+                                    TIMESTAMP
+                                    DEFAULT
+                                    CURRENT_TIMESTAMP
+                                )''')
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS cart
         (
             id
             INTEGER
@@ -171,137 +128,179 @@ class OnlineShopBot:
             TEXT,
             FOREIGN
             KEY
-                          (
+                                (
             product_id
-                          ) REFERENCES products
-                          (
-                              id
-                          ))''')
+                                ) REFERENCES products
+                                (
+                                    id
+                                ))''')
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS orders
+                                (
+                                    id
+                                    INTEGER
+                                    PRIMARY
+                                    KEY
+                                    AUTOINCREMENT,
+                                    user_id
+                                    INTEGER
+                                    NOT
+                                    NULL,
+                                    user_name
+                                    TEXT,
+                                    full_name
+                                    TEXT,
+                                    products
+                                    TEXT
+                                    NOT
+                                    NULL,
+                                    total_amount
+                                    REAL
+                                    NOT
+                                    NULL,
+                                    phone
+                                    TEXT,
+                                    address
+                                    TEXT,
+                                    payment_method
+                                    TEXT,
+                                    email
+                                    TEXT,
+                                    status
+                                    TEXT
+                                    DEFAULT
+                                    'pending',
+                                    created_at
+                                    TIMESTAMP
+                                    DEFAULT
+                                    CURRENT_TIMESTAMP
+                                )''')
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS users
+                                (
+                                    user_id
+                                    INTEGER
+                                    PRIMARY
+                                    KEY,
+                                    phone
+                                    TEXT,
+                                    address
+                                    TEXT,
+                                    email
+                                    TEXT,
+                                    full_name
+                                    TEXT,
+                                    blocked
+                                    INTEGER
+                                    DEFAULT
+                                    0
+                                )''')
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS promocodes
+                                (
+                                    id
+                                    INTEGER
+                                    PRIMARY
+                                    KEY
+                                    AUTOINCREMENT,
+                                    code
+                                    TEXT
+                                    UNIQUE,
+                                    discount
+                                    INTEGER,
+                                    max_uses
+                                    INTEGER
+                                    DEFAULT
+                                    100,
+                                    current_uses
+                                    INTEGER
+                                    DEFAULT
+                                    0,
+                                    is_reusable
+                                    INTEGER
+                                    DEFAULT
+                                    0
+                                )''')
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS used_promocodes
+                                (
+                                    user_id
+                                    INTEGER,
+                                    code
+                                    TEXT
+                                )''')
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS orders
-                          (
-                              id
-                              INTEGER
-                              PRIMARY
-                              KEY
-                              AUTOINCREMENT,
-                              user_id
-                              INTEGER
-                              NOT
-                              NULL,
-                              user_name
-                              TEXT,
-                              full_name
-                              TEXT,
-                              products
-                              TEXT
-                              NOT
-                              NULL,
-                              total_amount
-                              REAL
-                              NOT
-                              NULL,
-                              phone
-                              TEXT,
-                              address
-                              TEXT,
-                              payment_method
-                              TEXT,
-                              email
-                              TEXT,
-                              status
-                              TEXT
-                              DEFAULT
-                              'pending',
-                              created_at
-                              TIMESTAMP
-                              DEFAULT
-                              CURRENT_TIMESTAMP
-                          )''')
+        # НОВА ТАБЛИЦЯ ДЛЯ СТАНІВ
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS bot_states
+                                (
+                                    user_id
+                                    INTEGER
+                                    PRIMARY
+                                    KEY,
+                                    state_data
+                                    TEXT,
+                                    promo_data
+                                    TEXT
+                                )''')
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS users
-                          (
-                              user_id
-                              INTEGER
-                              PRIMARY
-                              KEY,
-                              phone
-                              TEXT,
-                              address
-                              TEXT,
-                              email
-                              TEXT,
-                              full_name
-                              TEXT,
-                              blocked
-                              INTEGER
-                              DEFAULT
-                              0
-                          )''')
+        await self._add_column_if_not_exists(cursor, "products", "emoji", "TEXT")
+        await self._add_column_if_not_exists(cursor, "products", "image_url", "TEXT")
+        await self._add_column_if_not_exists(cursor, "products", "variants", "TEXT")
+        await self._add_column_if_not_exists(cursor, "orders", "payment_method", "TEXT")
+        await self._add_column_if_not_exists(cursor, "orders", "email", "TEXT")
+        await self._add_column_if_not_exists(cursor, "orders", "full_name", "TEXT")
+        await self._add_column_if_not_exists(cursor, "orders", "promo_code", "TEXT")
+        await self._add_column_if_not_exists(cursor, "users", "email", "TEXT")
+        await self._add_column_if_not_exists(cursor, "users", "full_name", "TEXT")
+        await self._add_column_if_not_exists(cursor, "users", "blocked", "INTEGER DEFAULT 0")
+        await self._add_column_if_not_exists(cursor, "promocodes", "max_uses", "INTEGER DEFAULT 100")
+        await self._add_column_if_not_exists(cursor, "promocodes", "current_uses", "INTEGER DEFAULT 0")
+        await self._add_column_if_not_exists(cursor, "promocodes", "is_reusable", "INTEGER DEFAULT 0")
+        await self._add_column_if_not_exists(cursor, "products", "is_active", "INTEGER DEFAULT 1")
+        await self._add_column_if_not_exists(cursor, "products", "images", "TEXT")
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS promocodes
-                          (
-                              id
-                              INTEGER
-                              PRIMARY
-                              KEY
-                              AUTOINCREMENT,
-                              code
-                              TEXT
-                              UNIQUE,
-                              discount
-                              INTEGER,
-                              max_uses
-                              INTEGER
-                              DEFAULT
-                              100,
-                              current_uses
-                              INTEGER
-                              DEFAULT
-                              0,
-                              is_reusable
-                              INTEGER
-                              DEFAULT
-                              0
-                          )''')
+        await self.conn.commit()
 
-        cursor.execute('''CREATE TABLE IF NOT EXISTS used_promocodes
-                          (
-                              user_id
-                              INTEGER,
-                              code
-                              TEXT
-                          )''')
+    async def load_states_from_db(self):
+        async with self.conn.execute("SELECT user_id, state_data, promo_data FROM bot_states") as cursor:
+            async for uid, s_data, p_data in cursor:
+                if s_data:
+                    try:
+                        self.user_states[uid] = json.loads(s_data)
+                    except:
+                        pass
+                if p_data:
+                    try:
+                        self.user_promos[uid] = json.loads(p_data)
+                    except:
+                        pass
 
-        self._add_column_if_not_exists(cursor, "products", "emoji", "TEXT")
-        self._add_column_if_not_exists(cursor, "products", "image_url", "TEXT")
-        self._add_column_if_not_exists(cursor, "products", "variants", "TEXT")
-        self._add_column_if_not_exists(cursor, "orders", "payment_method", "TEXT")
-        self._add_column_if_not_exists(cursor, "orders", "email", "TEXT")
-        self._add_column_if_not_exists(cursor, "orders", "full_name", "TEXT")
-        self._add_column_if_not_exists(cursor, "orders", "promo_code", "TEXT")
-        self._add_column_if_not_exists(cursor, "users", "email", "TEXT")
-        self._add_column_if_not_exists(cursor, "users", "full_name", "TEXT")
-        self._add_column_if_not_exists(cursor, "users", "blocked", "INTEGER DEFAULT 0")
+    async def auto_save_state(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.effective_user: return
+        user_id = update.effective_user.id
+        s_data = json.dumps(self.user_states.get(user_id), ensure_ascii=False) if user_id in self.user_states else None
+        p_data = json.dumps(self.user_promos.get(user_id), ensure_ascii=False) if user_id in self.user_promos else None
 
-        self._add_column_if_not_exists(cursor, "promocodes", "max_uses", "INTEGER DEFAULT 100")
-        self._add_column_if_not_exists(cursor, "promocodes", "current_uses", "INTEGER DEFAULT 0")
-        self._add_column_if_not_exists(cursor, "promocodes", "is_reusable", "INTEGER DEFAULT 0")
-        self._add_column_if_not_exists(cursor, "products", "is_active", "INTEGER DEFAULT 1")
-        self._add_column_if_not_exists(cursor, "products", "images", "TEXT")
-        cursor.execute('''CREATE TABLE IF NOT EXISTS bot_states
-                          (
-                              user_id
-                              INTEGER
-                              PRIMARY
-                              KEY,
-                              state_data
-                              TEXT,
-                              promo_data
-                              TEXT
-                          )''')
+        async with self.conn.execute("SELECT user_id FROM bot_states WHERE user_id = ?", (user_id,)) as cursor:
+            exists = await cursor.fetchone()
+            if exists:
+                if s_data is None and p_data is None:
+                    await self.conn.execute("DELETE FROM bot_states WHERE user_id = ?", (user_id,))
+                else:
+                    await self.conn.execute("UPDATE bot_states SET state_data = ?, promo_data = ? WHERE user_id = ?",
+                                            (s_data, p_data, user_id))
+            else:
+                if s_data or p_data: await self.conn.execute(
+                    "INSERT INTO bot_states (user_id, state_data, promo_data) VALUES (?, ?, ?)",
+                    (user_id, s_data, p_data))
+        await self.conn.commit()
 
-        self.conn.commit()
+    def get_text(self, key, **kwargs):
+        lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
+        kwargs.setdefault('currency_symbol', CURRENCY_SYMBOL)
+        kwargs.setdefault('symbol', CURRENCY_SYMBOL)
+
+        try:
+            return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
+        except KeyError as e:
+            logger.error(f"Text formatting error for key '{key}': missing variable {e}")
+            return STRINGS[lang].get(key, f"_{key}_").replace(f"{{{e.args[0]}}}", "")
 
     # -------------------- UTILS --------------------
     def escape_html(self, text):
@@ -389,11 +388,10 @@ class OnlineShopBot:
         except Exception:
             return str(date_input)[:16]
 
-    def is_user_blocked(self, user_id):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT blocked FROM users WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
-        return result and result[0] == 1
+    async def is_user_blocked(self, user_id):
+        async with self.conn.execute("SELECT blocked FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            result = await cursor.fetchone()
+            return result and result[0] == 1
 
     async def check_user_blocked(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         if self.is_user_blocked(update.effective_user.id):
@@ -507,12 +505,11 @@ class OnlineShopBot:
                     pass
             state.pop('album_msgs', None)
 
-    def build_main_keyboard(self, user_id):
+    async def build_main_keyboard(self, user_id):
         try:
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ?", (user_id,))
-            result = cursor.fetchone()
-            cart_count = result[0] if result and result[0] else 0
+            async with self.conn.execute("SELECT SUM(quantity) FROM cart WHERE user_id = ?", (user_id,)) as cursor:
+                result = await cursor.fetchone()
+                cart_count = result[0] if result and result[0] else 0
         except Exception:
             cart_count = 0
 
@@ -1182,10 +1179,9 @@ class OnlineShopBot:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=keyboard,
                                            parse_mode="HTML")
 
-    def get_profile_completion_status(self, user_id):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,))
-        row = cursor.fetchone()
+    async def get_profile_completion_status(self, user_id):
+        async with self.conn.execute("SELECT full_name, email, address, phone FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
         if not row: return ["full_name", "email", "address", "phone"]
         full_name, email, address, phone = row
         missing_fields = []
@@ -3613,10 +3609,9 @@ class OnlineShopBot:
         except:
             await query.answer()
 
-    def get_existing_categories_keyboard(self, product_id=None):
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT DISTINCT category FROM products WHERE is_active = 1")
-        categories = [row[0] for row in cursor.fetchall() if row[0]]
+    async def get_existing_categories_keyboard(self, product_id=None):
+        async with self.conn.execute("SELECT DISTINCT category FROM products WHERE is_active = 1") as cursor:
+            categories = [row[0] for row in await cursor.fetchall() if row[0]]
 
         keyboard = [[InlineKeyboardButton(cat, callback_data=f"admin_set_cat_{cat}") for cat in categories[i:i + 2]] for
                     i in range(0, len(categories), 2)]
@@ -3702,7 +3697,7 @@ class OnlineShopBot:
             logger.critical("BOT_TOKEN not found. Please set it as an environment variable.")
             return
 
-        application = Application.builder().token(BOT_TOKEN).build()
+        application = Application.builder().token(BOT_TOKEN).post_init(self.post_init).build()
 
         application.add_handler(CommandHandler("start", self.start))
 
