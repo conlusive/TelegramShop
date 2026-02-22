@@ -389,6 +389,11 @@ STRINGS = {
         'success_updated': "✅ <b>{field}</b> успішно оновлено на:\n<code>{val}</code>",
         'alert_has_variants': "⚠️ Цей товар має варіанти!\nЗмінюйте ціну та наявність у розділі '🔀 Варіанти'.",
         'enter_manually_button': "✍️ Ввести дані вручну",
+
+        'search_button': "🔍 Пошук",
+        'search_prompt': "🔍 <b>Пошук товару</b>\n\nВведіть назву товару або ключове слово:",
+        'search_results_header': "🔍 <b>Результати пошуку:</b> {query}\n\n",
+        'no_search_results': "На жаль, за запитом <b>{query}</b> нічого не знайдено. 😔",
     },
 
     'INTERNATIONAL': {
@@ -780,6 +785,11 @@ STRINGS = {
         'alert_has_variants': "⚠️ This product has variants!\nEdit price and stock in '🔀 Variants'.",
         'enter_manually_button': "✍️ Enter manually",
         'err_invalid_address_int': "❌ <b>Invalid address format!</b>\n\nEnter Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
+
+        'search_button': "🔍 Search",
+        'search_prompt': "🔍 <b>Search for a product</b>\n\nEnter a product name or keyword:",
+        'search_results_header': "🔍 <b>Search results:</b> {query}\n\n",
+        'no_search_results': "Sorry, nothing was found for <b>{query}</b>. 😔",
 
     }
 }

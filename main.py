@@ -17,9 +17,9 @@ from dom import (
     SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, CURRENCY_CODE
 )
 
-# ==================== ЛІЦЕНЗІЯ ТА АДМІНИ ====================
+# ==================== LICENSE AND ADMINISTRATION ====================
 
-LICENSE_TYPE = "Basic" # "Basic" , "Pro"
+LICENSE_TYPE = "Pro" # "Basic" , "Pro"
 
 if isinstance(ADMIN_ID, str):
     ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
@@ -49,6 +49,7 @@ class OnlineShopBot:
     def __init__(self):
         self.init_database()
         self.user_states = {}
+        self.user_promos = {}
 
     def get_text(self, key, **kwargs):
         lang = SHIPPING_MODE if SHIPPING_MODE in STRINGS else 'INTERNATIONAL'
@@ -250,6 +251,7 @@ class OnlineShopBot:
         self._add_column_if_not_exists(cursor, "promocodes", "max_uses", "INTEGER DEFAULT 100")
         self._add_column_if_not_exists(cursor, "promocodes", "current_uses", "INTEGER DEFAULT 0")
         self._add_column_if_not_exists(cursor, "promocodes", "is_reusable", "INTEGER DEFAULT 0")
+        self._add_column_if_not_exists(cursor, "products", "is_active", "INTEGER DEFAULT 1")
 
         self.conn.commit()
 
@@ -456,8 +458,7 @@ class OnlineShopBot:
         except Exception:
             cart_count = 0
 
-        cart_text = self.get_text('my_cart_count', cart_count=cart_count) if cart_count > 0 else self.get_text(
-            'my_cart')
+        cart_text = self.get_text('my_cart_count', cart_count=cart_count) if cart_count > 0 else self.get_text('my_cart')
 
         if int(user_id) in ADMIN_IDS:
             return InlineKeyboardMarkup([
@@ -532,6 +533,106 @@ class OnlineShopBot:
                                                       parse_mode=ParseMode.HTML)
 
     # -------------------- CATALOG & PRODUCTS --------------------
+    async def ask_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if await self.check_user_blocked(update, context): return
+        query = update.callback_query
+
+        if LICENSE_TYPE != "Pro":
+            return await query.answer("⭐️ This feature is only available in the PRO version of the bot!", show_alert=True)
+
+        user_id = update.effective_user.id
+
+        self.user_states.setdefault(user_id, {})['step'] = 'waiting_search_query'
+
+        keyboard = [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data="catalog")]]
+        msg = await query.edit_message_text(self.get_text('search_prompt'), reply_markup=InlineKeyboardMarkup(keyboard),
+                                            parse_mode="HTML")
+        self.user_states[user_id]['msg_id'] = msg.message_id
+
+    async def perform_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE, search_query: str,
+                             page: int = 1):
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+
+        cursor = self.conn.cursor()
+        search_pattern = f"%{search_query}%"
+        cursor.execute("SELECT COUNT(*) FROM products WHERE is_active = 1 AND name LIKE ?", (search_pattern,))
+        total_items = cursor.fetchone()[0]
+
+        keyboard = []
+        if total_items == 0:
+            text = self.get_text('no_search_results', query=self.escape_html(search_query))
+            keyboard.append([InlineKeyboardButton(self.get_text('back_to_catalog_button_2'), callback_data="catalog")])
+            if getattr(update, "callback_query", None):
+                await update.callback_query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                              parse_mode="HTML")
+            else:
+                m = await context.bot.send_message(chat_id=chat_id, text=text,
+                                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+            return
+
+        total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+        offset = (page - 1) * ITEMS_PER_PAGE
+
+        cursor.execute(
+            "SELECT id, name, price, emoji, variants FROM products WHERE is_active = 1 AND name LIKE ? LIMIT ? OFFSET ?",
+            (search_pattern, ITEMS_PER_PAGE, offset))
+
+        text = self.get_text('search_results_header', query=self.escape_html(search_query))
+        if total_pages > 1:
+            text += self.get_text('page_indicator', page=page, total_pages=total_pages)
+
+        for p_id, name, base_price, emoji, variants_json in cursor.fetchall():
+            display_price = f"{base_price}{CURRENCY_SYMBOL}"
+            if variants_json:
+                try:
+                    v_data, all_prices = json.loads(variants_json), []
+                    for v_type, options in v_data.items():
+                        if isinstance(options, dict):
+                            for opt, info in options.items():
+                                if isinstance(info, dict) and 'price' in info and float(info['price']) > 0:
+                                    all_prices.append(float(info['price']))
+                    if all_prices and min(all_prices) != max(all_prices):
+                        display_price = self.get_text('price_from', price=min(all_prices)).replace('$', CURRENCY_SYMBOL)
+                    elif all_prices:
+                        display_price = f"{all_prices[0]}{CURRENCY_SYMBOL}"
+                except:
+                    pass
+            keyboard.append([InlineKeyboardButton(f"{emoji or '📦'} {name} - {display_price}",
+                                                  callback_data=f"product_{p_id}_{page}_1")])
+
+        nav = []
+        if page > 1: nav.append(
+            InlineKeyboardButton(self.get_text('prev_button'), callback_data=f"search_page_{page - 1}"))
+        if page < total_pages: nav.append(
+            InlineKeyboardButton(self.get_text('next_button'), callback_data=f"search_page_{page + 1}"))
+        if nav: keyboard.append(nav)
+
+        keyboard.append([InlineKeyboardButton(self.get_text('back_to_catalog_button_2'), callback_data="catalog")])
+
+        if getattr(update, "callback_query", None):
+            try:
+                await update.callback_query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                              parse_mode="HTML")
+            except:
+                pass
+        else:
+            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                               parse_mode="HTML")
+            if user_id in self.user_states:
+                self.user_states[user_id]['msg_id'] = m.message_id
+
+    async def handle_search_pagination(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.callback_query.answer()
+        match = re.match(r'^search_page_(\d+)$', update.callback_query.data)
+        if match:
+            user_id = update.effective_user.id
+            query_str = self.user_states.get(user_id, {}).get('search_query', '')
+            if query_str:
+                await self.perform_search(update, context, query_str, int(match.group(1)))
+            else:
+                await self.show_main_menu(update, context)
+
     async def show_catalog(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         page = 1
@@ -542,7 +643,8 @@ class OnlineShopBot:
                 page = 1
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(DISTINCT category) FROM products")
+        # Враховуємо тільки активні товари
+        cursor.execute("SELECT COUNT(DISTINCT category) FROM products WHERE is_active = 1")
         total_items = cursor.fetchone()[0]
 
         if total_items == 0:
@@ -559,8 +661,9 @@ class OnlineShopBot:
         if page < 1: page = 1
         offset = (page - 1) * ITEMS_PER_PAGE
 
-        cursor.execute("SELECT DISTINCT category FROM products ORDER BY category ASC LIMIT ? OFFSET ?",
-                       (ITEMS_PER_PAGE, offset))
+        cursor.execute(
+            "SELECT DISTINCT category FROM products WHERE is_active = 1 ORDER BY category ASC LIMIT ? OFFSET ?",
+            (ITEMS_PER_PAGE, offset))
         text = self.get_text('product_catalog')
         if total_pages > 1: text += self.get_text('page_indicator', page=page, total_pages=total_pages)
         text += self.get_text('select_category')
@@ -578,6 +681,13 @@ class OnlineShopBot:
         if page < total_pages: nav.append(
             InlineKeyboardButton(self.get_text('next_button'), callback_data=f"catalog_page_{page + 1}"))
         if nav: keyboard.append(nav)
+
+        # --- ДОДАЄМО КНОПКУ ПОШУКУ ТІЛЬКИ ДЛЯ PRO-ВЕРСІЇ ---
+        if LICENSE_TYPE == "Pro":
+            keyboard.append([InlineKeyboardButton(self.get_text('search_button'), callback_data="ask_search")])
+        # ---------------------------------------------------
+
+        # Кнопка Головне меню йде в самому кінці
         keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")])
 
         try:
@@ -608,7 +718,7 @@ class OnlineShopBot:
             category = query.data.replace("category_", "")
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM products WHERE category = ?", (category,))
+        cursor.execute("SELECT COUNT(*) FROM products WHERE category = ? AND is_active = 1", (category,))
         total_items = cursor.fetchone()[0]
 
         if total_items == 0: return await query.answer(self.get_text('no_products_yet'))
@@ -616,7 +726,7 @@ class OnlineShopBot:
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
         offset = (prod_page - 1) * ITEMS_PER_PAGE
 
-        cursor.execute("SELECT id, name, price, emoji, variants FROM products WHERE category = ? LIMIT ? OFFSET ?",
+        cursor.execute("SELECT id, name, price, emoji, variants FROM products WHERE category = ? AND is_active = 1 LIMIT ? OFFSET ?",
                        (category, ITEMS_PER_PAGE, offset))
         text = self.get_text('category_header', category=self.escape_html(category), prod_page=prod_page,
                              total_pages=total_pages)
@@ -1159,7 +1269,7 @@ class OnlineShopBot:
                              InlineKeyboardButton(self.get_text('btn_plus'), callback_data=f"cart_plus_{cart_id}")])
 
         discount_amount = 0
-        active_promo = self.user_states.get(user_id, {}).get('active_promo')
+        active_promo = self.user_promos.get(user_id)
         if active_promo:
             discount_amount = total_amount * (active_promo['discount'] / 100.0)
             total_amount -= discount_amount
@@ -1286,7 +1396,7 @@ class OnlineShopBot:
         items_count = cursor.fetchone()[0]
         cursor.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         self.conn.commit()
-        self.user_states.setdefault(user_id, {}).pop('active_promo', None)
+        self.user_promos.pop(user_id, None)
         await update.callback_query.answer(self.get_text('cart_cleared', items_count=items_count))
         await self.show_cart(update, context)
 
@@ -1608,7 +1718,7 @@ class OnlineShopBot:
             (user_id,))
         total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cursor.fetchall())
 
-        active_promo = self.user_states.get(user_id, {}).get('active_promo')
+        active_promo = self.user_promos.get(user_id)
         if active_promo:
             total_amount -= total_amount * (active_promo['discount'] / 100.0)
 
@@ -1628,7 +1738,7 @@ class OnlineShopBot:
 
             total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_data)
 
-            active_promo = self.user_states.get(user_id, {}).get('active_promo')
+            active_promo = self.user_promos.get(user_id)
             if active_promo:
                 total_amount -= total_amount * (active_promo['discount'] / 100.0)
 
@@ -1772,13 +1882,13 @@ class OnlineShopBot:
                 cursor.execute("UPDATE products SET stock = ?, variants = ? WHERE id = ?",
                                (max(0, curr_stock - quantity), new_variants_json, product_id))
 
-        active_promo = state.get('active_promo')
+        active_promo = self.user_promos.get(user_id)
         promo_code_used = None
         if active_promo:
             total_amount -= total_amount * (active_promo['discount'] / 100.0)
             promo_code_used = f"{active_promo['code']} (-{active_promo['discount']}%)"
             promo_code = active_promo['code']
-            state.pop('active_promo', None)
+            self.user_promos.pop(user_id, None)
 
             cursor.execute("UPDATE promocodes SET current_uses = current_uses + 1 WHERE code = ?", (promo_code,))
             cursor.execute("INSERT INTO used_promocodes (user_id, code) VALUES (?, ?)", (user_id, promo_code))
@@ -2313,7 +2423,7 @@ class OnlineShopBot:
                         await self.show_cart(update, context)
                         return
 
-                self.user_states.setdefault(user_id, {})['active_promo'] = {'code': text, 'discount': discount}
+                self.user_promos[user_id] = {'code': text, 'discount': discount}
                 state['promo_msg'] = self.get_text('promo_applied_success', code=text, discount=discount)
         else:
             state['promo_msg'] = self.get_text('promo_applied_error')
@@ -2538,20 +2648,24 @@ class OnlineShopBot:
                                                  query.data.split("_")[-1].isdigit() else 1
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(DISTINCT category) FROM products")
+        cursor.execute("SELECT COUNT(DISTINCT category) FROM products WHERE is_active = 1")
 
         total_pages = max(1, (cursor.fetchone()[0] + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
         page = max(1, min(page, total_pages))
 
-        cursor.execute(f"SELECT DISTINCT category FROM products ORDER BY category ASC LIMIT {ITEMS_PER_PAGE} OFFSET ?",
+        cursor.execute(f"SELECT DISTINCT category FROM products WHERE is_active = 1 ORDER BY category ASC LIMIT {ITEMS_PER_PAGE} OFFSET ?",
                        ((page - 1) * ITEMS_PER_PAGE,))
         text = self.get_text('product_management_header') + (self.get_text('page_indicator_2', page=page,
                                                                            total_pages=total_pages) if total_pages > 1 else "") + self.get_text(
             'select_category_to_edit')
 
         keyboard = []
+
+        if LICENSE_TYPE == "Pro":
+            keyboard.append([InlineKeyboardButton(self.get_text('search_button'), callback_data="ask_search")])
+
         for (cat_name,) in cursor.fetchall():
-            cursor.execute("SELECT COUNT(*) FROM products WHERE category = ?", (cat_name,))
+            cursor.execute("SELECT COUNT(*) FROM products WHERE category = ? AND is_active = 1", (cat_name,))
             keyboard.append([InlineKeyboardButton(
                 self.get_text('category_button_count', cat_name=cat_name, count=cursor.fetchone()[0]),
                 callback_data=f"admin_list_cat_{cat_name}_1")])
@@ -2577,26 +2691,26 @@ class OnlineShopBot:
                 pass
             await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
-
+            
     async def admin_products_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_override=None):
         query = update.callback_query
         if category_override:
             category, page = category_override, 1
         else:
             try:
-                parts = query.data.split("_");
+                parts = query.data.split("_")
                 page, category = int(parts[-1]), "_".join(parts[3:-1])
             except:
                 return await query.answer(self.get_text('error_parsing_category'))
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM products WHERE category = ?", (category,))
+        cursor.execute("SELECT COUNT(*) FROM products WHERE category = ? AND is_active = 1", (category,))
         total_items = cursor.fetchone()[0]
 
         if total_items == 0: return await self.admin_categories_menu(update, context)
 
         total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-        cursor.execute("SELECT id, name, stock FROM products WHERE category = ? LIMIT ? OFFSET ?",
+        cursor.execute("SELECT id, name, stock FROM products WHERE category = ? AND is_active = 1 LIMIT ? OFFSET ?",
                        (category, ITEMS_PER_PAGE, (page - 1) * ITEMS_PER_PAGE))
 
         text = self.get_text('category_header_2', category=category, page=page, total_pages=total_pages)
@@ -2914,7 +3028,7 @@ class OnlineShopBot:
             await query.answer(self.get_text('product_already_deleted'))
             return await self.admin_categories_menu(update, context)
 
-        cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
+        cursor.execute("UPDATE products SET is_active = 0 WHERE id = ?", (product_id,))
         self.conn.commit()
         await query.answer(self.get_text('product_deleted', name=row[0]))
         await self.admin_products_list(update, context, category_override=row[1])
@@ -2938,6 +3052,20 @@ class OnlineShopBot:
 
             if step == 'waiting_user_promo':
                 return await self.handle_user_promo_input(update, context)
+
+            if step == 'waiting_search_query':
+                self.user_states[user_id]['search_query'] = update.message.text.strip()
+                self.user_states[user_id]['step'] = 'viewing_search'
+
+                try:
+                    await update.message.delete()
+                    if 'msg_id' in self.user_states[user_id]:
+                        await context.bot.delete_message(chat_id=update.message.chat_id,
+                                                         message_id=self.user_states[user_id]['msg_id'])
+                except:
+                    pass
+
+                return await self.perform_search(update, context, self.user_states[user_id]['search_query'], page=1)
 
             if step.startswith('add_product') or step.startswith('edit_') or step.startswith(
                     'waiting_simple_') or step.startswith('waiting_var_') or step in ['waiting_product_image',
@@ -2979,6 +3107,7 @@ class OnlineShopBot:
                 value = float(str(input_value).replace('$', '').replace(' ', '').replace(',',
                                                                                          '.').strip()) if field == 'price' else int(
                     str(input_value).replace(' ', '').strip())
+                if value < 0: raise ValueError()
             except ValueError:
                 return await send_error(
                     self.get_text('err_invalid_number', val=input_value,
@@ -3105,6 +3234,7 @@ class OnlineShopBot:
             try:
                 state['product_data']['price'] = float(
                     input_value.replace('$', '').replace(' ', '').replace(',', '.').strip())
+                if state['product_data']['price'] < 0: raise ValueError()
                 state['step'] = 'waiting_simple_stock'
                 m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_wizard_simple_stock'),
                                                    reply_markup=cancel_kb, parse_mode="HTML")
@@ -3119,6 +3249,7 @@ class OnlineShopBot:
         elif step == 'waiting_simple_stock':
             try:
                 state['product_data']['stock'] = int(input_value)
+                if state['product_data']['stock'] < 0: raise ValueError()
                 state['step'] = 'waiting_simple_category'
                 m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('enter_category'),
                                                    reply_markup=self.get_existing_categories_keyboard(),
@@ -3313,7 +3444,7 @@ class OnlineShopBot:
 
     def get_existing_categories_keyboard(self, product_id=None):
         cursor = self.conn.cursor()
-        cursor.execute("SELECT DISTINCT category FROM products")
+        cursor.execute("SELECT DISTINCT category FROM products WHERE is_active = 1")
         categories = [row[0] for row in cursor.fetchall() if row[0]]
 
         keyboard = [[InlineKeyboardButton(cat, callback_data=f"admin_set_cat_{cat}") for cat in categories[i:i + 2]] for
@@ -3413,6 +3544,8 @@ class OnlineShopBot:
         application.add_handler(CallbackQueryHandler(self.show_main_menu, pattern=r'^main_menu$'))
         application.add_handler(CallbackQueryHandler(self.show_help, pattern=r'^help$'))
         application.add_handler(CallbackQueryHandler(self.show_catalog, pattern=r'^catalog(_page_\d+)?$'))
+        application.add_handler(CallbackQueryHandler(self.ask_search, pattern=r'^ask_search$'))
+        application.add_handler(CallbackQueryHandler(self.handle_search_pagination, pattern=r'^search_page_\d+$'))
         application.add_handler(CallbackQueryHandler(self.show_category_products, pattern=r'^category_'))
         application.add_handler(CallbackQueryHandler(self.show_product, pattern=r'^product_'))
         application.add_handler(CallbackQueryHandler(self.handle_product_action, pattern=r'^prod_(plus|minus)_'))
