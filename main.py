@@ -6,7 +6,7 @@ import asyncio
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, \
     PreCheckoutQueryHandler
 from telegram.constants import ParseMode
@@ -252,6 +252,7 @@ class OnlineShopBot:
         self._add_column_if_not_exists(cursor, "promocodes", "current_uses", "INTEGER DEFAULT 0")
         self._add_column_if_not_exists(cursor, "promocodes", "is_reusable", "INTEGER DEFAULT 0")
         self._add_column_if_not_exists(cursor, "products", "is_active", "INTEGER DEFAULT 1")
+        self._add_column_if_not_exists(cursor, "products", "images", "TEXT")
 
         self.conn.commit()
 
@@ -449,6 +450,16 @@ class OnlineShopBot:
         await self.show_my_orders(update, context)
 
     # -------------------- KEYBOARDS --------------------
+    async def cleanup_albums(self, user_id, context, chat_id):
+        state = self.user_states.get(user_id, {})
+        if 'album_msgs' in state:
+            for msg_id in state['album_msgs']:
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+                except:
+                    pass
+            state.pop('album_msgs', None)
+
     def build_main_keyboard(self, user_id):
         try:
             cursor = self.conn.cursor()
@@ -634,6 +645,7 @@ class OnlineShopBot:
                 await self.show_main_menu(update, context)
 
     async def show_catalog(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         query = update.callback_query
         page = 1
         if query.data.startswith("catalog_page_"):
@@ -643,7 +655,6 @@ class OnlineShopBot:
                 page = 1
 
         cursor = self.conn.cursor()
-        # Враховуємо тільки активні товари
         cursor.execute("SELECT COUNT(DISTINCT category) FROM products WHERE is_active = 1")
         total_items = cursor.fetchone()[0]
 
@@ -682,12 +693,10 @@ class OnlineShopBot:
             InlineKeyboardButton(self.get_text('next_button'), callback_data=f"catalog_page_{page + 1}"))
         if nav: keyboard.append(nav)
 
-        # --- ДОДАЄМО КНОПКУ ПОШУКУ ТІЛЬКИ ДЛЯ PRO-ВЕРСІЇ ---
+
         if LICENSE_TYPE == "Pro":
             keyboard.append([InlineKeyboardButton(self.get_text('search_button'), callback_data="ask_search")])
-        # ---------------------------------------------------
 
-        # Кнопка Головне меню йде в самому кінці
         keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button'), callback_data="main_menu")])
 
         try:
@@ -701,6 +710,7 @@ class OnlineShopBot:
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
     async def show_category_products(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         query = update.callback_query
         parts = query.data.split("_")
         cat_page, prod_page, category = 1, 1, ""
@@ -848,13 +858,73 @@ class OnlineShopBot:
         ]
 
         try:
-            if product['image_url']:
-                await query.message.delete()
-                await context.bot.send_photo(chat_id=query.message.chat_id, photo=product['image_url'], caption=text,
-                                             reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+            images = []
+            if 'images' in product.keys() and product['images']:
+                try:
+                    images = json.loads(product['images'])
+                except:
+                    pass
+
+            if not images and product['image_url']:
+                images = [product['image_url']]
+
+            is_update = bool(product_id_override)
+
+            if len(images) > 1:
+                if is_update:
+                    state = self.user_states.get(user_id, {})
+                    if 'album_msgs' in state and state['album_msgs']:
+                        try:
+                            await context.bot.edit_message_caption(chat_id=query.message.chat_id,
+                                                                   message_id=state['album_msgs'][0], caption=text,
+                                                                   parse_mode="HTML")
+                        except:
+                            pass
+
+                    try:
+                        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+                    except:
+                        pass
+                else:
+                    try:
+                        await query.message.delete()
+                    except:
+                        pass
+
+                    media_group = [InputMediaPhoto(media=img, caption=text if i == 0 else "", parse_mode="HTML") for
+                                   i, img in enumerate(images[:10])]
+                    sent_msgs = await context.bot.send_media_group(chat_id=query.message.chat_id, media=media_group)
+
+                    self.user_states.setdefault(user_id, {})['album_msgs'] = [m.message_id for m in sent_msgs]
+
+                    await context.bot.send_message(chat_id=query.message.chat_id, text=self.get_text('choose_action'),
+                                                   reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+            elif len(images) == 1:
+                await self.cleanup_albums(user_id, context, query.message.chat_id)
+                if is_update:
+                    try:
+                        await query.edit_message_caption(caption=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                         parse_mode="HTML")
+                    except:
+                        await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                      parse_mode="HTML")
+                else:
+                    try:
+                        await query.message.delete()
+                    except:
+                        pass
+                    await context.bot.send_photo(chat_id=query.message.chat_id, photo=images[0], caption=text,
+                                                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
             else:
-                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-        except:
+                await self.cleanup_albums(user_id, context, query.message.chat_id)
+                try:
+                    await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard),
+                                                  parse_mode="HTML")
+                except:
+                    pass
+        except Exception as e:
+            logger.error(f"Помилка показу товару: {e}")
             pass
 
     async def handle_product_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1218,6 +1288,7 @@ class OnlineShopBot:
 
     # -------------------- CART --------------------
     async def show_cart(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         query = getattr(update, "callback_query", None)
         user_id = update.effective_user.id
         chat_id = update.effective_chat.id
@@ -2643,6 +2714,7 @@ class OnlineShopBot:
 
     # -------------------- ADMIN: PRODUCTS MANAGEMENT --------------------
     async def admin_categories_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         query = update.callback_query
         page = int(query.data.split("_")[-1]) if query and query.data.startswith("admin_cat_page_") and \
                                                  query.data.split("_")[-1].isdigit() else 1
@@ -2693,6 +2765,7 @@ class OnlineShopBot:
                                            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
             
     async def admin_products_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_override=None):
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         query = update.callback_query
         if category_override:
             category, page = category_override, 1
@@ -2820,15 +2893,30 @@ class OnlineShopBot:
         except:
             pass
 
-        if product['image_url']:
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
+
+        images = []
+        if 'images' in product.keys() and product['images']:
             try:
-                return await context.bot.send_photo(chat_id=update.effective_chat.id, photo=product['image_url'],
-                                                    caption=text, reply_markup=InlineKeyboardMarkup(keyboard),
-                                                    parse_mode=ParseMode.MARKDOWN)
+                images = json.loads(product['images'])
             except:
                 pass
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
-                                       reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        if not images and product['image_url']:
+            images = [product['image_url']]
+
+        if len(images) > 1:
+            media_group = [InputMediaPhoto(media=img, caption=text if i == 0 else "", parse_mode="MARKDOWN") for i, img
+                           in enumerate(images[:10])]
+            sent_msgs = await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
+            self.user_states.setdefault(update.effective_user.id, {})['album_msgs'] = [m.message_id for m in sent_msgs]
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=self.get_text('choose_action'),
+                                           reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        elif len(images) == 1:
+            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=images[0], caption=text,
+                                         reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        else:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=text,
+                                           reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
     # -------------------- ADMIN: ADD/EDIT/DELETE --------------------
     async def admin_add_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2910,20 +2998,32 @@ class OnlineShopBot:
 
         if not product: return await query.answer(self.get_text('product_not_found_2'))
 
-        has_image = bool(product['image_url'])
-        text = self.get_text('product_image_management', product_name=product['name'],
-                             status=self.get_text('admin_img_status_set') if has_image else self.get_text(
-                                 'admin_img_status_none'))
+        images_list = []
+        if 'images' in product.keys() and product['images']:
+            try:
+                images_list = json.loads(product['images'])
+            except:
+                pass
+        if not images_list and product['image_url']:
+            images_list = [product['image_url']]
+
+        photo_count = len(images_list)
+        if photo_count > 0:
+            status_text = self.get_text('admin_img_status_count', count=photo_count)
+        else:
+            status_text = self.get_text('admin_img_status_none')
+
+        text = self.get_text('product_image_management', product_name=product['name'], status=status_text)
 
         keyboard = []
-        if not has_image:
-            keyboard.append([InlineKeyboardButton(self.get_text('add_photo_button'),
-                                                  callback_data=f"admin_image_set_{product_id}")])
-        else:
-            keyboard.extend([[InlineKeyboardButton(self.get_text('change_photo_button'),
-                                                   callback_data=f"admin_image_set_{product_id}")],
-                             [InlineKeyboardButton(self.get_text('delete_photo_button'),
-                                                   callback_data=f"admin_image_delete_{product_id}")]])
+        if photo_count < 10:
+            keyboard.append([InlineKeyboardButton(
+                self.get_text('add_photo_button') if photo_count == 0 else self.get_text('add_more_photos_button'),
+                callback_data=f"admin_image_set_{product_id}")])
+        if photo_count > 0:
+            keyboard.append([InlineKeyboardButton(self.get_text('delete_all_photos_button'),
+                                                  callback_data=f"admin_image_delete_{product_id}")])
+
         keyboard.append(
             [InlineKeyboardButton(self.get_text('back_to_editing_button'), callback_data=f"admin_prod_{product_id}")])
 
@@ -2963,7 +3063,7 @@ class OnlineShopBot:
 
         product_id = int(match.group(1))
         cursor = self.conn.cursor()
-        cursor.execute("UPDATE products SET image_url = NULL WHERE id = ?", (product_id,))
+        cursor.execute("UPDATE products SET image_url = NULL, images = NULL WHERE id = ?", (product_id,))
         self.conn.commit()
         await query.answer(self.get_text('image_deleted'))
 
@@ -3195,11 +3295,35 @@ class OnlineShopBot:
             img = input_value if (is_photo or input_value.startswith('http')) else None
             if img or input_value == '-':
                 cursor = self.conn.cursor()
-                cursor.execute("UPDATE products SET image_url = ? WHERE id = ?",
-                               (None if input_value == '-' else img, state.get('product_id')))
+
+                images_list = []
+                if img:
+                    cursor.execute("SELECT images, image_url FROM products WHERE id = ?", (state.get('product_id'),))
+                    row = cursor.fetchone()
+                    if row:
+                        if row[0]:
+                            try:
+                                images_list = json.loads(row[0])
+                            except:
+                                pass
+                        elif row[1]:
+                            images_list = [row[1]]
+
+                    if len(images_list) < 10:
+                        images_list.append(img)
+
+                    cursor.execute("UPDATE products SET images = ?, image_url = ? WHERE id = ?",
+                                   (json.dumps(images_list), images_list[0] if images_list else None,
+                                    state.get('product_id')))
+
                 self.conn.commit()
                 self.user_states.pop(user_id, None)
-                await context.bot.send_message(chat_id=chat_id, text=self.get_text('admin_img_status_set'),
+
+                count = len(images_list) if img else 0
+                success_text = self.get_text('photo_added_to_album', count=count) if img else self.get_text(
+                    'admin_img_status_set')
+
+                await context.bot.send_message(chat_id=chat_id, text=success_text,
                                                reply_markup=InlineKeyboardMarkup(
                                                    [[InlineKeyboardButton(self.get_text('back_button_3'),
                                                                           callback_data=f"admin_prod_{state.get('product_id')}")]]),

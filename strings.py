@@ -394,6 +394,12 @@ STRINGS = {
         'search_prompt': "🔍 <b>Пошук товару</b>\n\nВведіть назву товару або ключове слово:",
         'search_results_header': "🔍 <b>Результати пошуку:</b> {query}\n\n",
         'no_search_results': "На жаль, за запитом <b>{query}</b> нічого не знайдено. 😔",
+
+        'choose_action': "👇 Оберіть дію:",
+        'photo_added_to_album': "✅ Фото додано до альбому ({count}/10)",
+        'admin_img_status_count': "✅ Завантажено ({count} фото)",
+        'add_more_photos_button': "➕ Додати ще фото",
+        'delete_all_photos_button': "🗑 Видалити всі фото",
     },
 
     'INTERNATIONAL': {
@@ -790,6 +796,12 @@ STRINGS = {
         'search_prompt': "🔍 <b>Search for a product</b>\n\nEnter a product name or keyword:",
         'search_results_header': "🔍 <b>Search results:</b> {query}\n\n",
         'no_search_results': "Sorry, nothing was found for <b>{query}</b>. 😔",
+
+        'choose_action': "👇 Choose an action:",
+        'photo_added_to_album': "✅ Photo added to album ({count}/10)",
+        'admin_img_status_count': "✅ Uploaded ({count} photos)",
+        'add_more_photos_button': "➕ Add more photos",
+        'delete_all_photos_button': "🗑 Delete all photos",
 
     }
 }
