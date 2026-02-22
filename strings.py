@@ -1,10 +1,16 @@
 STRINGS = {
     'UKRAINE': {
-        # --- ЗАГАЛЬНІ КНОПКИ ТА ЕЛЕМЕНТИ ---
+        # ==========================================
+        # 1. ЗАГАЛЬНІ КНОПКИ ТА ЕЛЕМЕНТИ
+        # ==========================================
         'cancel_button': "❌ Скасувати",
+        'cancel_button_2': "Скасувати",
+        'cancel_button_3': "❌ Скасувати",
         'back_button': "⬅️ Назад",
         'back_button_2': "⬅️ Назад",
         'back_button_3': "⬅️ Назад",
+        'back_to_catalog_button': "🛍 Продовжити покупки",
+        'back_to_catalog_button_2': "📁 До категорій",
         'main_menu_button': "🏠 Головне меню",
         'main_menu_button_3': "🏠 Головне меню",
         'next_button': "Вперед ➡️",
@@ -16,10 +22,13 @@ STRINGS = {
         'unknown': "Невідомо",
         'no_data': "Немає даних",
         'not_specified_dash': "—",
-        'payment_unknown': "Невідомо",
         'unit_pcs': "шт.",
+        'choose_action': "👇 Оберіть дію:",
+        'payment_unknown': "Невідомо",
 
-        # --- СИСТЕМНІ ПОВІДОМЛЕННЯ ТА ПОМИЛКИ ---
+        # ==========================================
+        # 2. СИСТЕМНІ ПОВІДОМЛЕННЯ ТА ПОМИЛКИ
+        # ==========================================
         'use_start': "Введіть /start, щоб почати.",
         'session_expired': "⏳ Час сесії минув або дані не знайдені.",
         'user_blocked': "🚫 Ваш доступ до бота обмежено.",
@@ -29,22 +38,25 @@ STRINGS = {
         'error_parsing_data': "❌ Помилка розбору даних.",
         'error_parsing_category': "❌ Помилка завантаження категорії.",
         'error_handler': "😔 Виникла технічна помилка. Спробуйте пізніше.",
+        'error_db': "❌ Помилка БД: {e}",
+        'error_photo_required': "❌ Це не фото. Надішліть фотографію або `-`.",
         'invalid_request': "❌ Некоректний запит.",
         'invalid_request_2': "❌ Некоректний запит.",
         'invalid_action': "❌ Невідома дія.",
         'cancelled': "Дію скасовано",
-
-        # --- ПОМИЛКИ ВВОДУ (АДМІН ТА КЛІЄНТ) ---
         'err_invalid_name': "❌ <b>Неправильний формат!</b>\n\nВведіть повністю ПІБ (Прізвище, Ім'я, По батькові).\n\n<b>Приклад:</b> <i>Шевченко Тарас Григорович</i>",
         'err_invalid_email': "❌ <b>Неправильний email!</b>\n\nВведіть коректну електронну адресу.\n\n<b>Приклад:</b> <i>user@gmail.com</i>",
         'err_invalid_phone': "❌ <b>Неправильний номер телефону!</b>\n\nФормат: +380...\n\n<b>Приклад:</b> <i>+380501234567</i>",
         'err_invalid_address': "❌ <b>Неправильний формат!</b>\n\nВведіть Місто, назву пошти та номер відділення.\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
+        'err_invalid_address_int': "❌ <b>Неправильний формат!</b>\n\nВведіть Місто, назву пошти та номер відділення.\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
         'err_invalid_number': "❌ <b>Помилка!</b>\nВведіть коректне число.\n\n<b>Приклад:</b> <code>{ex_val}</code>",
         'err_variant_format': "❌ <b>Неправильний формат варіантів!</b>\n\nУведено: {val}\nДотримуйтесь формату: Тип:Опція=К-сть=Ціна",
         'err_invalid_discount': "❌ <b>Неправильний формат знижки!</b>\n\nОчікується ціле число від 1 до 99.\n\n<b>Приклад:</b> <code>15</code>",
         'err_invalid_uses': "❌ <b>Неправильний формат кількості!</b>\n\nОчікується ціле число більше 0.\n\n<b>Приклад:</b> <code>100</code>",
 
-        # --- МЕНЮ КОРИСТУВАЧА ---
+        # ==========================================
+        # 3. ГОЛОВНЕ МЕНЮ ТА НАВІГАЦІЯ
+        # ==========================================
         'product_catalog_button': "🛍 Каталог",
         'my_cart': "🛒 Кошик",
         'my_cart_count': "🛒 Кошик ({cart_count})",
@@ -53,14 +65,15 @@ STRINGS = {
         'my_profile_button': "👤 Мій профіль",
         'help_button': "💬 Підтримка",
 
-        # --- КАТАЛОГ ТА ТОВАРИ ---
+        # ==========================================
+        # 4. КАТАЛОГ, ПОШУК ТА ТОВАРИ
+        # ==========================================
         'catalog_empty': "Каталог наразі порожній. 😔",
         'product_catalog': "🛍 <b>Каталог товарів</b>\n",
         'page_indicator': " (Стор. {page}/{total_pages})\n",
         'select_category': "\nОберіть категорію:",
         'no_products_yet': "Тут поки що немає товарів.",
         'category_header': "📂 <b>{category}</b> (Стор. {prod_page}/{total_pages})\n\n",
-        'back_to_catalog_button_2': "📁 До категорій",
         'price_from': "Від {price}",
         'in_stock': "✅ В наявності",
         'low_stock': "⚠️ Залишилось {stock} шт.",
@@ -70,15 +83,20 @@ STRINGS = {
         'variant_display': "▫️ {v_type}: {opt_list}\n",
         'cart_button': "Додати в кошик 🛒",
         'cart_button_count': "У кошику ({in_cart}) 🛒",
-
-        # --- ВИБІР ВАРІАНТІВ ---
         'select_variant': "Оберіть <b>{current_key}</b>:",
         'added_to_cart': "✅ Додано в кошик",
         'limit_reached': "Більше немає в наявності (Макс: {limit})",
         'stock_limit': "На складі лише {limit} шт.",
         'product_not_found': "Товар не знайдено.",
+        'search_button': "🔍 Пошук",
+        'search_prompt': "🔍 <b>Пошук товару</b>\n\nВведіть назву товару або ключове слово:",
+        'search_results_header': "🔍 <b>Результати пошуку:</b> {query}\n\n",
+        'no_search_results': "На жаль, за запитом <b>{query}</b> нічого не знайдено. 😔",
+        'photo_added_to_album': "✅ Фото додано до альбому ({count}/10)",
 
-        # --- КОШИК ---
+        # ==========================================
+        # 5. КОШИК ТА ПРОМОКОДИ
+        # ==========================================
         'cart_empty': "Ваш кошик порожній 🛒",
         'cart_empty_2': "Товар видалено з кошика.",
         'cart_empty_3': "Ваш кошик порожній.",
@@ -95,33 +113,13 @@ STRINGS = {
         'checkout_button': "✅ Оформити замовлення",
         'clear_cart_button': "🗑 Очистити кошик",
         'cart_cleared': "Кошик очищено ({items_count} позицій).",
-        'back_to_catalog_button': "🛍 Продовжити покупки",
 
-        # --- ПРОФІЛЬ ---
-        'profile_details': "👤 <b>Ваш профіль</b>\n\nІм'я: {name}\nEmail: {email}\n{shipping_label}: {address}\nТелефон: {phone}",
-        'shipping_label_ukraine': "Доставка",
-        'shipping_label_profile_ukraine': "Доставка",
-        'edit_name_button': "✏️ Змінити ім'я",
-        'edit_email_button': "📧 Змінити Email",
-        'edit_shipping_info_button': "📍 Змінити адресу",
-        'edit_phone_button': "📱 Змінити телефон",
-        'delete_data_button': "🗑 Видалити дані",
-        'enter_full_name': "👤 Введіть ваше <b>ПІБ (Прізвище, Ім'я, По батькові)</b>:\n\n<b>Приклад:</b> <i>Шевченко Тарас Григорович</i>",
-        'enter_email': "📧 Введіть ваш <b>Email</b>:\n\n<b>Приклад:</b> <i>user@gmail.com</i>",
-        'enter_address_ukraine': "📍 Введіть ваше <b>Місто, пошту та номер відділення</b>:\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
-        'enter_phone': "📱 Введіть ваш <b>Номер телефону</b>:\n\n<b>Формат:</b> +380...\n\n<i>Приклад: {example}</i>",
-        'ex_phone': "+380501234567",
-        'profile_delete_title': "🗑 <b>Які дані ви хочете видалити?</b>",
-        'delete_name_btn': "Ім'я",
-        'delete_email_btn': "Email",
-        'delete_shipping_ukr_btn': "Адресу доставки",
-        'delete_phone_btn': "Телефон",
-        'back_to_profile_btn': "⬅️ Назад до профілю",
-        'data_deleted': "✅ Дані ({display_name}) видалено.",
-
-        # --- ЧЕКАУТ (ОФОРМЛЕННЯ ЗАМОВЛЕННЯ) ---
+        # ==========================================
+        # 6. ОФОРМЛЕННЯ ЗАМОВЛЕННЯ ТА ОПЛАТА
+        # ==========================================
         'checkout_step_1': "🛍 <b>Оформлення замовлення</b>\n\nМи знайшли ваші збережені дані. Використати їх для швидкого оформлення?",
         'use_profile_data_button': "✅ Так, використати мій профіль",
+        'enter_manually_button': "✍️ Ввести дані вручну",
         'back_to_cart_button': "🛒 Назад до кошика",
         'cancel_order_button': "❌ Скасувати",
         'loading_profile_data': "Завантажуємо дані...",
@@ -130,15 +128,14 @@ STRINGS = {
         'checkout_step_1_of_4': "Крок 1/{total_steps}: Введіть ваше <b>ПІБ (Прізвище, Ім'я, По батькові)</b>.\n\n<b>Приклад:</b> <i>Шевченко Тарас Григорович</i>",
         'checkout_step_2_of_4': "Крок 2/{total_steps}: Введіть ваш <b>Email</b>.\n\n<b>Приклад:</b> <i>user@gmail.com</i>",
         'checkout_step_3_of_4_ukraine': "Крок 3/{total_steps}: Введіть ваше <b>Місто, пошту та номер відділення</b>.\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
+        'checkout_step_3_of_4_international': "Крок 3/{total_steps}: Введіть ваше <b>Місто, пошту та номер відділення</b>.\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
         'checkout_step_4_of_4': "Крок 4/{total_steps}: Введіть ваш <b>Номер телефону</b>.\n\n<b>Приклад:</b> <i>{example}</i>",
-
         'confirm_details': "🔍 <b>Підтвердьте ваші дані:</b>\n\n👤 <b>Ім'я:</b> {full_name}\n📧 <b>Email:</b> {email}\n📍 <b>Доставка:</b> {address}\n📱 <b>Телефон:</b> {phone}",
         'summary_edit_name_btn': "👤 ПІБ",
         'summary_edit_email_btn': "📧 Email",
         'summary_edit_address_btn': "📍 Доставка",
         'summary_edit_phone_btn': "📱 Телефон",
         'summary_confirm_btn': "✅ Усе правильно, перейти до оплати",
-
         'edit_field_title': "Редагування: {field}",
         'current_value_label': "Поточне значення:",
         'example_label': "Приклад:",
@@ -151,9 +148,8 @@ STRINGS = {
         'ex_email': "<i>user@gmail.com</i>",
         'ex_address': "<i>Київ, Нова Пошта 15</i>",
         'back_to_summary_btn': "⬅️ Назад до перевірки",
-
-        # --- ОПЛАТА ---
         'payment_step_header_ukraine': "💳 <b>Оберіть спосіб оплати:</b>",
+        'payment_step_header_int': "💳 <b>Оберіть спосіб оплати:</b>",
         'method_cod': "Оплата при отриманні (Накладений платіж)",
         'method_card_courier': "Переказ на картку (Реквізити)",
         'method_online_card': "Оплатити онлайн (Картка/Apple Pay)",
@@ -165,13 +161,47 @@ STRINGS = {
         'invoice_creation_error': "❌ Виникла помилка при створенні рахунку. Спробуйте інший спосіб.",
         'order_cancelled_2': "Оформлення скасовано.",
         'order_failed_cart_empty': "❌ Ваше замовлення не створено, кошик порожній.",
-
-        # Чек без дублювання номера замовлення
         'receipt': "📅 {date}\n👤 {bold_start}Клієнт:{bold_end} {user_name}\n📧 {bold_start}Email:{bold_end} {email}\n📱 {bold_start}Телефон:{bold_end} {phone}\n📍 {bold_start}Доставка:{bold_end} {address}\n💳 {bold_start}Оплата:{bold_end} {payment}\n\n📦 {bold_start}Товари:{bold_end}\n{products_text}\n{bold_start}Разом до сплати: {total}{symbol}{bold_end}",
         'receipt_discount': "🎟 <b>Знижка:</b> -{amount}{symbol}\n",
         'order_promo_info': "\n🎟 <b>Промокод:</b> <code>{code}</code>\n",
 
-        # --- ІСТОРІЯ ЗАМОВЛЕНЬ ---
+        # ==========================================
+        # 7. ПРОФІЛЬ ТА ІСТОРІЯ ЗАМОВЛЕНЬ
+        # ==========================================
+        'profile_details': "👤 <b>Ваш профіль</b>\n\nІм'я: {name}\nEmail: {email}\n{shipping_label}: {address}\nТелефон: {phone}",
+        'shipping_label_ukraine': "Доставка",
+        'shipping_label_international': "Доставка",
+        'shipping_label_profile_ukraine': "Доставка",
+        'shipping_label_profile_international': "Доставка",
+        'edit_name_button': "✏️ Змінити ім'я",
+        'edit_email_button': "📧 Змінити Email",
+        'edit_shipping_info_button': "📍 Змінити адресу",
+        'edit_phone_button': "📱 Змінити телефон",
+        'delete_data_button': "🗑 Видалити дані",
+        'enter_full_name': "👤 Введіть ваше <b>ПІБ (Прізвище, Ім'я, По батькові)</b>:\n\n<b>Приклад:</b> <i>Шевченко Тарас Григорович</i>",
+        'enter_email': "📧 Введіть ваш <b>Email</b>:\n\n<b>Приклад:</b> <i>user@gmail.com</i>",
+        'enter_address_ukraine': "📍 Введіть ваше <b>Місто, пошту та номер відділення</b>:\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
+        'enter_address_international': "📍 Введіть ваше <b>Місто, пошту та номер відділення</b>:\n\n<b>Приклад:</b> <i>Київ, Нова Пошта 15</i>",
+        'enter_phone': "📱 Введіть ваш <b>Номер телефону</b>:\n\n<b>Формат:</b> +380...\n\n<i>Приклад: {example}</i>",
+        'ex_phone': "+380501234567",
+        'profile_delete_title': "🗑 <b>Які дані ви хочете видалити?</b>",
+        'delete_name_btn': "Ім'я",
+        'delete_email_btn': "Email",
+        'delete_shipping_ukr_btn': "Адресу доставки",
+        'delete_shipping_int_btn': "Адресу доставки",
+        'delete_phone_btn': "Телефон",
+        'back_to_profile_btn': "⬅️ Назад до профілю",
+        'data_deleted': "✅ Дані ({display_name}) видалено.",
+        'missing_fields_info': "⚠️ <b>Увага:</b> Заповніть {missing_labels} у профілі, щоб {promo}",
+        'welcome_promo_1': "робити покупки швидше!",
+        'welcome_promo_2': "швидше оформляти замовлення!",
+        'welcome_promo_3': "отримувати персональні знижки!",
+        'welcome_promo_4': "мати повний доступ до всіх функцій!",
+        'missing_name': "Ім'я",
+        'missing_email': "Email",
+        'missing_phone': "Телефон",
+        'missing_address_ukraine': "Доставка",
+        'missing_address_international': "Адресу доставки",
         'no_orders_yet': "У вас ще немає замовлень.",
         'your_orders_header': "📦 <b>Ваші замовлення</b> (Стор. {page}/{total_pages})\n\n",
         'order_items': "Товари",
@@ -185,15 +215,15 @@ STRINGS = {
         'order_already_delivered_or_canceled': "Замовлення вже виконано або скасовано.",
         'customer_canceled_order': "🚨 Клієнт скасував замовлення #{order_id}.",
         'order_canceled': "Замовлення скасовано.",
-
-        # --- СТАТУСИ ЗАМОВЛЕННЯ ---
         'status_pending': "🟡 В обробці",
         'status_confirmed': "🔵 Підтверджено",
         'status_shipped': "🟠 Відправлено",
         'status_delivered': "🟢 Доставлено",
         'status_cancelled': "🔴 Скасовано",
 
-        # --- АДМІН-ПАНЕЛЬ ---
+        # ==========================================
+        # 8. АДМІН-ПАНЕЛЬ: ГОЛОВНЕ ТА СТАТИСТИКА
+        # ==========================================
         'admin_welcome': "👋 Вітаю, Адміне {safe_name}!\n\nКеруй магазином нижче 👇",
         'admin_panel_button': "⚙️ Адмін-панель",
         'admin_panel_header': "⚙️ *Панель адміністратора*\nОберіть розділ для керування:",
@@ -202,21 +232,20 @@ STRINGS = {
         'stats_button': "📊 Статистика",
         'revenue_button': "💰 Доходи",
         'users_button': "👥 Користувачі",
+        'admin_stats_text': "📊 <b>Статистика магазину</b>\n\n💰 <b>Загальний дохід:</b> {total_revenue}₴\n📦 <b>Всього замовлень:</b> {total_orders}\n⏳ <b>Очікують підтвердження:</b> {pending_orders}\n👥 <b>Користувачів у боті:</b> {total_users}\n🛍 <b>Активних покупців:</b> {active_buyers}\n\n🏆 <b>Топ товарів:</b>\n{top_text}\n\n📉 <b>Найменше продаються:</b>\n{bottom_text}",
+        'financial_report': "💰 <b>Фінансовий звіт ({label})</b>\n\n💵 <b>Оплачено:</b> {total_rev}₴\n🧾 <b>К-сть замовлень:</b> {total_orders}\n📊 <b>Середній чек:</b> {avg_check}₴\n⏳ <b>В очікуванні:</b> {pending_rev}₴",
+        'today': "Сьогодні",
+        'last_7_days': "Останні 7 днів",
+        'last_30_days': "Останні 30 днів",
+        'all_time': "За весь час",
+        'today_button': "Сьогодні",
+        'week_button': "Тиждень",
+        'month_button': "Місяць",
+        'all_time_button': "Весь час",
 
-        # --- АДМІН: ЗАМОВЛЕННЯ ---
-        'no_orders_in_db': "В базі ще немає замовлень.",
-        'all_orders_header': "📦 <b>Всі замовлення</b> (Стор. {page}/{total_pages})\n\n",
-        'details_button_2': "Деталі #{order_id}",
-        'back_to_admin_button': "🔙️ В панель",
-        'confirm_button': "Підтвердити",
-        'sent_button': "Відправити",
-        'delivered_button': "Доставлено",
-        'cancel_button_2': "Скасувати",
-        'back_to_all_orders_button': "🔙 Всі замовлення",
-        'status_updated': "✅ Статус змінено на: {new_status}",
-        'order_update_notification_ukraine': "🔔 <b>Статус замовлення #{order_id} оновлено!</b>\n\nНовий статус: <b>{display_status}</b>",
-
-        # --- АДМІН: ТОВАРИ ---
+        # ==========================================
+        # 9. АДМІН-ПАНЕЛЬ: КЕРУВАННЯ ТОВАРАМИ
+        # ==========================================
         'product_management_header': "🛍 *Керування товарами*\n",
         'page_indicator_2': "(Стор. {page}/{total_pages})\n",
         'select_category_to_edit': "Виберіть категорію:",
@@ -238,8 +267,6 @@ STRINGS = {
         'edit_variants_button': "🔀 Варіанти",
         'delete_product_button': "🗑 Видалити товар",
         'back_to_list_button_2': "⬅️ Назад до списку",
-
-        # --- АДМІН: ДОДАВАННЯ ТА РЕДАГУВАННЯ ТОВАРУ ---
         'adding_new_product_name': "🆕 *Додавання товару*\nВведіть назву товару:",
         'enter_product_description': "Введіть опис товару:",
         'choose_product_type': "Оберіть тип товару:",
@@ -250,7 +277,6 @@ STRINGS = {
         'enter_category': "Введіть категорію або оберіть зі списку:",
         'enter_emoji': "Введіть емодзі для товару (наприклад: 👟):",
         'admin_wizard_variant_photo': "Надішліть фото товару (або надішліть `-` для пропуску):",
-        'error_photo_required': "❌ Це не фото. Надішліть фотографію або `-`.",
         'product_created': "✅ Товар <b>{name}</b> успішно додано!",
         'product_created_2': "✅ Товар <b>{name}</b> з варіантами збережено!",
         'editing_variants_instructions': "<b>Редагування варіантів</b>\nПоточні: {current_text}\n\nВведіть нові варіанти у форматі:\n<code>Тип:Опція1=Кількість=Ціна, Опція2=Кількість=Ціна</code>\n\n<i>Приклад: Size:S=10=1200, M=5=1300</i>\nАбо надішліть <code>{{}}</code> щоб видалити всі варіанти.",
@@ -262,9 +288,6 @@ STRINGS = {
         'variants': "Варіанти",
         'ex_price_val': "1250",
         'ex_stock_val': "10",
-        'error_db': "❌ Помилка БД: {e}",
-
-        # --- АДМІН: ВАРІАНТИ ТОВАРУ ---
         'active_variant_label': "🔸 Активний тип: ",
         'admin_wizard_variant_title': "🔀 <b>Налаштування варіантів</b>\n{added_info}Оберіть тип варіанту для додавання або натисніть 'Завершити'.",
         'size_variant': "Розмір",
@@ -303,14 +326,15 @@ STRINGS = {
         'variant_error_title': "❌ <b>Помилка формату для {v_type}</b>",
         'variant_error_msg': "Переконайтеся, що ви використовуєте формат Назва=Кількість=Ціна.",
         'variant_example_label': "Приклад:",
-
-        # --- АДМІН: ФОТО ТА ВИДАЛЕННЯ ---
         'product_image_management': "🖼 <b>Фото товару:</b> {product_name}\nСтатус: {status}",
         'admin_img_status_set': "✅ Встановлено",
         'admin_img_status_none': "❌ Немає",
+        'admin_img_status_count': "✅ Завантажено ({count} фото)",
         'add_photo_button': "➕ Додати фото",
+        'add_more_photos_button': "➕ Додати ще фото",
         'change_photo_button': "🔄 Змінити фото",
         'delete_photo_button': "🗑 Видалити фото",
+        'delete_all_photos_button': "🗑 Видалити всі фото",
         'back_to_editing_button': "⬅️ До редагування",
         'send_product_image': "Надішліть нове фото для товару (або посилання):",
         'cancel_button_3': "❌ Скасувати",
@@ -320,20 +344,26 @@ STRINGS = {
         'yes_delete_button': "✅ Так, видалити",
         'product_already_deleted': "Товар вже видалено.",
         'product_deleted': "✅ Товар *{name}* видалено.",
+        'prod_name': "Назва",
+        'new_settings': "нові налаштування",
+        'success_updated': "✅ <b>{field}</b> успішно оновлено на:\n<code>{val}</code>",
+        'alert_has_variants': "⚠️ Цей товар має варіанти!\nЗмінюйте ціну та наявність у розділі '🔀 Варіанти'.",
 
-        # --- АДМІН: СТАТИСТИКА ТА ДОХОДИ ---
-        'admin_stats_text': "📊 <b>Статистика магазину</b>\n\n💰 <b>Загальний дохід:</b> {total_revenue}₴\n📦 <b>Всього замовлень:</b> {total_orders}\n⏳ <b>Очікують підтвердження:</b> {pending_orders}\n👥 <b>Користувачів у боті:</b> {total_users}\n🛍 <b>Активних покупців:</b> {active_buyers}\n\n🏆 <b>Топ товарів:</b>\n{top_text}\n\n📉 <b>Найменше продаються:</b>\n{bottom_text}",
-        'financial_report': "💰 <b>Фінансовий звіт ({label})</b>\n\n💵 <b>Оплачено:</b> {total_rev}₴\n🧾 <b>К-сть замовлень:</b> {total_orders}\n📊 <b>Середній чек:</b> {avg_check}₴\n⏳ <b>В очікуванні:</b> {pending_rev}₴",
-        'today': "Сьогодні",
-        'last_7_days': "Останні 7 днів",
-        'last_30_days': "Останні 30 днів",
-        'all_time': "За весь час",
-        'today_button': "Сьогодні",
-        'week_button': "Тиждень",
-        'month_button': "Місяць",
-        'all_time_button': "Весь час",
-
-        # --- АДМІН: КОРИСТУВАЧІ ТА РОЗСИЛКА ---
+        # ==========================================
+        # 10. АДМІН-ПАНЕЛЬ: ЗАМОВЛЕННЯ, КОРИСТУВАЧІ ТА ПРОМО
+        # ==========================================
+        'no_orders_in_db': "В базі ще немає замовлень.",
+        'all_orders_header': "📦 <b>Всі замовлення</b> (Стор. {page}/{total_pages})\n\n",
+        'details_button_2': "Деталі #{order_id}",
+        'back_to_admin_button': "🔙️ В панель",
+        'confirm_button': "Підтвердити",
+        'sent_button': "Відправити",
+        'delivered_button': "Доставлено",
+        'cancel_button_2': "Скасувати",
+        'back_to_all_orders_button': "🔙 Всі замовлення",
+        'status_updated': "✅ Статус змінено на: {new_status}",
+        'order_update_notification_ukraine': "🔔 <b>Статус замовлення #{order_id} оновлено!</b>\n\nНовий статус: <b>{display_status}</b>",
+        'order_update_notification_international': "🔔 <b>Статус замовлення #{order_id} оновлено!</b>\n\nНовий статус: <b>{display_status}</b>",
         'user_management_header': "👥 *Користувачі* (Стор. {page}/{total_pages})\nВсього: {total_users}\n",
         'user_display': "{user_display}",
         'user_id': "ID: {user_id}",
@@ -344,8 +374,6 @@ STRINGS = {
         'admin_broadcast_prompt': "📢 <b>Розсилка всім користувачам</b>\n\nНадішліть повідомлення (текст, фото або відео), яке отримають всі клієнти бота або натисніть Скасувати.",
         'admin_broadcast_started': "⏳ Розсилка розпочалася. Це може зайняти деякий час...",
         'admin_broadcast_finished': "✅ <b>Розсилку завершено!</b>\n\nУспішно доставлено: {success}\nЗаблокували бота: {failed}",
-
-        # --- АДМІН: ПРОМОКОДИ ---
         'admin_promo_button': "🎟 Промокоди",
         'admin_promo_menu': "🎟 <b>Керування промокодами</b>\n\nАктивні промокоди:\n{promo_list}\n\nВиберіть дію:",
         'promo_no_active': "Немає активних промокодов",
@@ -364,50 +392,28 @@ STRINGS = {
         'admin_promo_del_select': "🎟 <b>Видалення промокоду</b>\n\nВиберіть промокод для видалення:",
         'admin_promo_deleted': "🗑 Промокод <b>{code}</b> видалено!",
         'admin_promo_not_found': "❌ Промокод не знайдено.",
-
-        # --- НОВІ ЗАМОВЛЕННЯ ДЛЯ АДМІНА ---
         'new_order_notification_ukraine': "🔔 <b>НОВЕ ЗАМОВЛЕННЯ!</b>",
+        'new_order_notification_international': "🔔 <b>НОВЕ ЗАМОВЛЕННЯ!</b>",
         'delivery_notification_ukraine': "Адреса",
+        'delivery_notification_international': "Адреса",
         'payment_notification_ukraine': "Оплата",
+        'payment_notification_international': "Оплата",
         'admin_new_order_notification': "{region_header}\n🧾 Замовлення #{order_id}\n\n👤 <b>Клієнт:</b> {full_name}\n📱 <b>Телефон:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{items_str}\n💰 <b>Сума:</b> {total_amount}₴",
-        'failed_to_notify_admin': "Failed to send order notification to admin {admin}: {e}",
-
-        # --- СИСТЕМНІ ПРОМО / ПРОФІЛЬ ---
-        'missing_fields_info': "⚠️ <b>Увага:</b> Заповніть {missing_labels} у профілі, щоб {promo}",
-        'welcome_promo_1': "робити покупки швидше!",
-        'welcome_promo_2': "швидше оформляти замовлення!",
-        'welcome_promo_3': "отримувати персональні знижки!",
-        'welcome_promo_4': "мати повний доступ до всіх функцій!",
-        'missing_name': "Ім'я",
-        'missing_email': "Email",
-        'missing_phone': "Телефон",
-        'missing_address_ukraine': "Доставка",
-        'missing_address_international': "Адресу доставки",
-
-        'prod_name': "Назва",
-        'new_settings': "нові налаштування",
-        'success_updated': "✅ <b>{field}</b> успішно оновлено на:\n<code>{val}</code>",
-        'alert_has_variants': "⚠️ Цей товар має варіанти!\nЗмінюйте ціну та наявність у розділі '🔀 Варіанти'.",
-        'enter_manually_button': "✍️ Ввести дані вручну",
-
-        'search_button': "🔍 Пошук",
-        'search_prompt': "🔍 <b>Пошук товару</b>\n\nВведіть назву товару або ключове слово:",
-        'search_results_header': "🔍 <b>Результати пошуку:</b> {query}\n\n",
-        'no_search_results': "На жаль, за запитом <b>{query}</b> нічого не знайдено. 😔",
-
-        'choose_action': "👇 Оберіть дію:",
-        'photo_added_to_album': "✅ Фото додано до альбому ({count}/10)",
-        'admin_img_status_count': "✅ Завантажено ({count} фото)",
-        'add_more_photos_button': "➕ Додати ще фото",
-        'delete_all_photos_button': "🗑 Видалити всі фото",
+        'failed_to_notify_admin': "Failed to send order notification to admin {admin}: {e}"
     },
 
     'INTERNATIONAL': {
-        # --- GENERAL BUTTONS AND ELEMENTS ---
+        # ==========================================
+        # 1. GENERAL BUTTONS & ELEMENTS
+        # ==========================================
         'cancel_button': "❌ Cancel",
+        'cancel_button_2': "Cancel",
+        'cancel_button_3': "❌ Cancel",
         'back_button': "⬅️ Back",
         'back_button_2': "⬅️ Back",
         'back_button_3': "⬅️ Back",
+        'back_to_catalog_button': "🛍 Continue Shopping",
+        'back_to_catalog_button_2': "📁 To Categories",
         'main_menu_button': "🏠 Main Menu",
         'main_menu_button_3': "🏠 Main Menu",
         'next_button': "Next ➡️",
@@ -419,10 +425,13 @@ STRINGS = {
         'unknown': "Unknown",
         'no_data': "No data",
         'not_specified_dash': "—",
-        'payment_unknown': "Unknown",
         'unit_pcs': "pcs",
+        'choose_action': "👇 Choose an action:",
+        'payment_unknown': "Unknown",
 
-        # --- SYSTEM MESSAGES AND ERRORS ---
+        # ==========================================
+        # 2. SYSTEM MESSAGES & ERRORS
+        # ==========================================
         'use_start': "Type /start to begin.",
         'session_expired': "⏳ Session expired or data not found.",
         'user_blocked': "🚫 Your access is restricted.",
@@ -432,22 +441,25 @@ STRINGS = {
         'error_parsing_data': "❌ Error parsing data.",
         'error_parsing_category': "❌ Error loading category.",
         'error_handler': "😔 Technical error occurred. Try later.",
+        'error_db': "❌ DB Error: {e}",
+        'error_photo_required': "❌ Not a photo. Send a photo or `-`.",
         'invalid_request': "❌ Invalid request.",
         'invalid_request_2': "❌ Invalid request.",
         'invalid_action': "❌ Unknown action.",
         'cancelled': "Action cancelled",
-
-        # --- INPUT ERRORS (ADMIN & CLIENT) ---
         'err_invalid_name': "❌ <b>Invalid name format!</b>\n\nEnter First and Last name.\n\n<b>Example:</b> <i>John Doe</i>",
         'err_invalid_email': "❌ <b>Invalid email!</b>\n\nEnter a correct email address.\n\n<b>Example:</b> <i>user@example.com</i>",
         'err_invalid_phone': "❌ <b>Invalid phone number!</b>\n\nFormat: +123...\n\n<b>Example:</b> <i>+1234567890</i>",
         'err_invalid_address': "❌ <b>Invalid address format!</b>\n\nEnter your <b>Full Shipping Address</b>Enter Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>:\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
+        'err_invalid_address_int': "❌ <b>Invalid address format!</b>\n\nEnter Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'err_invalid_number': "❌ <b>Error!</b>\n\nEnter a valid number.\n\n<b>Example:</b> <code>{ex_val}</code>",
         'err_variant_format': "❌ <b>Invalid variant format!</b>\n\nEntered: {val}\n\nFormat: Type:Option=Qty=Price",
         'err_invalid_discount': "❌ <b>Invalid discount format!</b>\n\nExpected integer between 1 and 99.\n\n<b>Example:</b> <code>15</code>",
         'err_invalid_uses': "❌ <b>Invalid quantity format!</b>\n\nExpected integer > 0.\n\n<b>Example:</b> <code>100</code>",
 
-        # --- USER MENU ---
+        # ==========================================
+        # 3. MAIN MENU & NAVIGATION
+        # ==========================================
         'product_catalog_button': "🛍 Catalog",
         'my_cart': "🛒 Cart",
         'my_cart_count': "🛒 Cart ({cart_count})",
@@ -456,14 +468,15 @@ STRINGS = {
         'my_profile_button': "👤 My Profile",
         'help_button': "💬 Support",
 
-        # --- CATALOG & PRODUCTS ---
+        # ==========================================
+        # 4. CATALOG, SEARCH & PRODUCTS
+        # ==========================================
         'catalog_empty': "Catalog is currently empty. 😔",
         'product_catalog': "🛍 <b>Product Catalog</b>\n",
         'page_indicator': " (Page {page}/{total_pages})\n",
         'select_category': "\nSelect category:",
         'no_products_yet': "No products here yet.",
         'category_header': "📂 <b>{category}</b> (Page {prod_page}/{total_pages})\n\n",
-        'back_to_catalog_button_2': "📁 To Categories",
         'price_from': "From {price}",
         'in_stock': "✅ In stock",
         'low_stock': "⚠️ {stock} left",
@@ -473,15 +486,20 @@ STRINGS = {
         'variant_display': "▫️ {v_type}: {opt_list}\n",
         'cart_button': "Add to Cart 🛒",
         'cart_button_count': "In Cart ({in_cart}) 🛒",
-
-        # --- VARIANT SELECTION ---
         'select_variant': "Select <b>{current_key}</b>:",
         'added_to_cart': "✅ Added to cart",
         'limit_reached': "Not enough stock (Max: {limit})",
         'stock_limit': "Only {limit} in stock.",
         'product_not_found': "Product not found.",
+        'search_button': "🔍 Search",
+        'search_prompt': "🔍 <b>Search for a product</b>\n\nEnter a product name or keyword:",
+        'search_results_header': "🔍 <b>Search results:</b> {query}\n\n",
+        'no_search_results': "Sorry, nothing was found for <b>{query}</b>. 😔",
+        'photo_added_to_album': "✅ Photo added to album ({count}/10)",
 
-        # --- CART ---
+        # ==========================================
+        # 5. CART & PROMO CODES
+        # ==========================================
         'cart_empty': "Your cart is empty 🛒",
         'cart_empty_2': "Item removed from cart.",
         'cart_empty_3': "Your cart is empty.",
@@ -498,33 +516,13 @@ STRINGS = {
         'checkout_button': "✅ Checkout",
         'clear_cart_button': "🗑 Clear Cart",
         'cart_cleared': "Cart cleared ({items_count} items).",
-        'back_to_catalog_button': "🛍 Continue Shopping",
 
-        # --- PROFILE ---
-        'profile_details': "👤 <b>Your Profile</b>\n\nName: {name}\nEmail: {email}\n{shipping_label}: {address}\nPhone: {phone}",
-        'shipping_label_international': "Shipping Address",
-        'shipping_label_profile_international': "Shipping Address",
-        'edit_name_button': "✏️ Edit Name",
-        'edit_email_button': "📧 Edit Email",
-        'edit_shipping_info_button': "📍 Edit Address",
-        'edit_phone_button': "📱 Edit Phone",
-        'delete_data_button': "🗑 Delete Data",
-        'enter_full_name': "👤 Enter your <b>First and Last Name</b>:\n\n<b>Example:</b> <i>John Doe</i>",
-        'enter_email': "📧 Enter your <b>Email</b>:\n\n<b>Example:</b> <i>user@gmail.com</i>",
-        'enter_address_international': "📍 Enter your <b>Full Shipping Address</b>\n\nCountry, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>:\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
-        'enter_phone': "📱 Enter your <b>Phone Number</b>:\n\n<i>Example: {example}</i>",
-        'ex_phone': "+1234567890",
-        'profile_delete_title': "🗑 <b>Which data to delete?</b>",
-        'delete_name_btn': "Name",
-        'delete_email_btn': "Email",
-        'delete_shipping_int_btn': "Shipping Address",
-        'delete_phone_btn': "Phone",
-        'back_to_profile_btn': "🔙️ Back to Profile",
-        'data_deleted': "✅ Data ({display_name}) deleted.",
-
-        # --- CHECKOUT ---
+        # ==========================================
+        # 6. CHECKOUT & PAYMENT
+        # ==========================================
         'checkout_step_1': "🛍 <b>Checkout</b>\n\nWe found your saved data. Use it for quick checkout?",
         'use_profile_data_button': "✅ Yes, use profile data",
+        'enter_manually_button': "✍️ Enter manually",
         'back_to_cart_button': "🛒 Back to Cart",
         'cancel_order_button': "❌ Cancel",
         'loading_profile_data': "Loading data...",
@@ -532,16 +530,15 @@ STRINGS = {
         'checkout_header': "📝 <b>Checkout</b>\n\n",
         'checkout_step_1_of_4': "Step 1/{total_steps}: Enter your <b>First and Last Name</b>.\n\n<b>Example:</b> <i>John Doe</i>",
         'checkout_step_2_of_4': "Step 2/{total_steps}: Enter your <b>Email</b>.\n\n<b>Example:</b> <i>user@example.com</i>",
+        'checkout_step_3_of_4_ukraine': "Step 3/{total_steps}: Enter your <b>Full Shipping Address</b>.\n\n<b>Format:</b>Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'checkout_step_3_of_4_international': "Step 3/{total_steps}: Enter your <b>Full Shipping Address</b>.\n\n<b>Format:</b>Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'checkout_step_4_of_4': "Step 4/{total_steps}: Enter your <b>Phone Number</b>.\n\n<b>Example:</b> <i>{example}</i>",
-
         'confirm_details': "🔍 <b>Confirm your details:</b>\n\n👤 <b>Name:</b> {full_name}\n📧 <b>Email:</b> {email}\n📍 <b>Shipping:</b> {address}\n📱 <b>Phone:</b> {phone}",
         'summary_edit_name_btn': "👤 Name",
         'summary_edit_email_btn': "📧 Email",
         'summary_edit_address_btn': "📍 Shipping",
         'summary_edit_phone_btn': "📱 Phone",
         'summary_confirm_btn': "✅ Correct, proceed to payment",
-
         'edit_field_title': "Editing: {field}",
         'current_value_label': "Current value:",
         'example_label': "Example:",
@@ -554,9 +551,10 @@ STRINGS = {
         'ex_email': "<i>user@example.com</i>",
         'ex_address': "<i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
         'back_to_summary_btn': "🔙️ Back to Review",
-
-        # --- PAYMENT ---
+        'payment_step_header_ukraine': "💳 <b>Choose payment method:</b>",
         'payment_step_header_int': "💳 <b>Choose payment method:</b>",
+        'method_cod': "Cash on Delivery",
+        'method_card_courier': "Card transfer",
         'method_online_card': "Pay Online (Card/Apple Pay)",
         'invoice_desc': "Order Payment",
         'invoice_to_pay': "💰 To pay: {amount}{symbol}",
@@ -566,13 +564,47 @@ STRINGS = {
         'invoice_creation_error': "❌ Error creating invoice. Try another method.",
         'order_cancelled_2': "Checkout cancelled.",
         'order_failed_cart_empty': "❌ Order failed, cart is empty.",
-
-        # Receipt without duplicated Order #
         'receipt': "📅 {date}\n👤 {bold_start}Client:{bold_end} {user_name}\n📧 {bold_start}Email:{bold_end} {email}\n📱 {bold_start}Phone:{bold_end} {phone}\n📍 {bold_start}Shipping:{bold_end} {address}\n💳 {bold_start}Payment:{bold_end} {payment}\n\n📦 {bold_start}Items:{bold_end}\n{products_text}\n{bold_start}Total: {total}{symbol}{bold_end}",
         'receipt_discount': "🎟 <b>Discount:</b> -{amount}{symbol}\n",
         'order_promo_info': "\n🎟 <b>Promo code:</b> <code>{code}</code>\n",
 
-        # --- ORDER HISTORY ---
+        # ==========================================
+        # 7. PROFILE & ORDER HISTORY
+        # ==========================================
+        'profile_details': "👤 <b>Your Profile</b>\n\nName: {name}\nEmail: {email}\n{shipping_label}: {address}\nPhone: {phone}",
+        'shipping_label_ukraine': "Shipping Address",
+        'shipping_label_international': "Shipping Address",
+        'shipping_label_profile_ukraine': "Shipping Address",
+        'shipping_label_profile_international': "Shipping Address",
+        'edit_name_button': "✏️ Edit Name",
+        'edit_email_button': "📧 Edit Email",
+        'edit_shipping_info_button': "📍 Edit Address",
+        'edit_phone_button': "📱 Edit Phone",
+        'delete_data_button': "🗑 Delete Data",
+        'enter_full_name': "👤 Enter your <b>First and Last Name</b>:\n\n<b>Example:</b> <i>John Doe</i>",
+        'enter_email': "📧 Enter your <b>Email</b>:\n\n<b>Example:</b> <i>user@gmail.com</i>",
+        'enter_address_ukraine': "📍 Enter your <b>Full Shipping Address</b>\n\nCountry, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>:\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
+        'enter_address_international': "📍 Enter your <b>Full Shipping Address</b>\n\nCountry, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>:\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
+        'enter_phone': "📱 Enter your <b>Phone Number</b>:\n\n<i>Example: {example}</i>",
+        'ex_phone': "+1234567890",
+        'profile_delete_title': "🗑 <b>Which data to delete?</b>",
+        'delete_name_btn': "Name",
+        'delete_email_btn': "Email",
+        'delete_shipping_ukr_btn': "Shipping Address",
+        'delete_shipping_int_btn': "Shipping Address",
+        'delete_phone_btn': "Phone",
+        'back_to_profile_btn': "🔙️ Back to Profile",
+        'data_deleted': "✅ Data ({display_name}) deleted.",
+        'missing_fields_info': "⚠️ <b>Attention:</b> Fill in {missing_labels} in your profile to {promo}",
+        'welcome_promo_1': "shop faster!",
+        'welcome_promo_2': "checkout faster!",
+        'welcome_promo_3': "get personal discounts!",
+        'welcome_promo_4': "have full access to all features!",
+        'missing_name': "Name",
+        'missing_email': "Email",
+        'missing_phone': "Phone",
+        'missing_address_ukraine': "Shipping",
+        'missing_address_international': "Shipping Address",
         'no_orders_yet': "You have no orders yet.",
         'your_orders_header': "📦 <b>Your Orders</b> (Page {page}/{total_pages})\n\n",
         'order_items': "Items",
@@ -586,15 +618,15 @@ STRINGS = {
         'order_already_delivered_or_canceled': "Order already processed or cancelled.",
         'customer_canceled_order': "🚨 Client cancelled order #{order_id}.",
         'order_canceled': "Order cancelled.",
-
-        # --- ORDER STATUSES ---
         'status_pending': "🟡 Pending",
         'status_confirmed': "🔵 Confirmed",
         'status_shipped': "🟠 Shipped",
         'status_delivered': "🟢 Delivered",
         'status_cancelled': "🔴 Cancelled",
 
-        # --- ADMIN PANEL ---
+        # ==========================================
+        # 8. ADMIN PANEL: MAIN & STATS
+        # ==========================================
         'admin_welcome': "👋 Hello Admin {safe_name}!\n\nManage your store below 👇",
         'admin_panel_button': "⚙️ Admin Panel",
         'admin_panel_header': "⚙️ *Admin Panel*\nSelect section:",
@@ -603,21 +635,20 @@ STRINGS = {
         'stats_button': "📊 Statistics",
         'revenue_button': "💰 Revenue",
         'users_button': "👥 Users",
+        'admin_stats_text': "📊 <b>Store Stats</b>\n\n💰 <b>Revenue:</b> {total_revenue}$\n📦 <b>Orders:</b> {total_orders}\n⏳ <b>Pending:</b> {pending_orders}\n👥 <b>Users:</b> {total_users}\n🛍 <b>Buyers:</b> {active_buyers}\n\n🏆 <b>Top Items:</b>\n{top_text}\n\n📉 <b>Worst Items:</b>\n{bottom_text}",
+        'financial_report': "💰 <b>Report ({label})</b>\n\n💵 <b>Paid:</b> {total_rev}$\n🧾 <b>Orders:</b> {total_orders}\n📊 <b>Avg Check:</b> {avg_check}$\n⏳ <b>Pending:</b> {pending_rev}$",
+        'today': "Today",
+        'last_7_days': "Last 7 days",
+        'last_30_days': "Last 30 days",
+        'all_time': "All time",
+        'today_button': "Today",
+        'week_button': "Week",
+        'month_button': "Month",
+        'all_time_button': "All time",
 
-        # --- ADMIN: ORDERS ---
-        'no_orders_in_db': "No orders in database yet.",
-        'all_orders_header': "📦 <b>All Orders</b> (Page {page}/{total_pages})\n\n",
-        'details_button_2': "Details #{order_id}",
-        'back_to_admin_button': "🔙 To Panel",
-        'confirm_button': "Confirm",
-        'sent_button': "Ship",
-        'delivered_button': "Deliver",
-        'cancel_button_2': "Cancel",
-        'back_to_all_orders_button': "🔙️ All Orders",
-        'status_updated': "✅ Status updated to: {new_status}",
-        'order_update_notification_international': "🔔 <b>Order #{order_id} status updated!</b>\n\nNew status: <b>{display_status}</b>",
-
-        # --- ADMIN: PRODUCTS ---
+        # ==========================================
+        # 9. ADMIN PANEL: PRODUCTS MANAGEMENT
+        # ==========================================
         'product_management_header': "🛍 *Product Management*\n",
         'page_indicator_2': "(Page {page}/{total_pages})\n",
         'select_category_to_edit': "Select category:",
@@ -639,8 +670,6 @@ STRINGS = {
         'edit_variants_button': "🔀 Variants",
         'delete_product_button': "🗑 Delete",
         'back_to_list_button_2': "⬅️ Back to list",
-
-        # --- ADMIN: ADD/EDIT PRODUCT ---
         'adding_new_product_name': "🆕 *Adding Product*\nEnter product name:",
         'enter_product_description': "Enter description:",
         'choose_product_type': "Choose product type:",
@@ -651,7 +680,6 @@ STRINGS = {
         'enter_category': "Enter category or select:",
         'enter_emoji': "Enter emoji (e.g. 👟):",
         'admin_wizard_variant_photo': "Send product photo (or `-` to skip):",
-        'error_photo_required': "❌ Not a photo. Send a photo or `-`.",
         'product_created': "✅ Product <b>{name}</b> added!",
         'product_created_2': "✅ Product <b>{name}</b> with variants saved!",
         'editing_variants_instructions': "<b>Edit Variants</b>\nCurrent: {current_text}\n\nEnter new variants:\n<code>Type:Option1=Qty=Price</code>\n\n<i>Example: Size:S=10=120, M=5=130</i>\nOr send <code>{{}}</code> to clear.",
@@ -663,9 +691,6 @@ STRINGS = {
         'variants': "Variants",
         'ex_price_val': "125",
         'ex_stock_val': "10",
-        'error_db': "❌ DB Error: {e}",
-
-        # --- ADMIN: VARIANTS ---
         'active_variant_label': "🔸 Active type: ",
         'admin_wizard_variant_title': "🔀 <b>Variant Setup</b>\n{added_info}Select type or click Finish.",
         'size_variant': "Size",
@@ -704,14 +729,15 @@ STRINGS = {
         'variant_error_title': "❌ <b>Format error for {v_type}</b>",
         'variant_error_msg': "Use format Option=Qty=Price.",
         'variant_example_label': "Example:",
-
-        # --- ADMIN: PHOTOS & DELETE ---
         'product_image_management': "🖼 <b>Photo:</b> {product_name}\nStatus: {status}",
         'admin_img_status_set': "✅ Set",
         'admin_img_status_none': "❌ None",
+        'admin_img_status_count': "✅ Uploaded ({count} photos)",
         'add_photo_button': "➕ Add Photo",
+        'add_more_photos_button': "➕ Add more photos",
         'change_photo_button': "🔄 Change Photo",
         'delete_photo_button': "🗑 Delete Photo",
+        'delete_all_photos_button': "🗑 Delete all photos",
         'back_to_editing_button': "🔙 Back to edit",
         'send_product_image': "Send new photo (or link):",
         'cancel_button_3': "❌ Cancel",
@@ -721,20 +747,26 @@ STRINGS = {
         'yes_delete_button': "✅ Yes, delete",
         'product_already_deleted': "Already deleted.",
         'product_deleted': "✅ Product *{name}* deleted.",
+        'prod_name': "Name",
+        'new_settings': "new settings",
+        'success_updated': "✅ <b>{field}</b> successfully updated to:\n<code>{val}</code>",
+        'alert_has_variants': "⚠️ This product has variants!\nEdit price and stock in '🔀 Variants'.",
 
-        # --- ADMIN: STATS & REVENUE ---
-        'admin_stats_text': "📊 <b>Store Stats</b>\n\n💰 <b>Revenue:</b> {total_revenue}$\n📦 <b>Orders:</b> {total_orders}\n⏳ <b>Pending:</b> {pending_orders}\n👥 <b>Users:</b> {total_users}\n🛍 <b>Buyers:</b> {active_buyers}\n\n🏆 <b>Top Items:</b>\n{top_text}\n\n📉 <b>Worst Items:</b>\n{bottom_text}",
-        'financial_report': "💰 <b>Report ({label})</b>\n\n💵 <b>Paid:</b> {total_rev}$\n🧾 <b>Orders:</b> {total_orders}\n📊 <b>Avg Check:</b> {avg_check}$\n⏳ <b>Pending:</b> {pending_rev}$",
-        'today': "Today",
-        'last_7_days': "Last 7 days",
-        'last_30_days': "Last 30 days",
-        'all_time': "All time",
-        'today_button': "Today",
-        'week_button': "Week",
-        'month_button': "Month",
-        'all_time_button': "All time",
-
-        # --- ADMIN: USERS & BROADCAST ---
+        # ==========================================
+        # 10. ADMIN PANEL: ORDERS, USERS & PROMO
+        # ==========================================
+        'no_orders_in_db': "No orders in database yet.",
+        'all_orders_header': "📦 <b>All Orders</b> (Page {page}/{total_pages})\n\n",
+        'details_button_2': "Details #{order_id}",
+        'back_to_admin_button': "🔙 To Panel",
+        'confirm_button': "Confirm",
+        'sent_button': "Ship",
+        'delivered_button': "Deliver",
+        'cancel_button_2': "Cancel",
+        'back_to_all_orders_button': "🔙️ All Orders",
+        'status_updated': "✅ Status updated to: {new_status}",
+        'order_update_notification_ukraine': "🔔 <b>Order #{order_id} status updated!</b>\n\nNew status: <b>{display_status}</b>",
+        'order_update_notification_international': "🔔 <b>Order #{order_id} status updated!</b>\n\nNew status: <b>{display_status}</b>",
         'user_management_header': "👥 *Users* (Page {page}/{total_pages})\nTotal: {total_users}\n",
         'user_display': "{user_display}",
         'user_id': "ID: {user_id}",
@@ -745,8 +777,6 @@ STRINGS = {
         'admin_broadcast_prompt': "📢 <b>Broadcast</b>\n\nSend message (text, photo, video) for all users or press Cancel.",
         'admin_broadcast_started': "⏳ Broadcast started...",
         'admin_broadcast_finished': "✅ <b>Broadcast done!</b>\n\nDelivered: {success}\nBlocked bot: {failed}",
-
-        # --- ADMIN: PROMO CODES ---
         'admin_promo_button': "🎟 Promo codes",
         'admin_promo_menu': "🎟 <b>Promo Codes</b>\n\nActive:\n{promo_list}\n\nSelect action:",
         'promo_no_active': "No active promo codes",
@@ -765,43 +795,13 @@ STRINGS = {
         'admin_promo_del_select': "🎟 <b>Delete Promo Code</b>\n\nSelect to delete:",
         'admin_promo_deleted': "🗑 Promo code <b>{code}</b> deleted!",
         'admin_promo_not_found': "❌ Promo code not found.",
-
-        # --- NEW ORDER ALERTS ---
+        'new_order_notification_ukraine': "🔔 <b>NEW ORDER!</b>",
         'new_order_notification_international': "🔔 <b>NEW ORDER!</b>",
+        'delivery_notification_ukraine': "Shipping",
         'delivery_notification_international': "Shipping",
+        'payment_notification_ukraine': "Payment",
         'payment_notification_international': "Payment",
         'admin_new_order_notification': "{region_header}\n🧾 Order #{order_id}\n\n👤 <b>Client:</b> {full_name}\n📱 <b>Phone:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Items:</b>\n{items_str}\n💰 <b>Total:</b> {total_amount}$",
-        'failed_to_notify_admin': "Failed to notify admin {admin}: {e}",
-
-        # --- SYSTEM PROMO / PROFILE ---
-        'missing_fields_info': "⚠️ <b>Attention:</b> Fill in {missing_labels} in your profile to {promo}",
-        'welcome_promo_1': "shop faster!",
-        'welcome_promo_2': "checkout faster!",
-        'welcome_promo_3': "get personal discounts!",
-        'welcome_promo_4': "have full access to all features!",
-        'missing_name': "Name",
-        'missing_email': "Email",
-        'missing_phone': "Phone",
-        'missing_address_ukraine': "Shipping",
-        'missing_address_international': "Shipping Address",
-
-        'prod_name': "Name",
-        'new_settings': "new settings",
-        'success_updated': "✅ <b>{field}</b> successfully updated to:\n<code>{val}</code>",
-        'alert_has_variants': "⚠️ This product has variants!\nEdit price and stock in '🔀 Variants'.",
-        'enter_manually_button': "✍️ Enter manually",
-        'err_invalid_address_int': "❌ <b>Invalid address format!</b>\n\nEnter Country, State/Region, City, ZIP Code, Street, Building/Apt.\n<i>(Tax Number EORI/VAT - optional)</i>\n\n<b>Example:</b> <i>Germany, Berlin, 10115, Main St 10, Apt 5, VAT: DE123456</i>",
-
-        'search_button': "🔍 Search",
-        'search_prompt': "🔍 <b>Search for a product</b>\n\nEnter a product name or keyword:",
-        'search_results_header': "🔍 <b>Search results:</b> {query}\n\n",
-        'no_search_results': "Sorry, nothing was found for <b>{query}</b>. 😔",
-
-        'choose_action': "👇 Choose an action:",
-        'photo_added_to_album': "✅ Photo added to album ({count}/10)",
-        'admin_img_status_count': "✅ Uploaded ({count} photos)",
-        'add_more_photos_button': "➕ Add more photos",
-        'delete_all_photos_button': "🗑 Delete all photos",
-
+        'failed_to_notify_admin': "Failed to notify admin {admin}: {e}"
     }
 }

@@ -55,6 +55,11 @@ class OnlineShopBot:
         await self.init_database()
         await self.load_states_from_db()
 
+    async def post_shutdown(self, application: Application):
+        if self.conn:
+            await self.conn.close()
+            logger.info("The connection to the database has been closed safely.")
+
     async def _add_column_if_not_exists(self, cursor, table_name: str, column_name: str, column_type: str):
         await cursor.execute(f"PRAGMA table_info({table_name})")
         columns = [row[1] for row in await cursor.fetchall()]
@@ -2723,7 +2728,8 @@ class OnlineShopBot:
             logger.critical("BOT_TOKEN not found. Please set it as an environment variable.")
             return
 
-        application = Application.builder().token(BOT_TOKEN).post_init(self.post_init).build()
+        application = Application.builder().token(BOT_TOKEN).post_init(self.post_init).post_shutdown(
+            self.post_shutdown).build()
 
         application.add_handler(CommandHandler("start", self.start))
 
