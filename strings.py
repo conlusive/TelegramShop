@@ -296,7 +296,7 @@ STRINGS = {
         'volume_variant': "Об'єм",
         'weight_variant': "Вага",
         'shoe_size_variant': "Розмір взуття",
-        'finish_skip_variant': "✅ Завершити / Пропустити",
+        'finish_skip_variant': "✅ Завершити",
         'add_variants_before_finishing': "Будь ласка, додайте хоча б один варіант!",
         'variant_input_prompt': "Введіть значення для <b>{v_type}</b> через кому.\nФормат: <code>Назва=Кількість=Ціна</code>\n\nПриклад: <code>{example}</code>",
         'back_to_types_btn': "⬅️ До типів",
