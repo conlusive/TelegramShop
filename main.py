@@ -2117,6 +2117,52 @@ class OnlineShopBot:
             except: pass
             await context.bot.send_message(chat_id=update.effective_chat.id, text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
 
+    async def admin_category_edit_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        category = query.data.replace("admin_cat_edit_menu_", "")
+        text = self.get_text('category_edit_header', category=self.escape_html(category))
+        keyboard = [
+            [InlineKeyboardButton(self.get_text('rename_cat_btn'), callback_data=f"admin_cat_rename_{category}")],
+            [InlineKeyboardButton(self.get_text('reemoji_cat_btn'), callback_data=f"admin_cat_reemoji_{category}")],
+            [InlineKeyboardButton(self.get_text('delete_cat_btn'),
+                                  callback_data=f"admin_cat_delete_confirm_{category}")],
+            [InlineKeyboardButton(self.get_text('back_button'), callback_data=f"admin_list_cat_{category}_1")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+    async def start_cat_edit(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        parts = query.data.split('_')
+        action, category = parts[2], parts[3]
+
+        self.user_states[update.effective_user.id] = {
+            'step': f'waiting_category_{action}',
+            'old_cat': category,
+            'msg_id': query.message.message_id
+        }
+        prompt = self.get_text('prompt_rename_cat' if action == 'rename' else 'prompt_reemoji_cat')
+        await query.edit_message_text(prompt, reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self.get_text('cancel_button'), callback_data=f"admin_cat_edit_menu_{category}")]]))
+
+    async def admin_category_delete(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        category = query.data.replace("admin_cat_delete_confirm_", "")
+        text = self.get_text('confirm_delete_cat', category=self.escape_html(category))
+        keyboard = [
+            [InlineKeyboardButton(self.get_text('yes_delete_button'),
+                                  callback_data=f"admin_cat_delete_final_{category}")],
+            [InlineKeyboardButton(self.get_text('cancel_button'), callback_data=f"admin_cat_edit_menu_{category}")]
+        ]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+
+    async def admin_category_delete_final(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        category = query.data.replace("admin_cat_delete_final_", "")
+        await self.conn.execute("UPDATE products SET is_active = 0 WHERE category = ?", (category,))
+        await self.conn.commit()
+        await query.answer(self.get_text('cancelled'))
+        await self.admin_categories_menu(update, context)
+
     async def admin_products_list(self, update: Update, context: ContextTypes.DEFAULT_TYPE, category_override=None):
         await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         query = update.callback_query
@@ -2145,6 +2191,7 @@ class OnlineShopBot:
         if page < total_pages: nav.append(InlineKeyboardButton(self.get_text('next_button'), callback_data=f"admin_list_cat_{category}_{page + 1}"))
         if nav: keyboard.append(nav)
 
+        keyboard.append([InlineKeyboardButton(self.get_text('edit_category_btn'), callback_data=f"admin_cat_edit_menu_{category}")])
         keyboard.append([InlineKeyboardButton(self.get_text('back_to_categories_button'), callback_data="admin_products")])
 
         try: await query.edit_message_text(text=text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
@@ -2271,7 +2318,7 @@ class OnlineShopBot:
         self.user_states[update.effective_user.id]['msg_id'] = sent_msg.message_id
 
     async def admin_image_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id) # <--- ДОДАНО
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         if int(update.effective_user.id) not in ADMIN_IDS: return
         query = update.callback_query
         match = re.match(r"admin_image_menu_(\d+)", query.data)
@@ -2336,7 +2383,7 @@ class OnlineShopBot:
         await context.bot.send_message(chat_id=query.message.chat_id, text=self.get_text('product_image_management_no_image'), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('add_photo_button'), callback_data=f"admin_image_set_{product_id}")], [InlineKeyboardButton(self.get_text('back_to_editing_button'), callback_data=f"admin_prod_{product_id}")]]), parse_mode=ParseMode.MARKDOWN)
 
     async def admin_delete_product(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id) # <--- ДОДАНО
+        await self.cleanup_albums(update.effective_user.id, context, update.effective_chat.id)
         if int(update.effective_user.id) not in ADMIN_IDS: return
         query = update.callback_query
         match = re.match(r"admin_delete_product_(\d+)", query.data)
@@ -2595,6 +2642,34 @@ class OnlineShopBot:
         elif step == 'waiting_variant_values':
             await self.process_variant_values_input(update, context)
 
+        if step == 'waiting_category_rename':
+            old_name = state['old_cat']
+            await self.conn.execute("UPDATE products SET category = ? WHERE category = ?", (input_value, old_name))
+            await self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await context.bot.send_message(chat_id=chat_id, text=self.get_text('cat_renamed_success', name=input_value),
+                                           reply_markup=InlineKeyboardMarkup(
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                      callback_data="admin_products")]]),
+                                           parse_mode="HTML")
+            return
+
+        elif step == 'waiting_category_reemoji':
+            cat_name = state['old_cat']
+            new_emoji = "" if input_value == "-" else input_value
+            await self.conn.execute("UPDATE products SET emoji = ? WHERE category = ?", (new_emoji, cat_name))
+            await self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await context.bot.send_message(chat_id=chat_id,
+                                           text=self.get_text('cat_reemoji_success', category=cat_name),
+                                           reply_markup=InlineKeyboardMarkup(
+                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
+                                                                      callback_data="admin_products")]]),
+                                           parse_mode="HTML")
+            return
+
+
+
     async def show_variant_type_selection(self, context, chat_id, user_id, status_msg="", edit_query=None):
         state = self.user_states[user_id]
         variants = state['product_data'].get('variants', {})
@@ -2606,7 +2681,7 @@ class OnlineShopBot:
             if v_type_localized == f"_type_{v_type_raw}_": v_type_localized = v_type_raw
             added_info = f"{self.get_text('active_variant_label')}{v_type_localized} (<i>{', '.join(variants[v_type_raw].keys())}</i>)\n────────────────────\n\n"
 
-        text = f"{self.get_text('status_message', status_msg=status_msg) if status_msg else ''}{self.get_text('admin_wizard_variant_title', added_info=added_info)}"
+        text = f"{self.get_text('admin_wizard_variant_title', added_info=added_info)}"
 
         if edit_query:
             try: return await edit_query.edit_message_text(text, reply_markup=self.get_variant_type_keyboard(), parse_mode="HTML")
@@ -2830,6 +2905,10 @@ class OnlineShopBot:
         application.add_handler(CallbackQueryHandler(self.admin_edit_field, pattern=r'^admin_edit_field_'))
         application.add_handler(CallbackQueryHandler(self.admin_delete_product, pattern=r'^admin_delete_product_\d+'))
         application.add_handler(CallbackQueryHandler(self.admin_delete_product_confirm, pattern=r'^admin_delete_product_confirm_'))
+        application.add_handler(CallbackQueryHandler(self.admin_category_edit_menu, pattern=r'^admin_cat_edit_menu_'))
+        application.add_handler(CallbackQueryHandler(self.admin_category_delete, pattern=r'^admin_cat_delete_confirm_'))
+        application.add_handler(CallbackQueryHandler(self.admin_category_delete_final, pattern=r'^admin_cat_delete_final_'))
+        application.add_handler(CallbackQueryHandler(self.start_cat_edit, pattern=r'^admin_cat_(rename|reemoji)_'))
 
         application.add_handler(CallbackQueryHandler(self.admin_image_menu, pattern=r'^admin_image_menu_'))
         application.add_handler(CallbackQueryHandler(self.admin_image_set_prompt, pattern=r'^admin_image_set_'))
