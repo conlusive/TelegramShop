@@ -93,6 +93,7 @@ class OnlineShopBot:
                                  current_uses INTEGER DEFAULT 0,is_reusable INTEGER DEFAULT 0)''')
         await cursor.execute('''CREATE TABLE IF NOT EXISTS used_promocodes (user_id INTEGER, code TEXT)''')
         await cursor.execute('''CREATE TABLE IF NOT EXISTS bot_states (user_id INTEGER PRIMARY KEY, state_data TEXT, promo_data TEXT)''')
+        await cursor.execute('''CREATE TABLE IF NOT EXISTS categories_meta(name TEXT PRIMARY KEY, emoji TEXT)''')
 
         await self._add_column_if_not_exists(cursor, "products", "emoji", "TEXT")
         await self._add_column_if_not_exists(cursor, "products", "image_url", "TEXT")
@@ -142,11 +143,14 @@ class OnlineShopBot:
         kwargs.setdefault('currency_symbol', CURRENCY_SYMBOL)
         kwargs.setdefault('symbol', CURRENCY_SYMBOL)
 
+        text = STRINGS[lang].get(key, f"_{key}_")
+        class SafeDict(dict):
+            def __missing__(self, key): return ""
+
         try:
-            return STRINGS[lang].get(key, f"_{key}_").format(**kwargs)
-        except KeyError as e:
-            logger.error(f"Text formatting error for key '{key}': missing variable {e}")
-            return STRINGS[lang].get(key, f"_{key}_").replace(f"{{{e.args[0]}}}", "")
+            return text.format_map(SafeDict(**kwargs))
+        except Exception:
+            return text
 
     # -------------------- UTILS --------------------
     def escape_html(self, text):
@@ -509,7 +513,7 @@ class OnlineShopBot:
 
         keyboard = []
         for (cat_name,) in categories_data:
-            async with self.conn.execute("SELECT emoji FROM products WHERE category = ? LIMIT 1", (cat_name,)) as cursor:
+            async with self.conn.execute("SELECT emoji FROM categories_meta WHERE name = ?", (cat_name,)) as cursor:
                 res = await cursor.fetchone()
                 emo = res[0] if res and res[0] else "📂"
             keyboard.append([InlineKeyboardButton(f"{emo} {cat_name}", callback_data=f"category_{cat_name}_1_{page}")])
@@ -2301,9 +2305,27 @@ class OnlineShopBot:
             current_text = self.get_text('none')
             if product['variants']:
                 try:
-                    lines = [f"{v_type}: {', '.join([f'{opt}={info.get(qty, info)}' for opt, info in options.items()])}" for v_type, options in json.loads(product['variants']).items()]
+                    v_data = json.loads(product['variants'])
+                    lines = []
+                    for v_type, options in v_data.items():
+                        opt_list = []
+                        for opt, info in options.items():
+
+                            if isinstance(info, dict):
+                                qty = info.get('qty', 0)
+                                price = info.get('price', 0)
+
+                                opt_list.append(f"{opt}={qty}={price}")
+                            else:
+
+                                opt_list.append(f"{opt}={info}")
+
+                        lines.append(f"{v_type}:{', '.join(opt_list)}")
+
                     current_text = "<code>" + "\n".join(lines) + "</code>"
-                except: current_text = f"<code>{product['variants']}</code>"
+                except Exception:
+                    current_text = f"<code>{product['variants']}</code>"
+
             msg_text = self.get_text('editing_variants_instructions', current_text=current_text)
         else:
             current_val = product[field] if product[field] is not None else self.get_text('not_set')
@@ -2436,7 +2458,8 @@ class OnlineShopBot:
         user_id = update.effective_user.id
 
         if user_id in self.user_states:
-            step = self.user_states[user_id].get('step', '')
+            state_data = self.user_states[user_id]
+            step = state_data.get('step', '')
 
             if step == 'waiting_broadcast_message':
                 return await self.handle_broadcast_input(update, context)
@@ -2457,7 +2480,10 @@ class OnlineShopBot:
                 except: pass
                 return await self.perform_search(update, context, self.user_states[user_id]['search_query'], page=1)
 
-            if step.startswith('add_product') or step.startswith('edit_') or step.startswith('waiting_simple_') or step.startswith('waiting_var_') or step in ['waiting_product_image', 'waiting_variant_values', 'waiting_type_decision']:
+            if step.startswith('add_product') or step.startswith('edit_') or \
+               step.startswith('waiting_simple_') or step.startswith('waiting_var_') or \
+               step.startswith('waiting_category_') or \
+               step in ['waiting_product_image', 'waiting_variant_values', 'waiting_type_decision']:
                 await self.handle_admin_product_input(update, context)
             elif step.startswith('waiting_') and '_profile' in step:
                 await self.handle_profile_input(update, context)
@@ -2540,6 +2566,27 @@ class OnlineShopBot:
 
         if step == 'edit_product_field': return await self.handle_edit_field_input(update, context, state, input_value, msg)
 
+        if step == 'waiting_category_rename':
+            old_name = state.get('old_cat')
+            await self.conn.execute("UPDATE products SET category = ? WHERE category = ?", (input_value, old_name))
+            await self.conn.execute("UPDATE categories_meta SET name = ? WHERE name = ?", (input_value, old_name))
+            await self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await context.bot.send_message(chat_id=chat_id, text=self.get_text('cat_renamed_success', name=input_value),
+                                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]), parse_mode="HTML")
+            return
+
+        elif step == 'waiting_category_reemoji':
+            cat_name = state.get('old_cat')
+            new_emoji = "" if input_value == "-" else input_value
+            await self.conn.execute("INSERT OR REPLACE INTO categories_meta (name, emoji) VALUES (?, ?)", (cat_name, new_emoji))
+            await self.conn.commit()
+            self.user_states.pop(user_id, None)
+            await context.bot.send_message(chat_id=chat_id, text=self.get_text('cat_reemoji_success', category=cat_name),
+                                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]), parse_mode="HTML")
+            return
+
+
         if step == 'waiting_product_image':
             img = input_value if (is_photo or input_value.startswith('http')) else None
             if img or input_value == '-':
@@ -2553,16 +2600,12 @@ class OnlineShopBot:
                             except: pass
                         elif row[1]:
                             images_list = [row[1]]
-
                     if len(images_list) < 10: images_list.append(img)
                     await self.conn.execute("UPDATE products SET images = ?, image_url = ? WHERE id = ?", (json.dumps(images_list), images_list[0] if images_list else None, state.get('product_id')))
-
                 await self.conn.commit()
                 self.user_states.pop(user_id, None)
-
                 count = len(images_list) if img else 0
                 success_text = self.get_text('photo_added_to_album', count=count) if img else self.get_text('admin_img_status_set')
-
                 await context.bot.send_message(chat_id=chat_id, text=success_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_3'), callback_data=f"admin_prod_{state.get('product_id')}")]]), parse_mode="HTML")
             else:
                 m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('error_photo_required'), reply_markup=cancel_kb, parse_mode="HTML")
@@ -2617,10 +2660,10 @@ class OnlineShopBot:
                 m = await context.bot.send_message(chat_id=chat_id, text=self.get_text('error_photo_required'), reply_markup=cancel_kb, parse_mode="HTML")
                 state['msg_id'] = m.message_id
                 return
-
             if step == 'waiting_simple_image':
                 p = state['product_data']
                 await self.conn.execute("INSERT INTO products (name, description, price, image_url, category, stock, emoji) VALUES (?, ?, ?, ?, ?, ?, ?)", (p['name'], p['description'], p['price'], img if input_value != '-' else None, p['category'], p['stock'], p['emoji']))
+                await self.conn.execute("INSERT OR IGNORE INTO categories_meta (name, emoji) VALUES (?, ?)", (p['category'], p['emoji']))
                 await self.conn.commit()
                 self.user_states.pop(user_id, None)
                 await context.bot.send_message(chat_id=chat_id, text=self.get_text('product_created', name=p['name']), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_3'), callback_data="admin_products")]]), parse_mode="HTML")
@@ -2637,37 +2680,12 @@ class OnlineShopBot:
 
         elif step == 'waiting_var_emoji':
             state['product_data']['emoji'], state['step'] = input_value, 'add_product_variants_loop'
+            await self.conn.execute("INSERT OR IGNORE INTO categories_meta (name, emoji) VALUES (?, ?)", (state['product_data']['category'], input_value))
+            await self.conn.commit()
             await self.show_variant_type_selection(context, chat_id, user_id)
 
         elif step == 'waiting_variant_values':
             await self.process_variant_values_input(update, context)
-
-        if step == 'waiting_category_rename':
-            old_name = state['old_cat']
-            await self.conn.execute("UPDATE products SET category = ? WHERE category = ?", (input_value, old_name))
-            await self.conn.commit()
-            self.user_states.pop(user_id, None)
-            await context.bot.send_message(chat_id=chat_id, text=self.get_text('cat_renamed_success', name=input_value),
-                                           reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
-                                                                      callback_data="admin_products")]]),
-                                           parse_mode="HTML")
-            return
-
-        elif step == 'waiting_category_reemoji':
-            cat_name = state['old_cat']
-            new_emoji = "" if input_value == "-" else input_value
-            await self.conn.execute("UPDATE products SET emoji = ? WHERE category = ?", (new_emoji, cat_name))
-            await self.conn.commit()
-            self.user_states.pop(user_id, None)
-            await context.bot.send_message(chat_id=chat_id,
-                                           text=self.get_text('cat_reemoji_success', category=cat_name),
-                                           reply_markup=InlineKeyboardMarkup(
-                                               [[InlineKeyboardButton(self.get_text('back_button_3'),
-                                                                      callback_data="admin_products")]]),
-                                           parse_mode="HTML")
-            return
-
 
 
     async def show_variant_type_selection(self, context, chat_id, user_id, status_msg="", edit_query=None):
