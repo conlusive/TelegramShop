@@ -205,11 +205,11 @@ STRINGS = {
         'no_orders_yet': "У вас ще немає замовлень.",
         'your_orders_header': "📦 <b>Ваші замовлення</b> (Стор. {page}/{total_pages})\n\n",
         'order_items': "Товари",
-        'order_summary_line': "🧾 <b>Замовлення #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}₴ | {status_text} | 📅 {date}\n────────────────────\n",
+        'order_summary_line': "🧾 <b>Замовлення #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}{symbol} | {status_text} | 📅 {date}\n────────────────────\n",
         'details_button': "Деталі #{order_id}",
         'order_not_found': "Замовлення не знайдено.",
         'items_info_unavailable': "Інформація про товари недоступна",
-        'order_details_text': "🧾 <b>Замовлення #{order_id}</b>\n📅 {date}\n\n👤 <b>Клієнт:</b> {user_name}\n📧 <b>Email:</b> {email}\n📱 <b>Телефон:</b> {phone}\n📍 <b>Доставка:</b> {address}\n💳 <b>Оплата:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{products_text}\n<b>Разом до сплати: {total_amount}₴</b>\n\nСтатус: {status_display}",
+        'order_details_text': "🧾 <b>Замовлення #{order_id}</b>\n📅 {date}\n\n👤 <b>Клієнт:</b> {user_name}\n📧 <b>Email:</b> {email}\n📱 <b>Телефон:</b> {phone}\n📍 <b>Доставка:</b> {address}\n💳 <b>Оплата:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{products_text}\n<b>Разом до сплати: {total_amount}{symbol}</b>\n\nСтатус: {status_display}",
         'cancel_order_button_3': "❌ Скасувати замовлення",
         'back_to_list_button': "⬅️ Назад до списку",
         'order_already_delivered_or_canceled': "Замовлення вже виконано або скасовано.",
@@ -408,7 +408,7 @@ STRINGS = {
         'delivery_notification_international': "Адреса",
         'payment_notification_ukraine': "Оплата",
         'payment_notification_international': "Оплата",
-        'admin_new_order_notification': "{region_header}\n🧾 Замовлення #{order_id}\n\n👤 <b>Клієнт:</b> {full_name}\n📱 <b>Телефон:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{items_str}\n💰 <b>Сума:</b> {total_amount}₴",
+        'admin_new_order_notification': "{region_header}\n🧾 Замовлення #{order_id}\n\n👤 <b>Клієнт:</b> {full_name}\n📱 <b>Телефон:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Товари:</b>\n{items_str}\n💰 <b>Сума:</b> {total_amount}{symbol}",
         'failed_to_notify_admin': "Failed to send order notification to admin {admin}: {e}"
     },
 
@@ -618,11 +618,11 @@ STRINGS = {
         'no_orders_yet': "You have no orders yet.",
         'your_orders_header': "📦 <b>Your Orders</b> (Page {page}/{total_pages})\n\n",
         'order_items': "Items",
-        'order_summary_line': "🧾 <b>Order #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}$ | {status_text} | 📅 {date}\n─────────────────────\n",
+        'order_summary_line': "🧾 <b>Order #{order_id}</b>\n▫️ {products_str}\n💳 {total_amount}{symbol} | {status_text} | 📅 {date}\n─────────────────────\n",
         'details_button': "Details #{order_id}",
         'order_not_found': "Order not found.",
         'items_info_unavailable': "Items info unavailable",
-        'order_details_text': "🧾 <b>Order #{order_id}</b>\n📅 {date}\n\n👤 <b>Client:</b> {user_name}\n📧 <b>Email:</b> {email}\n📱 <b>Phone:</b> {phone}\n📍 <b>Shipping:</b> {address}\n💳 <b>Payment:</b> {payment_method}\n\n📦 <b>Items:</b>\n{products_text}\n<b>Total: {total_amount}$</b>\n\nStatus: {status_display}",
+        'order_details_text': "🧾 <b>Order #{order_id}</b>\n📅 {date}\n\n👤 <b>Client:</b> {user_name}\n📧 <b>Email:</b> {email}\n📱 <b>Phone:</b> {phone}\n📍 <b>Shipping:</b> {address}\n💳 <b>Payment:</b> {payment_method}\n\n📦 <b>Items:</b>\n{products_text}\n<b>Total: {total_amount}{symbol}</b>\n\nStatus: {status_display}",
         'cancel_order_button_3': "❌ Cancel Order",
         'back_to_list_button': "🔙 Back to list",
         'order_already_delivered_or_canceled': "Order already processed or cancelled.",
@@ -821,7 +821,7 @@ STRINGS = {
         'delivery_notification_international': "Shipping",
         'payment_notification_ukraine': "Payment",
         'payment_notification_international': "Payment",
-        'admin_new_order_notification': "{region_header}\n🧾 Order #{order_id}\n\n👤 <b>Client:</b> {full_name}\n📱 <b>Phone:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Items:</b>\n{items_str}\n💰 <b>Total:</b> {total_amount}$",
+        'admin_new_order_notification': "{region_header}\n🧾 Order #{order_id}\n\n👤 <b>Client:</b> {full_name}\n📱 <b>Phone:</b> {phone}\n📧 <b>Email:</b> {email}\n📍 <b>{address_label}:</b> {address}\n💳 <b>{pay_label}:</b> {payment_method}\n\n📦 <b>Items:</b>\n{items_str}\n💰 <b>Total:</b> {total_amount}{symbol}",
         'failed_to_notify_admin': "Failed to notify admin {admin}: {e}"
     }
 }
