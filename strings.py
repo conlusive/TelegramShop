@@ -164,6 +164,9 @@ STRINGS = {
         'receipt': "📅 {date}\n👤 {bold_start}Клієнт:{bold_end} {user_name}\n📧 {bold_start}Email:{bold_end} {email}\n📱 {bold_start}Телефон:{bold_end} {phone}\n📍 {bold_start}Доставка:{bold_end} {address}\n💳 {bold_start}Оплата:{bold_end} {payment}\n\n📦 {bold_start}Товари:{bold_end}\n{products_text}\n{bold_start}Разом до сплати: {total}{symbol}{bold_end}",
         'receipt_discount': "🎟 <b>Знижка:</b> -{amount}{symbol}\n",
         'order_promo_info': "\n🎟 <b>Промокод:</b> <code>{code}</code>\n",
+        'vat_btn': "🆔 VAT / Tax ID",
+        'enter_vat_prompt': "Введіть ваш <b>VAT номер</b> (Tax ID):",
+        'vat_display': "\n🆔 <b>VAT:</b> {vat}",
 
         # ==========================================
         # 7. ПРОФІЛЬ ТА ІСТОРІЯ ЗАМОВЛЕНЬ
@@ -577,6 +580,9 @@ STRINGS = {
         'receipt': "📅 {date}\n👤 {bold_start}Client:{bold_end} {user_name}\n📧 {bold_start}Email:{bold_end} {email}\n📱 {bold_start}Phone:{bold_end} {phone}\n📍 {bold_start}Shipping:{bold_end} {address}\n💳 {bold_start}Payment:{bold_end} {payment}\n\n📦 {bold_start}Items:{bold_end}\n{products_text}\n{bold_start}Total: {total}{symbol}{bold_end}",
         'receipt_discount': "🎟 <b>Discount:</b> -{amount}{symbol}\n",
         'order_promo_info': "\n🎟 <b>Promo code:</b> <code>{code}</code>\n",
+        'vat_btn': "🆔 VAT / Tax ID",
+        'enter_vat_prompt': "Please enter your <b>VAT number</b> (Tax ID):",
+        'vat_display': "\n🆔 <b>VAT:</b> {vat}",
 
         # ==========================================
         # 7. PROFILE & ORDER HISTORY

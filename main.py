@@ -1205,32 +1205,27 @@ class OnlineShopBot:
         elif not state.get('email'):
             state['step'], text, back_cb = 'waiting_email', header + self.get_text('checkout_step_2_of_4', total_steps="4"), "back_to_name"
         elif not state.get('address'):
-            state['step'] = 'waiting_shipping'
-            text = header + self.get_text('checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international', total_steps="4")
-            back_cb = "back_to_email"
+            state['step'], text, back_cb = 'waiting_shipping', header + self.get_text('checkout_step_3_of_4_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'checkout_step_3_of_4_international', total_steps="4"), "back_to_email"
         elif not state.get('phone'):
             state['step'], text, back_cb = 'waiting_phone', header + self.get_text('checkout_step_4_of_4', total_steps="4", example=self.get_text('ex_phone')), "back_to_shipping"
         else:
             return await self.show_order_summary(context, chat_id, user_id)
 
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
-            [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
-        ])
+        keyboard = [[InlineKeyboardButton(self.get_text('back_button_2'), callback_data=back_cb)],
+                    [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]]
 
-        if getattr(update, "callback_query", None):
-            await update.callback_query.edit_message_text(text, reply_markup=kb, parse_mode="HTML")
-            state['msg_id'] = update.callback_query.message.message_id
-        else:
-            if 'msg_id' in state:
-                try:
-                    await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text, reply_markup=kb, parse_mode="HTML")
-                    return
-                except Exception as e:
-                    if "Message is not modified" in str(e): return
-                    pass
-            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
-            state['msg_id'] = m.message_id
+        if state['step'] == 'waiting_shipping' and SHIPPING_MODE != 'UKRAINE':
+            keyboard.insert(0, [InlineKeyboardButton(self.get_text('vat_btn'), callback_data="enter_vat")])
+
+        kb = InlineKeyboardMarkup(keyboard)
+
+        if 'msg_id' in state:
+            try:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text, reply_markup=kb, parse_mode="HTML")
+                return
+            except: pass
+        m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
+        state['msg_id'] = m.message_id
 
     async def handle_checkout_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1243,76 +1238,114 @@ class OnlineShopBot:
 
         async def send_err(key, cb):
             text = self.get_text(key)
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(self.get_text('back_button_2'), callback_data=cb)],
-                [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
-            ])
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_button_2'), callback_data=cb)],
+                                       [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]])
             if 'msg_id' in state:
-                try:
-                    await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text, reply_markup=kb, parse_mode="HTML")
-                    return
-                except Exception as e:
-                    if "Message is not modified" in str(e): return
-                    pass
-            m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
-            state['msg_id'] = m.message_id
+                try: await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=text, reply_markup=kb, parse_mode="HTML")
+                except: pass
+            else:
+                m = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=kb, parse_mode="HTML")
+                state['msg_id'] = m.message_id
 
         text = msg.text.strip() if msg.text else ""
         is_edit = state.get('is_editing_single', False)
 
         if state['step'] == 'waiting_full_name':
-            min_words = 3 if SHIPPING_MODE == 'UKRAINE' else 2
-            if len(text.split()) < min_words: return await send_err('err_invalid_name', "confirm_details_back" if is_edit else "cart")
+            if len(text.split()) < (3 if SHIPPING_MODE == 'UKRAINE' else 2): return await send_err('err_invalid_name', "cart")
             state['full_name'] = text
 
         elif state['step'] == 'waiting_email':
-            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text): return await send_err('err_invalid_email', "confirm_details_back" if is_edit else "back_to_name")
+            if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", text): return await send_err('err_invalid_email', "back_to_name")
             state['email'] = text
 
         elif state['step'] == 'waiting_shipping':
             tokens = [w for w in re.split(r'[,\s]+', text) if w]
-            if SHIPPING_MODE == 'UKRAINE':
-                is_valid = len(tokens) >= 3 and bool(re.search(r'\d', text))
-                err_key = 'err_invalid_address'
-            else:
-                is_valid = len(tokens) >= 4 and bool(re.search(r'\d', text))
-                err_key = 'err_invalid_address_int'
-            if not is_valid: return await send_err(err_key, "confirm_details_back" if is_edit else "back_to_email")
+            min_t = 3 if SHIPPING_MODE == 'UKRAINE' else 4
+            if len(tokens) < min_t or not any(c.isdigit() for c in text):
+                return await send_err('err_invalid_address' if SHIPPING_MODE == 'UKRAINE' else 'err_invalid_address_int', "back_to_email")
             state['address'] = text
+            if not is_edit: state['step'] = 'waiting_phone'
+
+        elif state['step'] == 'waiting_vat':
+            state['vat_number'] = text if text != '-' else None
+            if is_edit: return await self.show_order_summary(context, chat_id, user_id)
+            state['step'] = 'waiting_phone'
 
         elif state['step'] == 'waiting_phone':
-            if not (re.fullmatch(r"^\+380\d{9}$", text) if SHIPPING_MODE == 'UKRAINE' else re.fullmatch(r"^\+\d{10,15}$", text)):
-                return await send_err('err_invalid_phone', "confirm_details_back" if is_edit else "back_to_shipping")
+            pattern = r"^\+380\d{9}$" if SHIPPING_MODE == 'UKRAINE' else r"^\+\d{10,15}$"
+            if not re.fullmatch(pattern, text): return await send_err('err_invalid_phone', "back_to_shipping")
             state['phone'] = text
             return await self.show_order_summary(context, chat_id, user_id)
 
         await self.continue_checkout_flow(update, context)
 
+    async def handle_checkout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        user_id, state = update.effective_user.id, self.user_states.get(update.effective_user.id)
+        if not state: return
+        data, chat_id = query.data, query.message.chat_id
+
+        if data == "enter_vat":
+            state['step'] = 'waiting_vat'
+            kb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_button_2'), callback_data="back_to_shipping")]])
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'],
+                                                text=self.get_text('enter_vat_prompt'), reply_markup=kb,
+                                                parse_mode="HTML")
+
+        elif data == "edit_check_vat":
+            state['step'], state['is_editing_single'] = 'waiting_vat', True
+            kb = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self.get_text('back_button_2'), callback_data="confirm_details_back")]])
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'],
+                                                text=self.get_text('enter_vat_prompt'), reply_markup=kb,
+                                                parse_mode="HTML")
+
+        elif data == "back_to_shipping":
+            state['step'] = 'waiting_shipping'
+            await self.continue_checkout_flow(update, context)
+
+        elif data == "confirm_details_back":
+            await self.show_order_summary(context, chat_id, user_id)
+
     async def show_order_summary(self, context, chat_id, user_id):
         state = self.user_states[user_id]
         state['step'], state['is_editing_single'] = 'waiting_confirmation', False
+
+        vat_val = state.get('vat_number')
+        vat_info = f"\n🆔 <b>{self.get_text('vat_label')}:</b> {self.escape_html(vat_val)}" if vat_val else ""
 
         summary_text = self.get_text('confirm_details',
                                      full_name=self.escape_html(state.get('full_name')),
                                      email=self.escape_html(state.get('email')),
                                      address=self.escape_html(state.get('address')),
-                                     phone=self.escape_html(state.get('phone')))
+                                     vat_info=vat_info,  # Передаємо VAT у strings
+                                     phone=state.get('phone'))
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(self.get_text('summary_edit_name_btn'), callback_data="edit_check_name"),
-             InlineKeyboardButton(self.get_text('summary_edit_email_btn'), callback_data="edit_check_email")],
-            [InlineKeyboardButton(self.get_text('summary_edit_address_btn'), callback_data="edit_check_address"),
-             InlineKeyboardButton(self.get_text('summary_edit_phone_btn'), callback_data="edit_check_phone")],
-            [InlineKeyboardButton(self.get_text('summary_confirm_btn'), callback_data="confirm_details")],
-            [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
-        ])
+        keyboard = [[InlineKeyboardButton(self.get_text('summary_edit_name_btn'), callback_data="edit_check_name"),
+                     InlineKeyboardButton(self.get_text('summary_edit_email_btn'), callback_data="edit_check_email")],
+                    [InlineKeyboardButton(self.get_text('summary_edit_address_btn'),
+                                          callback_data="edit_check_address")]]
 
-        try:
-            if 'msg_id' in state: await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=summary_text, reply_markup=keyboard, parse_mode="HTML")
-            else: raise Exception()
-        except Exception:
-            m = await context.bot.send_message(chat_id=chat_id, text=summary_text, reply_markup=keyboard, parse_mode="HTML")
-            state['msg_id'] = m.message_id
+        if SHIPPING_MODE != 'UKRAINE':
+            keyboard[-1].append(
+                InlineKeyboardButton(self.get_text('summary_edit_vat_btn'), callback_data="edit_check_vat"))
+
+        keyboard.extend(
+            [[InlineKeyboardButton(self.get_text('summary_edit_phone_btn'), callback_data="edit_check_phone")],
+             [InlineKeyboardButton(self.get_text('summary_confirm_btn'), callback_data="confirm_details")],
+             [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]])
+
+        if 'msg_id' in state:
+            try:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=state['msg_id'], text=summary_text,
+                                                    reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+                return
+            except:
+                pass
+        m = await context.bot.send_message(chat_id=chat_id, text=summary_text,
+                                           reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
+        state['msg_id'] = m.message_id
 
     async def handle_checkout_back(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1550,22 +1583,32 @@ class OnlineShopBot:
         if send_message: await self.notify_admin_new_order(context, order_id, full_name, email, phone, address, payment_method, products_list, total_amount, promo_code_used)
         return order_id, products_list, total_amount, promo_code_used
 
-    async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method, products_list, total_amount, promo_code_used=None):
-        region_header = self.get_text('new_order_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'new_order_notification_international')
-        address_label = self.get_text('delivery_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'delivery_notification_international')
-        pay_label = self.get_text('payment_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'payment_notification_international')
+    async def notify_admin_new_order(self, context, order_id, full_name, email, phone, address, payment_method,
+                                     products_list, total_amount, promo_code_used=None):
+        region_header = self.get_text(
+            'new_order_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'new_order_notification_international')
+        address_label = self.get_text(
+            'delivery_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'delivery_notification_international')
+        pay_label = self.get_text(
+            'payment_notification_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'payment_notification_international')
 
+        vat_val = self.user_states.get(ADMIN_IDS[0], {}).get(
+            'vat_number')
         items_str = ""
         for item in products_list:
-            opts_str = f" ({', '.join([str(v) for v in item.get('selected_options', {}).values()])})" if item.get('selected_options') else ""
+            opts_str = f" ({', '.join([str(v) for v in item.get('selected_options', {}).values()])})" if item.get(
+                'selected_options') else ""
             items_str += f"▫️ {item['emoji']} {item['name']}{opts_str} x {item['quantity']} - <b>{item.get('price', 0)}{CURRENCY_SYMBOL}</b>\n"
-
-        text = self.get_text('admin_new_order_notification', region_header=region_header, order_id=order_id, full_name=full_name, email=email, phone=phone, address_label=address_label, address=address, pay_label=pay_label, payment_method=payment_method, items_str=items_str, total_amount=total_amount)
-        if promo_code_used: text += self.get_text('order_promo_info', code=promo_code_used)
+        text = self.get_text('admin_new_order_notification', region_header=region_header, order_id=order_id,
+                             full_name=full_name, email=email, phone=phone, address_label=address_label,
+                             address=address, pay_label=pay_label, payment_method=payment_method, items_str=items_str,
+                             total_amount=total_amount)
 
         for admin_id in ADMIN_IDS:
-            try: await context.bot.send_message(chat_id=admin_id, text=text, parse_mode=ParseMode.HTML)
-            except Exception as e: logger.error(self.get_text('failed_to_notify_admin', admin=admin_id, e=e))
+            try:
+                await context.bot.send_message(chat_id=admin_id, text=text, parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.error(f"Error notifying admin: {e}")
 
     # -------------------- ORDERS HISTORY --------------------
     async def show_my_orders(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int = 0):
@@ -2885,6 +2928,7 @@ class OnlineShopBot:
         application.add_handler(CallbackQueryHandler(self.use_profile_data, pattern=r'^use_profile_data$'))
         application.add_handler(CallbackQueryHandler(self.handle_checkout_confirm, pattern=r'^(confirm_details|confirm_details_back)$'))
         application.add_handler(CallbackQueryHandler(self.choose_payment, pattern=r'^pay_(cod|card|bank|online)$'))
+        application.add_handler(CallbackQueryHandler(self.handle_checkout_callback,pattern=r'^(enter_vat|edit_check_vat|confirm_details_back|back_to_shipping)$'))
 
         application.add_handler(CallbackQueryHandler(self.handle_cancel_order, pattern=r'^cancel_order$'))
         application.add_handler(CallbackQueryHandler(self.handle_checkout_back, pattern=r'^(back_to_|edit_)'))
