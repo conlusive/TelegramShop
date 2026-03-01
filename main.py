@@ -24,15 +24,6 @@ LICENSE_TYPE = "Basic"  # "Basic" або "Pro"
 
 if isinstance(ADMIN_ID, str):
     ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
-else:
-    ADMIN_IDS = [ADMIN_ID] if isinstance(ADMIN_ID, int) else []
-
-if LICENSE_TYPE == "Basic" and len(ADMIN_IDS) > 1:
-    logger.warning("Basic license: limiting to 1 admin.")
-    ADMIN_IDS = [ADMIN_IDS[0]]
-
-if isinstance(ADMIN_ID, str):
-    ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
 elif isinstance(ADMIN_ID, int):
     ADMIN_IDS = [ADMIN_ID]
 elif isinstance(ADMIN_ID, list):
@@ -41,7 +32,7 @@ else:
     ADMIN_IDS = []
 
 if LICENSE_TYPE == "Basic" and len(ADMIN_IDS) > 1:
-    print("⚠️ NOTE: The 'Basic' license only supports 1 administrator. Only the first one is left.")
+    logger.warning("Basic license: limiting to 1 admin. Only the first one is left.")
     ADMIN_IDS = [ADMIN_IDS[0]]
 
 # -------------------- LOGGING --------------------
@@ -1462,6 +1453,14 @@ class OnlineShopBot:
                                                       parse_mode="HTML")
 
             telegram_amount = int(round(total_amount, 2) * 100)
+
+            if telegram_amount < 100:
+                return await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="❌ <b>Payment Error:</b> The amount is too small for online acquiring. Please choose another method.",
+                    parse_mode="HTML"
+                )
+
             title = self.get_text('invoice_title', shop_name=SHOP_NAME)[:32]
             description = f"{self.get_text('invoice_desc')}\n{self.get_text('invoice_to_pay', amount=round(total_amount, 2), symbol=CURRENCY_SYMBOL)}"[
                 :255]
