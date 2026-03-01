@@ -452,7 +452,7 @@ class OnlineShopBot:
                                 if isinstance(info, dict) and 'price' in info and float(info['price']) > 0:
                                     all_prices.append(float(info['price']))
                     if all_prices and min(all_prices) != max(all_prices):
-                        display_price = self.get_text('price_from', price=min(all_prices)).replace('$', CURRENCY_SYMBOL)
+                        display_price = self.get_text('price_from', price=min(all_prices))
                     elif all_prices:
                         display_price = f"{all_prices[0]}{CURRENCY_SYMBOL}"
                 except:
@@ -579,7 +579,7 @@ class OnlineShopBot:
                                     all_prices.append(float(info['price']))
 
                     if all_prices and min(all_prices) != max(all_prices):
-                        display_price = self.get_text('price_from', price=min(all_prices)).replace('$', CURRENCY_SYMBOL)
+                        display_price = self.get_text('price_from', price=min(all_prices))
                     elif all_prices:
                         display_price = f"{all_prices[0]}{CURRENCY_SYMBOL}"
                 except:
@@ -631,7 +631,7 @@ class OnlineShopBot:
             except: pass
 
         if all_prices and min(all_prices) != max(all_prices):
-            display_price = self.get_text('price_from', price=min(all_prices)).replace('$', CURRENCY_SYMBOL)
+            display_price = self.get_text('price_from', price=min(all_prices))
         elif all_prices:
             display_price = f"{all_prices[0]}{CURRENCY_SYMBOL}"
         else:
@@ -788,8 +788,12 @@ class OnlineShopBot:
         if isinstance(options_data, dict):
             for opt, val in sorted(options_data.items(), key=lambda x: x[0]):
                 qty = val.get('qty', 0) if isinstance(val, dict) else (int(val) if str(val).isdigit() else 0)
-                price_info = f" {val['price']}{CURRENCY_SYMBOL}" if isinstance(val, dict) and 'price' in val else ""
-                row.append(InlineKeyboardButton(f"{opt}{price_info}", callback_data=f"var_sel_{state['current_key_index']}_{opt}") if qty > 0 else InlineKeyboardButton(f"{opt} (❌)", callback_data="noop"))
+                price_info = f" ({val['price']}{CURRENCY_SYMBOL})" if isinstance(val,
+                                                                                 dict) and 'price' in val and float(
+                    val['price']) > 0 else ""
+                row.append(InlineKeyboardButton(f"{opt}{price_info}",
+                                                callback_data=f"var_sel_{state['current_key_index']}_{opt}") if qty > 0 else InlineKeyboardButton(
+                    f"{opt} (❌)", callback_data="noop"))
         elif isinstance(options_data, list):
             for opt in options_data: row.append(InlineKeyboardButton(str(opt), callback_data=f"var_sel_{state['current_key_index']}_{opt}"))
 
@@ -2278,7 +2282,8 @@ class OnlineShopBot:
 
         if not all_prices: all_prices.append(product['price'])
 
-        if all_prices and min(all_prices) != max(all_prices): display_price = self.get_text('price_from', price=min(all_prices))
+        if all_prices and min(all_prices) != max(all_prices):
+            display_price = self.get_text('price_from', price=min(all_prices))
         else: display_price = f"{all_prices[0] if all_prices else product['price']}{CURRENCY_SYMBOL}"
 
         text = self.get_text('product_management_details', product_id=product['id'], stock=product['stock'], stock_details=stock_details, name=product['name'], description=product['description'], display_price=display_price, category=product['category'], emoji=product['emoji'])
