@@ -1,5 +1,8 @@
 STRINGS = {
     'UKRAINE': {
+
+        'license_pro_only': "⭐️ Ця функція доступна лише у версії <b>PRO</b>!",
+        'admin_limit_reached': "⚠️ У пакеті <b>BASIC</b> доступний лише 1 адміністратор. Інші ID ігноруються.",
         # ==========================================
         # 1. ЗАГАЛЬНІ КНОПКИ ТА ЕЛЕМЕНТИ
         # ==========================================
@@ -230,9 +233,9 @@ STRINGS = {
         # ==========================================
         # 8. АДМІН-ПАНЕЛЬ: ГОЛОВНЕ ТА СТАТИСТИКА
         # ==========================================
-        'admin_welcome': "👋 Вітаю, Адміне {safe_name}!\n\nКеруй магазином нижче 👇",
+        'admin_welcome': "👋 <b>Вітаю, Адміне {safe_name}!</b>\n\nКеруй магазином нижче 👇",
         'admin_panel_button': "⚙️ Адмін-панель",
-        'admin_panel_header': "⚙️ *Панель адміністратора*\nОберіть розділ для керування:",
+        'admin_panel_header': "⚙️ <b>Панель адміністратора</b>\n\nОберіть розділ для керування:",
         'all_orders_button': "📦 Всі замовлення",
         'products_button': "🛍 Товари",
         'stats_button': "📊 Статистика",
@@ -419,6 +422,8 @@ STRINGS = {
     },
 
     'INTERNATIONAL': {
+        'license_pro_only': "⭐️ This feature is only available in the <b>PRO</b> version!",
+        'admin_limit_reached': "⚠️ Only 1 administrator is available in the <b>BASIC</b> package. Other IDs are ignored.",
         # ==========================================
         # 1. GENERAL BUTTONS & ELEMENTS
         # ==========================================

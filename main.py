@@ -20,8 +20,16 @@ from dom import (
 
 # ==================== LICENSE AND ADMINISTRATION ====================
 
-LICENSE_TYPE = "Pro" # "Basic" , "Pro"
+LICENSE_TYPE = "Basic"  # "Basic" або "Pro"
 
+if isinstance(ADMIN_ID, str):
+    ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
+else:
+    ADMIN_IDS = [ADMIN_ID] if isinstance(ADMIN_ID, int) else []
+
+if LICENSE_TYPE == "Basic" and len(ADMIN_IDS) > 1:
+    logger.warning("Basic license: limiting to 1 admin.")
+    ADMIN_IDS = [ADMIN_IDS[0]]
 
 if isinstance(ADMIN_ID, str):
     ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
@@ -405,7 +413,8 @@ class OnlineShopBot:
         if await self.check_user_blocked(update, context): return
         query = update.callback_query
 
-        if LICENSE_TYPE != "Pro": return await query.answer("⭐️ This feature is only available in the PRO version of the bot!", show_alert=True)
+        if LICENSE_TYPE != "Pro":
+            return await update.callback_query.answer(self.get_text('license_pro_only'), show_alert=True)
 
         user_id = update.effective_user.id
         self.user_states.setdefault(user_id, {})['step'] = 'waiting_search_query'
@@ -1037,7 +1046,8 @@ class OnlineShopBot:
 
         text += self.get_text('cart_total', total_amount=round(total_amount, 2)).replace('$', CURRENCY_SYMBOL)
         promo_btn = []
-        if not active_promo: promo_btn = [[InlineKeyboardButton(self.get_text('cart_promo_btn'), callback_data="ask_promo_code")]]
+        if LICENSE_TYPE == "Pro" and not active_promo:
+            promo_btn = [[InlineKeyboardButton(self.get_text('cart_promo_btn'), callback_data="ask_promo_code")]]
 
         keyboard.extend(promo_btn)
         keyboard.extend([
@@ -1388,25 +1398,24 @@ class OnlineShopBot:
     async def send_payment_keyboard(self, context, chat_id, user_id):
         self.user_states[user_id]['step'] = 'waiting_payment'
         keyboard = []
+
+        keyboard.append([InlineKeyboardButton(self.get_text('method_online_card'), callback_data="pay_online")])
+
         if SHIPPING_MODE == 'UKRAINE':
             keyboard.append([InlineKeyboardButton(self.get_text('method_cod'), callback_data="pay_cod")])
             keyboard.append([InlineKeyboardButton(self.get_text('method_card_courier'), callback_data="pay_card")])
-            keyboard.append([InlineKeyboardButton(self.get_text('method_online_card'), callback_data="pay_online")])
-            main_text = self.get_text('payment_step_header_ukraine')
         else:
-            keyboard.append([InlineKeyboardButton(self.get_text('method_online_card'), callback_data="pay_online")])
-            main_text = self.get_text('payment_step_header_int')
+            keyboard.append([InlineKeyboardButton(self.get_text('method_card_courier'), callback_data="pay_card")])
 
-        keyboard.append([InlineKeyboardButton(self.get_text('back_button_2'), callback_data="confirm_details_back")])
-        keyboard.append([InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")])
+        keyboard.extend([
+            [InlineKeyboardButton(self.get_text('back_button_2'), callback_data="confirm_details_back")],
+            [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]
+        ])
 
-        try:
-            if 'msg_id' in self.user_states[user_id]:
-                await context.bot.edit_message_text(chat_id=chat_id, message_id=self.user_states[user_id]['msg_id'], text=main_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-            else: raise Exception()
-        except Exception:
-            m = await context.bot.send_message(chat_id=chat_id, text=main_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
-            self.user_states[user_id]['msg_id'] = m.message_id
+        main_text = self.get_text(
+            'payment_step_header_ukraine' if SHIPPING_MODE == 'UKRAINE' else 'payment_step_header_int')
+        await self.replace_or_edit_message(context, chat_id, user_id, main_text,
+                                           reply_markup=InlineKeyboardMarkup(keyboard))
 
     async def choose_payment(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await self.check_user_blocked(update, context): return
@@ -1740,14 +1749,31 @@ class OnlineShopBot:
 
     # -------------------- ADMIN PANEL --------------------
     async def admin_panel(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if int(update.effective_user.id) not in ADMIN_IDS: return await update.callback_query.answer(self.get_text('access_denied'))
-        keyboard = [[InlineKeyboardButton(self.get_text('all_orders_button'), callback_data="admin_all_orders")],
-                    [InlineKeyboardButton(self.get_text('products_button'), callback_data="admin_products")],
-                    [InlineKeyboardButton(self.get_text('stats_button'), callback_data="admin_statistics"), InlineKeyboardButton(self.get_text('revenue_button'), callback_data="admin_revenue_chart")],
-                    [InlineKeyboardButton(self.get_text('users_button'), callback_data="admin_user_management")],
-                    [InlineKeyboardButton(self.get_text('admin_broadcast_button'), callback_data="admin_broadcast_prompt"), InlineKeyboardButton(self.get_text('admin_promo_button'), callback_data="admin_promo_menu")],
-                    [InlineKeyboardButton(self.get_text('main_menu_button_3'), callback_data="main_menu")]]
-        await update.callback_query.edit_message_text(self.get_text('admin_panel_header'), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.MARKDOWN)
+        if int(update.effective_user.id) not in ADMIN_IDS:
+            return await update.callback_query.answer(self.get_text('access_denied'))
+
+        keyboard = [
+            [InlineKeyboardButton(self.get_text('all_orders_button'), callback_data="admin_all_orders")],
+            [InlineKeyboardButton(self.get_text('products_button'), callback_data="admin_products")],
+            [InlineKeyboardButton(self.get_text('users_button'), callback_data="admin_user_management")]
+        ]
+
+        if LICENSE_TYPE == "Pro":
+            keyboard.insert(2, [InlineKeyboardButton(self.get_text('stats_button'), callback_data="admin_statistics"),
+                                InlineKeyboardButton(self.get_text('revenue_button'),
+                                                     callback_data="admin_revenue_chart")])
+            keyboard.insert(4, [InlineKeyboardButton(self.get_text('admin_broadcast_button'),
+                                                     callback_data="admin_broadcast_prompt"),
+                                InlineKeyboardButton(self.get_text('admin_promo_button'),
+                                                     callback_data="admin_promo_menu")])
+
+        keyboard.append([InlineKeyboardButton(self.get_text('main_menu_button_3'), callback_data="main_menu")])
+
+        await update.callback_query.edit_message_text(
+            self.get_text('admin_panel_header'),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode=ParseMode.HTML
+        )
 
     # -------------------- ADMIN BROADCAST (РОЗСИЛКА) --------------------
     async def admin_broadcast_prompt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
