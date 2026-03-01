@@ -1,5 +1,3 @@
-Here is the English translation of your README file, keeping all the formatting intact:
-
 # 🛍️ Telegram E-commerce SaaS Bot (QuickShop)
 
 A fully-featured, high-performance online store in Telegram. Built on a modern asynchronous architecture, the bot handles high loads, ensures seamless inventory management, and allows you to manage all aspects of your business directly from the messenger (In-App Admin Panel).
