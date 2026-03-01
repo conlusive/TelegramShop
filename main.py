@@ -14,13 +14,14 @@ from strings import STRINGS
 from dom import (
     BOT_TOKEN, ADMIN_ID, BOT_TIMEZONE, SHIPPING_MODE,
     DB_NAME, SHOP_NAME, CURRENCY_SYMBOL, STORE_MESSAGES,
-    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, CURRENCY_CODE
+    SUPPORT_USER, CHANNEL_LINK, PAYMENT_TOKENS, CURRENCY_CODE,
+    MAX_ORDER_AMOUNT
 )
 
 # ==================== LICENSE AND ADMINISTRATION ====================
 
 LICENSE_TYPE = "Pro" # "Basic" , "Pro"
-MAX_ORDER_AMOUNT = 10000.0
+
 
 if isinstance(ADMIN_ID, str):
     ADMIN_IDS = [int(x.strip()) for x in ADMIN_ID.split(',') if x.strip().isdigit()]
@@ -788,9 +789,7 @@ class OnlineShopBot:
         if isinstance(options_data, dict):
             for opt, val in sorted(options_data.items(), key=lambda x: x[0]):
                 qty = val.get('qty', 0) if isinstance(val, dict) else (int(val) if str(val).isdigit() else 0)
-                price_info = f" ({val['price']}{CURRENCY_SYMBOL})" if isinstance(val,
-                                                                                 dict) and 'price' in val and float(
-                    val['price']) > 0 else ""
+                price_info = f" ({val['price']}{CURRENCY_SYMBOL})" if isinstance(val, dict) and 'price' in val and float(val['price']) > 0 else ""
                 row.append(InlineKeyboardButton(f"{opt}{price_info}",
                                                 callback_data=f"var_sel_{state['current_key_index']}_{opt}") if qty > 0 else InlineKeyboardButton(
                     f"{opt} (❌)", callback_data="noop"))
@@ -1437,9 +1436,10 @@ class OnlineShopBot:
 
     async def send_invoice(self, chat_id, user_id, context: ContextTypes.DEFAULT_TYPE):
         try:
-            async with self.conn.execute('SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?', (user_id,)) as cursor:
+            async with self.conn.execute(
+                    'SELECT p.price, c.quantity, p.variants, c.selected_options FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?',
+                    (user_id,)) as cursor:
                 cart_data = await cursor.fetchall()
-
             if not cart_data: return await context.bot.send_message(chat_id=chat_id, text=self.get_text('cart_empty_3'))
 
             total_amount = sum(self.calculate_item_price(p, v, o) * q for p, q, v, o in cart_data)
@@ -1448,18 +1448,26 @@ class OnlineShopBot:
 
             if total_amount > MAX_ORDER_AMOUNT:
                 err_text = self.get_text('err_limit_exceeded', limit=MAX_ORDER_AMOUNT, total=round(total_amount, 2))
-                return await context.bot.send_message(chat_id=chat_id, text=err_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="cart")]]), parse_mode="HTML")
+                return await context.bot.send_message(chat_id=chat_id, text=err_text, reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(self.get_text('back_to_cart_button'), callback_data="cart")]]),
+                                                      parse_mode="HTML")
 
             telegram_amount = int(round(total_amount, 2) * 100)
-            description = f"{self.get_text('invoice_desc')}\n{self.get_text('invoice_to_pay', amount=round(total_amount, 2), symbol=CURRENCY_SYMBOL)}"
-            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('pay_button_text'), pay=True)], [InlineKeyboardButton(self.get_text('back_button_2'), callback_data="back_to_payment")], [InlineKeyboardButton(self.get_text('cancel_order_button'), callback_data="cancel_order")]])
+            title = self.get_text('invoice_title', shop_name=SHOP_NAME)[:32]
+            description = f"{self.get_text('invoice_desc')}\n{self.get_text('invoice_to_pay', amount=round(total_amount, 2), symbol=CURRENCY_SYMBOL)}"[
+                :255]
+
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(self.get_text('pay_button_text'), pay=True)],
+                                             [InlineKeyboardButton(self.get_text('back_button_2'),
+                                                                   callback_data="back_to_payment")],
+                                             [InlineKeyboardButton(self.get_text('cancel_order_button'),
+                                                                   callback_data="cancel_order")]])
             provider_key = 'PORTMONE' if SHIPPING_MODE == 'UKRAINE' else 'REDSYS'
 
             m = await context.bot.send_invoice(
-                chat_id=chat_id, title=self.get_text('invoice_title', shop_name=SHOP_NAME),
-                description=description, payload=f"order_{user_id}_{int(time.time())}",
+                chat_id=chat_id, title=title, description=description, payload=f"order_{user_id}_{int(time.time())}",
                 provider_token=PAYMENT_TOKENS[provider_key], currency=CURRENCY_CODE,
-                prices=[LabeledPrice(self.get_text('invoice_label'), telegram_amount)], start_parameter="test-payment",
+                prices=[LabeledPrice(self.get_text('invoice_label'), telegram_amount)], start_parameter="payment",
                 is_flexible=False, reply_markup=keyboard
             )
             self.user_states[user_id]['invoice_msg_id'] = m.message_id

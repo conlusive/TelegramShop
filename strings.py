@@ -53,7 +53,7 @@ STRINGS = {
         'err_variant_format': "❌ <b>Неправильний формат варіантів!</b>\n\nУведено: {val}\nДотримуйтесь формату: Тип:Опція=К-сть=Ціна",
         'err_invalid_discount': "❌ <b>Неправильний формат знижки!</b>\n\nОчікується ціле число від 1 до 99.\n\n<b>Приклад:</b> <code>15</code>",
         'err_invalid_uses': "❌ <b>Неправильний формат кількості!</b>\n\nОчікується ціле число більше 0.\n\n<b>Приклад:</b> <code>100</code>",
-        'err_limit_exceeded': "❌ <b>Перевищено ліміт замовлення!</b>\n\nМаксимальна сума для оформлення через бот: <b>{limit}{symbol}</b>.\nВаша сума: <b>{total}{symbol}</b>.\n\nБудь ласка, зменшіть кількість товарів або зверніться до підтримки.",
+        'err_limit_exceeded': "❌ <b>Перевищено ліміт замовлення!</b>\n\nМаксимальна сума для оплати: <b>{limit}{symbol}</b>.\nВаша сума: <b>{total}{symbol}</b>.\n\nБудь ласка, зменшіть кількість товарів у кошику.",
 
 
         # ==========================================
@@ -471,7 +471,7 @@ STRINGS = {
         'err_variant_format': "❌ <b>Invalid variant format!</b>\n\nEntered: {val}\n\nFormat: Type:Option=Qty=Price",
         'err_invalid_discount': "❌ <b>Invalid discount format!</b>\n\nExpected integer between 1 and 99.\n\n<b>Example:</b> <code>15</code>",
         'err_invalid_uses': "❌ <b>Invalid quantity format!</b>\n\nExpected integer > 0.\n\n<b>Example:</b> <code>100</code>",
-        'err_limit_exceeded': "❌ <b>Order limit exceeded!</b>\n\nMaximum amount for checkout via bot: <b>{limit}{symbol}</b>.\nYour amount: <b>{total}{symbol}</b>.\n\nPlease reduce the number of items or contact support.",
+        'err_limit_exceeded': "❌ <b>Order limit exceeded!</b>\n\nMaximum payment amount: <b>{limit}{symbol}</b>.\nYour amount: <b>{total}{symbol}</b>.\n\nPlease reduce the number of items in your cart.",
 
         # ==========================================
         # 3. MAIN MENU & NAVIGATION
