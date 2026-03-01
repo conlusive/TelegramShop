@@ -1,77 +1,133 @@
-# TelegramShop Bot
+Here is the English translation of your README file, keeping all the formatting intact:
 
-A fully functional e-commerce Telegram bot built with **Python**, **python-telegram-bot** (v22+), and **SQLite3**. This bot allows users to browse products, manage a shopping cart, and process orders through integrated payment systems.
+# 🛍️ Telegram E-commerce SaaS Bot (QuickShop)
 
-## 🚀 Features
+A fully-featured, high-performance online store in Telegram. Built on a modern asynchronous architecture, the bot handles high loads, ensures seamless inventory management, and allows you to manage all aspects of your business directly from the messenger (In-App Admin Panel).
 
-- **Catalog Management**: Dynamic product browsing with category support.
-- **Shopping Cart**: Add/remove items and calculate total prices.
-- **Order Processing**: Automated order creation and storage in SQLite.
-- **Payment Integration**: Built-in support for Telegram Payments (Invoices and Shipping).
-- **Database**: Persistent storage for products, users, and order history.
-- **Localization**: Centralized string management for easy UI customization.
+The project is developed with a SaaS (Software as a Service) model in mind: it supports license tiering (`Basic` / `Pro`), multi-regionality, and fast deployment for new clients.
 
-## 🛠 Tech Stack
+---
 
-- **Language**: Python 3.10+
-- **Library**: [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) (Asynchronous)
-- **Database**: SQLite3
-- **Project Architecture**: Modular design (logic, constants, and credentials separation).
+## 🌟 Key Features
 
-## 📁 Project Structure
+### 🛒 For Clients (Buyers)
 
-```text
-├── main.py          # Entry point, bot handlers, and core logic
-├── dom.py           # Configuration (Tokens & API keys) - [Excluded from Git]
-├── strings.py       # UI/UX text constants and messages
-├── shop.db          # SQLite database file
-├── requirements.txt # Project dependencies
-└── .gitignore       # Rules to exclude sensitive files
+* **Catalog with Pagination:** Convenient navigation through categories and products (without message spam).
+* **Complex Products (Variants):** Support for selecting color, size, volume (e.g., *Red T-shirt, size M*). Dynamic pricing for each variant.
+* **Smart Cart:** Automatic stock verification (impossible to add more items than are available in stock).
+* **Promo Code System:** Single-use and multi-use percentage discounts.
+* **Fast Checkout (Smart Checkout):** The bot remembers full name, phone number, and address. The next purchase is made in 2 clicks.
+* **Online Payment (Acquiring):** Integration with Apple Pay, Google Pay, and card payments via Telegram Payments (Portmone for Ukraine, Redsys (or your) for Europe).
+* **Personal Cabinet:** Order history, delivery statuses, and personal data management (GDPR compliance).
+
+### ⚙️ For the Owner (Administrator)
+
+* **In-App Management:** Manage the store entirely within Telegram (no third-party websites needed).
+* **Product Management:** Add products, multimedia (up to 10 photos per product), edit prices, descriptions, stock, and variants.
+* **Automatic Inventory Management:** Items are deducted from stock upon checkout and **automatically returned** if the order is canceled by the admin or the client.
+* **Financial Statistics:** Automatic calculation of revenue, average check, number of orders, and top products (for today, week, month, all time).
+* **Marketing:** Mass mailings (Broadcast) to the entire client base (with photo/video) in 1 click. Promo code generation.
+* **Client Management:** View the user base, ability to block spammers.
+
+---
+
+## 🏗 Architecture and Technical Solutions
+
+* **Asynchronous (`aiosqlite` + `asyncio`):** All database queries are executed asynchronously, preventing the bot from blocking when used simultaneously by hundreds of clients.
+* **Auto-save States (`auto_save_state`):** If the server restarts unexpectedly, current user actions (e.g., assembled cart or checkout step) will be restored from the database.
+* **Chat Memory Manager ("Vacuum"):** The bot automatically deletes old photo galleries when switching menus so the client's chat remains clean.
+* **Modular Configuration:** All localization logic is moved to `strings.py`, and environment settings to `dom.py`.
+* **Spam Protection:** Built-in verification for successful payments and prevention of double clicks (Message is not modified handler).
+
+---
+
+## ⚙️ Deep Dive into Configuration Files
+
+The project is designed so that the end-user (store owner) does not need to understand complex code. All business settings and texts are separated into two easy-to-read files.
+
+### 1. `dom.py` (Main Settings Engine)
+This file acts as the "Control Panel" for your store. Here is what each variable does:
+
+* `BOT_TOKEN`: The API token of your bot (obtained from [@BotFather](https://t.me/botfather)).
+* `ADMIN_ID`: Your Telegram User ID. You can add multiple admins separated by commas (e.g., `"123456, 789101"`). *Note: The Basic license restricts this to 1 admin.*
+* `SHIPPING_MODE`: Controls the core logic of the bot. 
+  * Set to `"UKRAINE"` to enable Nova Poshta logic and Ukrainian payment methods.
+  * Set to `"INTERNATIONAL"` for global delivery formatting and European acquiring.
+* `PAYMENT_TOKENS`: A dictionary to insert your payment provider tokens (e.g., Portmone, Redsys, Stripe) obtained via BotFather.
+* `SHOP_NAME`: The brand name displayed in welcome messages and invoices.
+* `CURRENCY_SYMBOL` & `CURRENCY_CODE`: Set your local currency (e.g., `"$"`, `"€"`, `"₴"`) and international code (`"USD"`, `"EUR"`, `"UAH"`).
+* `MAX_ORDER_AMOUNT`: A safety limit for Telegram online payments to prevent transactions that exceed the payment provider's limits.
+* `SUPPORT_USER` & `CHANNEL_LINK`: Links to your support manager (e.g., `@manager`) and your Telegram channel, which are displayed in the "Help" menu.
+* `BOT_TIMEZONE`: Sets the local timezone for accurate order timestamps (e.g., `"Europe/Kyiv"`).
+
+### 2. `strings.py` (Localization & Text Customization)
+This file contains **every single word, button, and message** the bot sends. It is structured as a simple Python dictionary.
+
+* **How it works:** You will see pairs like `'cart_empty': "Your cart is empty 😔"`. The left side (`'cart_empty'`) is the system key—**do not change it**. The right side (`"Your cart is empty 😔"`) is the text the client actually sees—you can change this to anything you want!
+* **🌍 How to translate the bot to ANY language (e.g., Polish, German, Spanish):**
+  If your target audience speaks Polish, you do not need to rewrite the bot. Just open `strings.py`, go to the `INTERNATIONAL` dictionary block, and translate the English phrases on the right side into Polish. 
+  * *Example:* Change `'checkout_button': "🛒 Checkout"` to `'checkout_button': "🛒 Zamówienie"`. 
+  * Save the file, restart the bot, and it will instantly speak your desired language without breaking any code!
+
+---
+
+## 🗄 Database Structure (SQLite)
+
+The bot uses a relational database with the following key tables:
+
+* `products`: Stores name, price, stock, category, `variants` (JSON), `images` (JSON for albums).
+* `cart`: Temporary storage for assembled carts.
+* `orders`: Stores all orders, delivery details, final array of purchased items (JSON), and status.
+* `users`: User profiles (Full Name, phone, email, block status).
+* `promocodes` / `used_promocodes`: Management of discounts and limits.
+* `bot_states`: Temporary FSM (Finite State Machine) storage for restoring sessions after a restart.
+
+---
+
+## 🚀 How to Launch the Bot (Quick Start)
+
+Once you have configured your `dom.py` and `strings.py` files, starting the bot is incredibly simple.
+
+**Prerequisite:** Ensure you have **Python 3.11 or higher** installed on your PC or Server.
+
+**Step 1:** Open the folder containing the bot files.
+**Step 2:** Start the bot using one of the following methods depending on your operating system:
+
+* **For Windows Users:**
+  Simply double-click the `start_windows.bat` file. It will automatically install all necessary libraries from `requirements.txt` and launch the bot.
+
+* **For Linux / Mac Users:**
+  Open your terminal in the bot's folder and run the following command:
+  ```bash
+  bash start_linux.sh
+
 ```
 
-## ⚙️ Installation & Setup
+*(Alternatively, you can manually run `pip install -r requirements.txt` and then `python main.pyc`).*
 
-1. **Clone the repository**:
-   ```bash
-   git clone [https://github.com/your-username/TelegramShop.git](https://github.com/your-username/TelegramShop.git)
-   cd TelegramShop
-   ```
+If everything is set up correctly, your terminal will show a message that the bot has successfully launched. Go to Telegram and send `/start` to your bot!
 
-2. **Create and activate a virtual environment**:
-   ```bash
-   python -m venv .venv
-   # MacOS/Linux:
-   source .venv/bin/activate
-   # Windows:
-   .venv\Scripts\activate
-   ```
+```
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+---
 
-4. **Configuration**:
-   Create a `dom.py` file in the root directory and add your credentials:
-   ```python
-   BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-   PAYMENT_TOKENS = {
-       'PROVIDER_NAME': 'YOUR_PAYMENT_PROVIDER_TOKEN'
-   }
-   ```
+## 🗺 Roadmap (Future Plans)
 
-5. **Run the bot**:
-   ```bash
-   python main.py
-   ```
+* [ ] **Abandoned Cart:** Automatic reminders to users after 2 hours if they have not completed a purchase.
+* [ ] **Nova Poshta Integration (API):** City and branch selection from a list, automatic Waybill (TTN) generation for the admin.
+* [ ] **Data Export:** Ability for the admin to download a `.csv` file with order history and the client database.
+* [ ] **Telegram Mini App (TMA):** Creation of a graphical Web interface (React/Next.js) inside Telegram, keeping the existing bot as the Backend.
 
-## 📝 Usage
+---
 
-- `/start` - Initialize the bot and open the main menu.
-- **Catalog** - Browse available items and categories.
-- **Cart** - View selected items, adjust quantities, and proceed to checkout.
-- **Support** - Direct contact for customer assistance.
+## 📞 Support and Contacts
 
-## 🔒 Security Note
+**Developer:** Redeme
+**Telegram:** redemesup
+**Email:** moraclemgmt@gmail.com
 
-The file `dom.py` contains sensitive API tokens and is explicitly added to `.gitignore` to prevent accidental exposure. **Never share your BOT_TOKEN or database files containing user data publicly.**
+*If you find a bug or want to order a custom integration (CRM, logistics, payment systems) — contact me.*
+
+---
+
+*Powered by Python & Asyncio. Designed for scalability.*
