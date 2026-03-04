@@ -232,6 +232,30 @@ class OnlineShopBot:
             return True
         return False
 
+    async def replace_or_edit_message(self, context, chat_id, user_id, text, reply_markup=None):
+        state = self.user_states.get(user_id, {})
+        if 'msg_id' in state:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=state['msg_id'],
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+                return
+            except Exception:
+
+                pass
+
+        m = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+        self.user_states.setdefault(user_id, {})['msg_id'] = m.message_id
+
     async def restore_stock(self, order_id):
         async with self.conn.execute("SELECT products FROM orders WHERE id = ?", (order_id,)) as cursor:
             result = await cursor.fetchone()
@@ -1395,8 +1419,7 @@ class OnlineShopBot:
         if SHIPPING_MODE == 'UKRAINE':
             keyboard.append([InlineKeyboardButton(self.get_text('method_cod'), callback_data="pay_cod")])
             keyboard.append([InlineKeyboardButton(self.get_text('method_card_courier'), callback_data="pay_card")])
-        else:
-            keyboard.append([InlineKeyboardButton(self.get_text('method_card_courier'), callback_data="pay_card")])
+
 
         keyboard.extend([
             [InlineKeyboardButton(self.get_text('back_button_2'), callback_data="confirm_details_back")],
