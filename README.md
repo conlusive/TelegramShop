@@ -120,8 +120,6 @@ If everything is set up correctly, your terminal will show a message that the bo
 
 ## 📞 Support and Contacts
 
-**Developer:** Redeme
-**Telegram:** redemesup
 **Email:** moraclemgmt@gmail.com
 
 *If you find a bug or want to order a custom integration (CRM, logistics, payment systems) — contact me.*
